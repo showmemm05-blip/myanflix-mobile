@@ -8,10 +8,16 @@ import { formatKyat } from "@/utils/currency";
 import { tabularNums, theme } from "@/theme";
 
 /**
- * The form vocabulary shared by the deposit and withdraw sheets — one set of
- * labels, fields, quick-amount chips, method tiles and helper/error lines, so
- * both money forms look and behave identically. Purely presentational: every
- * value and handler is owned by the sheet that renders these.
+ * The form vocabulary of the app's bottom-sheet forms — one set of labels,
+ * fields, quick-amount chips, method tiles and helper/error lines, so every
+ * sheet form looks and behaves identically. Purely presentational: every value
+ * and handler is owned by the sheet that renders these.
+ *
+ * `QuickAmounts`, `MethodGrid` and `SheetInput`'s `numeric`/`suffix` modes are
+ * money-specific and belong to the deposit/withdraw sheets; `FieldLabel`,
+ * `HelperText`, `ErrorNotice` and `SheetSuccess` carry no money semantics and
+ * are what the feedback sheet reuses, rather than growing a second, slightly
+ * different set of form parts.
  */
 
 export function FieldLabel({ children }: { children: ReactNode }) {

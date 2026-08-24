@@ -1,4 +1,4 @@
-import axios, { type AxiosRequestConfig, type AxiosResponse, isAxiosError } from "axios";
+import axios, { type AxiosRequestConfig, type AxiosResponse, isAxiosError, isCancel } from "axios";
 import { tokenStore, notifyUnauthorized } from "@/services/token-store";
 import { ApiError } from "@/utils/errors";
 
@@ -8,8 +8,34 @@ import { ApiError } from "@/utils/errors";
  */
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3001/api";
 
-const http = axios.create({ baseURL: API_BASE_URL });
+/**
+ * Which client this is, in the backend's `ClientPlatform` vocabulary
+ * (WEB | MOBILE | UNKNOWN).
+ *
+ * The server attributes comments, feedback, searches, watch time and sessions
+ * to a platform, and a user-agent sniff cannot reliably tell an Expo app from
+ * a browser — so every request says so outright. The socket handshake sends
+ * the same value under `auth.platform` (see services/socket.ts); anything that
+ * omits both is recorded as UNKNOWN rather than guessed at.
+ */
+export const CLIENT_PLATFORM = "MOBILE";
 
+/**
+ * Attached to the axios instance's defaults, so it rides on EVERY call made
+ * through `apiClient` without each api module remembering it. The one request
+ * that does not go through this instance — the refresh below, which must not
+ * recurse through the 401 handler — sets it explicitly.
+ */
+const platformHeaders = { "X-Client-Platform": CLIENT_PLATFORM } as const;
+
+const http = axios.create({ baseURL: API_BASE_URL, headers: platformHeaders });
+
+/**
+ * Everything axios accepts except the bits this module owns. `performRequest`
+ * spreads the whole thing into `http.request`, so a caller-supplied `signal`
+ * reaches axios untouched — that is how React Query aborts a superseded search
+ * (see `types/api.ts#RequestSignalOptions`).
+ */
 interface RequestOptions extends Omit<AxiosRequestConfig, "url" | "method"> {
   /** Skip attaching the access token / triggering refresh-on-401 (the four auth endpoints). */
   skipAuth?: boolean;
@@ -36,6 +62,7 @@ async function refreshAccessToken(): Promise<string | null> {
     const response = await axios.post<Envelope<{ accessToken: string; refreshToken: string }>>(
       `${API_BASE_URL}/auth/refresh`,
       { refreshToken },
+      { headers: platformHeaders },
     );
     if (!response.data.success || !response.data.data) return null;
 
@@ -107,6 +134,12 @@ async function request<T>(
     return body.data;
   } catch (err) {
     if (err instanceof ApiError) throw err;
+    // An aborted request is not a failure — React Query cancels the signal of a
+    // superseded search before its response lands. A CanceledError is also
+    // response-less, so this MUST come before the network-error branch below,
+    // or every cancelled keystroke would surface as "check your connection".
+    // Rethrown as-is so `axios.isCancel` still recognises it upstream.
+    if (isCancel(err)) throw err;
     if (isAxiosError(err) && !err.response) {
       throw new ApiError("Unable to reach the server. Check your connection.", 0);
     }

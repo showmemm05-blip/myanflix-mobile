@@ -6,7 +6,11 @@ import type { SeriesQuery } from "@/types/series";
 export function useSeriesList(query: SeriesQuery = {}) {
   return useQuery({
     queryKey: ["series", query],
-    queryFn: () => seriesService.getSeries(query),
+    // Forward React Query's abort handle so leaving the screen (or changing the
+    // access filter) cancels the in-flight page instead of letting it finish.
+    // No `placeholderData`/`staleTime` tuning here: the backend has no `search`
+    // param for series, so this key does not change as the user types.
+    queryFn: ({ signal }) => seriesService.getSeries(query, { signal }),
   });
 }
 

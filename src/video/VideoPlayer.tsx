@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { StyleSheet } from "react-native";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { useVideoPlayer, VideoView, type SubtitleTrack } from "expo-video";
 import { useEventListener } from "expo";
+import { isSameSubtitleTrack } from "@/video/subtitleTracks";
 
 export interface VideoPlayerHandle {
   seek: (seconds: number) => void;
@@ -13,6 +14,21 @@ interface Props {
   rate: number;
   volume: number;
   muted: boolean;
+  /**
+   * The subtitle rendition to display, picked out of the list reported by
+   * `onSubtitleTracksChange`. `null` turns subtitles off.
+   */
+  subtitleTrack: SubtitleTrack | null;
+  /**
+   * Whether the screen has received the rendition list yet. The selection can
+   * only be pushed to the player once the tracks exist, and this is the one
+   * signal that says so in the same commit as `subtitleTrack` — deriving it
+   * inside this component from the raw events would race the screen's own
+   * resolution of which track to display.
+   */
+  subtitleTracksReady: boolean;
+  /** Fires with the renditions declared in the manifest, as they are discovered. */
+  onSubtitleTracksChange: (tracks: SubtitleTrack[]) => void;
   onProgress: (data: { currentTime: number; bufferedSeconds: number }) => void;
   onLoad: (data: { durationSeconds: number }) => void;
   onBufferingChange: (isBuffering: boolean) => void;
@@ -36,11 +52,29 @@ const SEEK_SETTLE_MS = 10000;
 const SEEK_PROXIMITY_SECONDS = 1.5;
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
-  { playlistUrl, paused, rate, volume, muted, onProgress, onLoad, onBufferingChange, onEnd, onError },
+  {
+    playlistUrl,
+    paused,
+    rate,
+    volume,
+    muted,
+    subtitleTrack,
+    subtitleTracksReady,
+    onSubtitleTracksChange,
+    onProgress,
+    onLoad,
+    onBufferingChange,
+    onEnd,
+    onError,
+  },
   ref,
 ) {
   const pendingSeekRef = useRef<number | null>(null);
   const seekSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // `undefined` = the selection has never been pushed to the player yet. See
+  // the subtitle effect below for why this is tracked here rather than read
+  // back off the player.
+  const appliedSubtitleRef = useRef<SubtitleTrack | null | undefined>(undefined);
 
   const player = useVideoPlayer({ uri: playlistUrl, contentType: "hls" }, (p) => {
     p.timeUpdateEventInterval = 0.5;
@@ -91,6 +125,39 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     }
   }, [player, paused]);
 
+  /**
+   * Pushes the chosen rendition into the player, asserting it ONCE as soon as
+   * the tracks exist even when the choice is "off".
+   *
+   * That first assertion is not redundant. ExoPlayer's default track selection
+   * treats a text track carrying `SELECTION_FLAG_DEFAULT` as eligible on its
+   * own, and the backend marks the default subtitle `DEFAULT=YES` in the
+   * master playlist — so on Android the cues start rendering by themselves.
+   * expo-video does not see that: its `subtitleTrack` getter only reports an
+   * explicit override or a preferred-language match, so it keeps returning
+   * `null` while captions are visibly on screen. Comparing against the getter
+   * would therefore skip the write, leaving the menu saying "Off" over burnt-in
+   * captions the viewer cannot turn off. Writing `null` disables the text
+   * renderer outright, which is what makes "Off" mean off.
+   *
+   * Which is exactly why `null` must mean a DELIBERATE "Off" by the time it
+   * reaches here. The screen resolves "viewer has never chosen" to the
+   * manifest's DEFAULT=YES track instead of null, so the default is asserted
+   * rather than switched off — see playerPrefsStore's three-way preference.
+   *
+   * The guard is against what THIS component last wrote, so a re-report of the
+   * same renditions (new objects, equal values) does not needlessly tear down
+   * and rebuild the text renderer mid-playback.
+   */
+  useEffect(() => {
+    if (!subtitleTracksReady) return;
+    if (appliedSubtitleRef.current !== undefined && isSameSubtitleTrack(appliedSubtitleRef.current, subtitleTrack)) {
+      return;
+    }
+    appliedSubtitleRef.current = subtitleTrack;
+    player.subtitleTrack = subtitleTrack;
+  }, [player, subtitleTrack, subtitleTracksReady]);
+
   useEffect(() => {
     return () => {
       if (seekSettleTimeoutRef.current) clearTimeout(seekSettleTimeoutRef.current);
@@ -118,6 +185,20 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     if (payload.duration > 0) {
       onLoad({ durationSeconds: payload.duration });
     }
+    // Same spurious-re-emission caveat as the duration above: an empty list
+    // here means "not parsed yet", never "this title has no subtitles" — that
+    // answer only ever comes from the event below, which is authoritative.
+    if (payload.availableSubtitleTracks.length > 0) {
+      onSubtitleTracksChange(payload.availableSubtitleTracks);
+    }
+  });
+
+  // The subtitle renditions are NOT reliably present the moment the source
+  // loads — the player discovers them as it parses the master playlist, so the
+  // list arrives (or grows) after `sourceLoad` has already fired. Both are
+  // relayed; the screen de-duplicates by value so the extra report is free.
+  useEventListener(player, "availableSubtitleTracksChange", (payload) => {
+    onSubtitleTracksChange(payload.availableSubtitleTracks);
   });
 
   useEventListener(player, "playToEnd", () => {

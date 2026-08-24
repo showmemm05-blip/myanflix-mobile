@@ -40,6 +40,10 @@ interface Props {
   speed?: number;
   /** Opens the episode picker sheet. Omit for non-series titles. */
   onOpenEpisodes?: () => void;
+  /** Opens the subtitle picker. Omit when the title declares no subtitle renditions. */
+  onOpenSubtitles?: () => void;
+  /** Short language badge shown on the subtitle control while a track is on. */
+  subtitleTag?: string;
   /** Swaps the play glyph for a spinner while the stream rebuffers. */
   isBuffering?: boolean;
 }
@@ -68,6 +72,8 @@ export function PlayerControls({
   subtitle,
   speed,
   onOpenEpisodes,
+  onOpenSubtitles,
+  subtitleTag,
   isBuffering,
 }: Props) {
   const { t } = useLanguage();
@@ -149,10 +155,10 @@ export function PlayerControls({
 
         <View style={styles.bottomRow}>
           <View style={styles.timeBlock} pointerEvents="none">
-            <ThemedText variant="caption" weight="semibold" tabular style={styles.timeCurrent}>
+            <ThemedText variant="caption" weight="semibold" tabular numberOfLines={1} style={styles.timeCurrent}>
               {formatTime(positionSeconds)}
             </ThemedText>
-            <ThemedText variant="caption" tabular>
+            <ThemedText variant="caption" tabular numberOfLines={1}>
               {" / "}
               {formatTime(durationSeconds)}
             </ThemedText>
@@ -165,14 +171,18 @@ export function PlayerControls({
               onPress={onToggleMute}
             />
             <ControlButton icon="speedometer-outline" label={t.movie.speed} onPress={onOpenSpeedMenu}>
-              {typeof speed === "number" && speed !== 1 ? (
-                <View style={styles.speedTag} pointerEvents="none">
-                  <ThemedText variant="caption" weight="bold" tabular style={styles.speedTagText}>
-                    {speed}x
-                  </ThemedText>
-                </View>
-              ) : null}
+              {typeof speed === "number" && speed !== 1 ? <Tag text={`${speed}x`} /> : null}
             </ControlButton>
+            {onOpenSubtitles && (
+              <ControlButton
+                icon="logo-closed-captioning"
+                label={t.player.subtitles}
+                onPress={onOpenSubtitles}
+                active={!!subtitleTag}
+              >
+                {subtitleTag ? <Tag text={subtitleTag} /> : null}
+              </ControlButton>
+            )}
             {onOpenEpisodes && (
               <ControlButton icon="list" label={t.series.episodesTitle} onPress={onOpenEpisodes} />
             )}
@@ -193,13 +203,15 @@ interface ControlButtonProps {
   label: string;
   onPress: () => void;
   size?: "md" | "lg";
-  /** Decoration rendered inside the button (e.g. the speed tag). */
+  /** Tints the glyph violet — the control is currently doing something. */
+  active?: boolean;
+  /** Decoration rendered inside the button (e.g. the speed / subtitle tag). */
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
 }
 
 /** Round glassy control — 44pt at "md", 56pt at "lg". */
-function ControlButton({ icon, label, onPress, size = "md", children, style }: ControlButtonProps) {
+function ControlButton({ icon, label, onPress, size = "md", active, children, style }: ControlButtonProps) {
   const dims = size === "lg" ? styles.controlLg : styles.controlMd;
   return (
     <Pressable
@@ -208,9 +220,24 @@ function ControlButton({ icon, label, onPress, size = "md", children, style }: C
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Ionicons name={icon} size={size === "lg" ? 24 : 20} color={theme.colors.text} />
+      <Ionicons
+        name={icon}
+        size={size === "lg" ? 24 : 20}
+        color={active ? theme.colors.primary : theme.colors.text}
+      />
       {children}
     </Pressable>
+  );
+}
+
+/** The little violet pill a control wears to show its non-default state. */
+function Tag({ text }: { text: string }) {
+  return (
+    <View style={styles.tag} pointerEvents="none">
+      <ThemedText variant="caption" weight="bold" tabular style={styles.tagText}>
+        {text}
+      </ThemedText>
+    </View>
   );
 }
 
@@ -260,15 +287,19 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.sm,
   },
   bottomRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.sm },
-  timeBlock: { flexDirection: "row", alignItems: "center" },
+  // The action buttons are fixed 44pt targets, so on a narrow phone a full set
+  // of them (mute · speed · subtitles · episodes · fullscreen) plus a
+  // "0:00 / 1:23:45" readout can exceed the row. The clock is the part that may
+  // give way — shrinking here, never there, keeps every control on screen.
+  timeBlock: { flexDirection: "row", alignItems: "center", flexShrink: 1 },
   timeCurrent: { color: theme.colors.text },
-  bottomActions: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs },
-  speedTag: {
+  bottomActions: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, flexShrink: 0 },
+  tag: {
     position: "absolute",
     bottom: -2,
     paddingHorizontal: 5,
     borderRadius: theme.radius.pill,
     backgroundColor: theme.colors.primary,
   },
-  speedTagText: { color: theme.colors.onPrimary, fontSize: 10, lineHeight: 14 },
+  tagText: { color: theme.colors.onPrimary, fontSize: 10, lineHeight: 14 },
 });

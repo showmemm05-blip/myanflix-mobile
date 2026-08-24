@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -7,6 +8,7 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import { Surface } from "@/components/ui/Surface";
 import { AuroraBackdrop } from "@/components/common/AuroraBackdrop";
 import { AppTopBar } from "@/components/layout/AppTopBar";
+import { FeedbackSheet } from "@/components/feedback/FeedbackSheet";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 import type { SettingsStackParamList } from "@/navigation/types";
@@ -22,6 +24,7 @@ const LANGUAGE_META: Record<Language, { label: string; flag: string }> = {
 export function SettingsScreen({ navigation }: Props) {
   const { t, language } = useLanguage();
   const current = LANGUAGE_META[language];
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -49,7 +52,35 @@ export function SettingsScreen({ navigation }: Props) {
             </Surface>
           </PressableScale>
         </View>
+
+        {/* Feedback lives here rather than on Profile: Profile is the account
+            summary (who you are, what you've spent), reachable only by pushing
+            from the top bar, while Settings is the tab-level list of things you
+            DO with the app — and sending feedback is an action, not an account
+            attribute. It is also one tap from the tab bar this way. */}
+        <View style={styles.group}>
+          <SectionHeader title={t.settings.support} icon="help-buoy-outline" inset={false} />
+
+          <PressableScale onPress={() => setFeedbackOpen(true)} accessibilityLabel={t.feedback.entryTitle}>
+            <Surface radius="xl" style={styles.row}>
+              <View style={styles.iconTile}>
+                <Ionicons name="chatbox-ellipses-outline" size={20} color={theme.colors.primary} />
+              </View>
+              <View style={styles.info}>
+                <ThemedText variant="body" weight="semibold">
+                  {t.feedback.entryTitle}
+                </ThemedText>
+                <ThemedText variant="caption" style={styles.subtitle} numberOfLines={2}>
+                  {t.feedback.entrySubtitle}
+                </ThemedText>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textFaint} />
+            </Surface>
+          </PressableScale>
+        </View>
       </ScrollView>
+
+      <FeedbackSheet visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </View>
   );
 }

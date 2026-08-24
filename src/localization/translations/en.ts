@@ -290,6 +290,39 @@ export const en = {
     completed: "Completed",
     similarSeries: "Similar Series",
   },
+  comments: {
+    heading: "Comments",
+    /**
+     * Burmese has no plural form, so the singular is its own key rather than a
+     * suffix rule applied to `count` — same shape as home.hero.dayLeft/daysLeft.
+     */
+    count: "{n} comments",
+    countOne: "1 comment",
+    placeholder: "Share what you thought\u2026",
+    post: "Post",
+    posting: "Posting\u2026",
+    reply: "Reply",
+    replyPlaceholder: "Write a reply\u2026",
+    replyCount: "{n} replies",
+    replyCountOne: "1 reply",
+    showReplies: "Show replies",
+    hideReplies: "Hide replies",
+    emptyTitle: "No comments yet",
+    emptyBody: "Be the first to say something about this title.",
+    signedOutPrompt: "Sign in to join the conversation.",
+    you: "You",
+    loadError: "Couldn't load comments",
+    postError: "Couldn't post your comment. Please try again.",
+    /**
+     * Relative timestamps. These four keys are read as a group by
+     * utils/format.ts formatRelativeTime \u2014 keep all four, and keep "{n}" in the
+     * three that count, so a language can put the unit wherever it belongs.
+     */
+    justNow: "Just now",
+    minutesAgo: "{n}m ago",
+    hoursAgo: "{n}h ago",
+    daysAgo: "{n}d ago",
+  },
   subscription: {
     title: "Subscribe",
     subtitle: "Choose a plan to unlock premium movies and series",
@@ -341,6 +374,8 @@ export const en = {
     recent: "Recent searches",
     clearRecent: "Clear",
     startTyping: "Start typing to search",
+    /** Inline hint under the field while the term is shorter than SEARCH_MIN_LENGTH. */
+    minChars: "Type at least {n} characters",
     resultsCount: "{n} results",
   },
   settings: {
@@ -349,6 +384,35 @@ export const en = {
     language: "Language",
     downloads: "Downloads & Cache",
     downloadsComingSoon: "Offline downloads aren't available yet.",
+    support: "Support",
+  },
+  feedback: {
+    entryTitle: "Send feedback",
+    entrySubtitle: "Report a problem or suggest an idea",
+    sheetTitle: "Send feedback",
+    sheetSubtitle: "Tell us what's working and what isn't.",
+    category: "What's this about?",
+    /** Keys map onto the backend FeedbackCategory enum \u2014 see types/feedback.ts. */
+    categories: {
+      bug: "Something's broken",
+      suggestion: "Suggestion",
+      content: "Movies & series",
+      payment: "Payments",
+      other: "Something else",
+    },
+    message: "Your message",
+    messagePlaceholder: "Tell us what happened, or what you'd like to see\u2026",
+    messageHint: "{n}/{max} characters",
+    submit: "Send feedback",
+    categoryError: "Choose what your feedback is about.",
+    messageError: "Please write at least {min} characters.",
+    failure: "Couldn't send your feedback. Please try again.",
+    /** Shown for the server's 429 \u2014 its own message is written for admins, not for this sheet. */
+    rateLimited: "You've sent a lot of feedback in the last hour. Please try again later.",
+    successTitle: "Thanks \u2014 we got it",
+    successBody: "Our team reads every message that comes in. We'll look into this one.",
+    /** Feedback is authenticated, so say so rather than letting it look anonymous. */
+    privacyNote: "Sent from your MyanFlix account.",
   },
   notifications: {
     title: "Notifications",

@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBar, Pressable, ScrollView, View, StyleSheet, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useKeepAwake } from "expo-keep-awake";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { SubtitleTrack } from "expo-video";
 import { VideoPlayer, type VideoPlayerHandle } from "@/video/VideoPlayer";
 import { PlayerControls } from "@/components/player/PlayerControls";
 import { SpeedMenu } from "@/components/player/SpeedMenu";
+import { SubtitleMenu } from "@/components/player/SubtitleMenu";
 import { EpisodeSheet } from "@/components/player/EpisodeSheet";
 import { LockedOverlay } from "@/components/player/LockedOverlay";
 import { EpisodesSection } from "@/components/player/EpisodesSection";
@@ -21,6 +23,12 @@ import { useMovie } from "@/hooks/useMovies";
 import { useWatchProgressReporter } from "@/video/useWatchProgressReporter";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { usePlayerPrefsStore } from "@/store/playerPrefsStore";
+import {
+  findSubtitleTrackByLanguage,
+  isSameSubtitleTrackList,
+  subtitleTrackKey,
+  subtitleTrackTag,
+} from "@/video/subtitleTracks";
 import { formatDuration } from "@/utils/format";
 import { theme } from "@/theme";
 import type { RootStackParamList } from "@/navigation/types";
@@ -44,6 +52,8 @@ export function PlayerScreen({ route, navigation }: Props) {
   const streamQuery = useStreamInfo(movieId);
   const preferredSpeed = usePlayerPrefsStore((s) => s.preferredSpeed);
   const setPreferredSpeed = usePlayerPrefsStore((s) => s.setPreferredSpeed);
+  const preferredSubtitleLanguage = usePlayerPrefsStore((s) => s.preferredSubtitleLanguage);
+  const setPreferredSubtitleLanguage = usePlayerPrefsStore((s) => s.setPreferredSubtitleLanguage);
   const insets = useSafeAreaInsets();
 
   const videoRef = useRef<VideoPlayerHandle>(null);
@@ -55,7 +65,9 @@ export function PlayerScreen({ route, navigation }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [speedMenuOpen, setSpeedMenuOpen] = useState(false);
+  const [subtitleMenuOpen, setSubtitleMenuOpen] = useState(false);
   const [episodeSheetOpen, setEpisodeSheetOpen] = useState(false);
+  const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
   const [seekFlash, setSeekFlash] = useState<TapZone | null>(null);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [isBuffering, setIsBuffering] = useState(false);
@@ -145,6 +157,45 @@ export function PlayerScreen({ route, navigation }: Props) {
 
   const handleSelectSpeed = (speed: number) => {
     setPreferredSpeed(speed);
+  };
+
+  /**
+   * Which rendition is showing is DERIVED, never a second piece of state: a
+   * language is the single source of truth, resolved against whatever this
+   * particular title declares in its manifest. So there is nothing to keep in
+   * sync when the track list arrives late, and a title without that language
+   * just plays without subtitles instead of silently clearing the preference.
+   *
+   * Which language depends on whether the viewer has ever chosen. `undefined`
+   * means they have not, and then the manifest's own DEFAULT=YES track wins —
+   * matching the web client, where hls.js auto-selects it. Only an explicit
+   * `null` ("Off") suppresses it, because VideoPlayer asserts this choice and
+   * asserting null actively disables the text renderer. Conflating the two is
+   * what made a fresh install turn the default track off.
+   */
+  const defaultSubtitleLanguage =
+    streamQuery.data?.status === "ready" ? streamQuery.data.defaultSubtitleLanguage : null;
+  const subtitleLanguage =
+    preferredSubtitleLanguage === undefined ? defaultSubtitleLanguage : preferredSubtitleLanguage;
+
+  const activeSubtitleTrack = useMemo(
+    () => findSubtitleTrackByLanguage(subtitleTracks, subtitleLanguage),
+    [subtitleTracks, subtitleLanguage],
+  );
+
+  /**
+   * The renditions are reported more than once — `sourceLoad` fires before the
+   * player has finished parsing the master playlist, then
+   * `availableSubtitleTracksChange` fires (possibly repeatedly) as they appear
+   * — and every report allocates new objects. Dropping the equal ones stops a
+   * pointless re-render of the whole player on top of the 500ms progress tick.
+   */
+  const handleSubtitleTracksChange = useCallback((tracks: SubtitleTrack[]) => {
+    setSubtitleTracks((current) => (isSameSubtitleTrackList(current, tracks) ? current : tracks));
+  }, []);
+
+  const handleSelectSubtitle = (track: SubtitleTrack | null) => {
+    setPreferredSubtitleLanguage(track ? subtitleTrackKey(track) : null);
   };
 
   const handleSubscribe = () =>
@@ -261,6 +312,9 @@ export function PlayerScreen({ route, navigation }: Props) {
           rate={preferredSpeed}
           volume={1}
           muted={muted}
+          subtitleTrack={activeSubtitleTrack}
+          subtitleTracksReady={subtitleTracks.length > 0}
+          onSubtitleTracksChange={handleSubtitleTracksChange}
           onProgress={({ currentTime, bufferedSeconds }) => {
             setBuffered(bufferedSeconds);
             setPosition(currentTime);
@@ -345,6 +399,11 @@ export function PlayerScreen({ route, navigation }: Props) {
           speed={preferredSpeed}
           isBuffering={isBuffering}
           onOpenEpisodes={seriesId ? () => setEpisodeSheetOpen(true) : undefined}
+          // Undefined hides the control outright: a title whose manifest
+          // declares no subtitle rendition gets no button, rather than a menu
+          // whose only row is "Off".
+          onOpenSubtitles={subtitleTracks.length > 0 ? () => setSubtitleMenuOpen(true) : undefined}
+          subtitleTag={activeSubtitleTrack ? subtitleTrackTag(activeSubtitleTrack) : undefined}
         />
       </View>
 
@@ -383,6 +442,14 @@ export function PlayerScreen({ route, navigation }: Props) {
         value={preferredSpeed}
         onSelect={handleSelectSpeed}
         onClose={() => setSpeedMenuOpen(false)}
+      />
+
+      <SubtitleMenu
+        visible={subtitleMenuOpen}
+        tracks={subtitleTracks}
+        value={activeSubtitleTrack}
+        onSelect={handleSelectSubtitle}
+        onClose={() => setSubtitleMenuOpen(false)}
       />
 
       {seriesId && (

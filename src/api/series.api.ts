@@ -1,6 +1,6 @@
 import { apiClient } from "@/api/client";
 import type { BackendMovie } from "@/api/movies.api";
-import type { PaginatedResponse, PaginationParams } from "@/types/api";
+import type { PaginatedResponse, PaginationParams, RequestSignalOptions } from "@/types/api";
 import type {
   PlayerEpisodesResponse,
   SeasonSummary,
@@ -11,8 +11,9 @@ import type {
 } from "@/types/series";
 
 export const seriesApi = {
-  getSeries(query: SeriesQuery = {}) {
-    return apiClient.get<PaginatedResponse<SeriesListItem>>("/series", { params: query });
+  /** `options.signal` is the search's abort handle — see RequestSignalOptions. */
+  getSeries(query: SeriesQuery = {}, options: RequestSignalOptions = {}) {
+    return apiClient.get<PaginatedResponse<SeriesListItem>>("/series", { params: query, ...options });
   },
 
   getSeriesById(id: string) {

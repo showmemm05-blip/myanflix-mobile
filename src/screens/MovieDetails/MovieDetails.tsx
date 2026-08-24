@@ -1,4 +1,4 @@
-import { ActivityIndicator, ScrollView, Share, StyleSheet, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Share, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -14,6 +14,7 @@ import { DetailHero } from "@/components/detail/DetailHero";
 import { Synopsis } from "@/components/detail/Synopsis";
 import { InfoGrid } from "@/components/detail/InfoGrid";
 import { MovieRow } from "@/components/movie/MovieRow";
+import { CommentsSection } from "@/components/comments/CommentsSection";
 import { useMovie, useMovies } from "@/hooks/useMovies";
 import { useSubscriptionStatus } from "@/hooks/useSubscription";
 import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
@@ -44,7 +45,15 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
   const canWatch = !!movie && hasAccess(movie.accessType, subscriptionQuery.data?.isActive ?? false);
 
   const similarQuery = useMovies({ categoryId: movie?.categories[0]?.id, limit: 10 });
-  const similarMovies = (similarQuery.data?.items ?? []).filter((m) => m.id !== movieId);
+  // `useMovies` keeps the previous key's data on screen while the next key
+  // loads — right for a search field, wrong here: this query's key starts out
+  // category-less (the movie hasn't resolved yet) and only gains a categoryId
+  // once it does, so the held-over data is the generic top-10 catalogue. Under
+  // a "Similar movies" heading, with tappable cards, that is not a slow row —
+  // it is a wrong one. Show nothing until the row's own results arrive.
+  const similarMovies = similarQuery.isPlaceholderData
+    ? []
+    : (similarQuery.data?.items ?? []).filter((m) => m.id !== movieId);
 
   const handleWatch = () => navigation.getParent()?.navigate("Player", { movieId });
   const handleSubscribe = () => navigation.navigate("Subscribe");
@@ -71,82 +80,97 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <DetailHero
-          title={movie.title}
-          backdropUrl={movie.coverUrl ?? movie.posterUrl}
-          posterUrl={movie.posterUrl}
-          accessType={movie.accessType}
-          rating={movie.rating}
-          meta={[movie.releaseYear, formatDuration(movie.duration), movie.genre]}
-        />
+      {/* The comment composer at the foot of this page is the only text input
+          on a detail screen — on iOS nothing lifts it clear of the keyboard
+          without this. Android resizes the window itself (adjustResize in the
+          manifest), so it takes no behavior, same as AuthScreenShell. */}
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          // Without this the first tap on "Post" only dismisses the keyboard.
+          keyboardShouldPersistTaps="handled"
+        >
+          <DetailHero
+            title={movie.title}
+            backdropUrl={movie.coverUrl ?? movie.posterUrl}
+            posterUrl={movie.posterUrl}
+            accessType={movie.accessType}
+            rating={movie.rating}
+            meta={[movie.releaseYear, formatDuration(movie.duration), movie.genre]}
+          />
 
-        <View style={styles.spine}>
-          <View style={styles.ctaRow}>
-            <Button
-              title={canWatch ? t.movie.watchButton : t.movie.subscribeButton}
-              icon={canWatch ? "play" : "diamond"}
-              size="lg"
-              color={canWatch ? undefined : theme.colors.premium}
-              onPress={canWatch ? handleWatch : handleSubscribe}
-              style={styles.ctaSolid}
-            />
-            <IconButton
-              icon={isFavorite ? "heart" : "heart-outline"}
-              variant={isFavorite ? "soft" : "outline"}
-              size="lg"
-              color={isFavorite ? theme.colors.primary : undefined}
-              accessibilityLabel={isFavorite ? t.movie.removeFromFavorites : t.movie.addToFavorites}
-              onPress={() => toggleWatchlist.mutate(movieId)}
-            />
-            <IconButton
-              icon="share-outline"
-              variant="outline"
-              size="lg"
-              accessibilityLabel={t.movie.share}
-              onPress={handleShare}
-            />
+          <View style={styles.spine}>
+            <View style={styles.ctaRow}>
+              <Button
+                title={canWatch ? t.movie.watchButton : t.movie.subscribeButton}
+                icon={canWatch ? "play" : "diamond"}
+                size="lg"
+                color={canWatch ? undefined : theme.colors.premium}
+                onPress={canWatch ? handleWatch : handleSubscribe}
+                style={styles.ctaSolid}
+              />
+              <IconButton
+                icon={isFavorite ? "heart" : "heart-outline"}
+                variant={isFavorite ? "soft" : "outline"}
+                size="lg"
+                color={isFavorite ? theme.colors.primary : undefined}
+                accessibilityLabel={isFavorite ? t.movie.removeFromFavorites : t.movie.addToFavorites}
+                onPress={() => toggleWatchlist.mutate(movieId)}
+              />
+              <IconButton
+                icon="share-outline"
+                variant="outline"
+                size="lg"
+                accessibilityLabel={t.movie.share}
+                onPress={handleShare}
+              />
+            </View>
+
+            {!canWatch && (
+              <View style={styles.lockedNote}>
+                <Ionicons name="lock-closed" size={14} color={theme.colors.premium} />
+                <ThemedText variant="caption" style={styles.lockedText}>
+                  {t.movie.subscriptionLocked}
+                </ThemedText>
+              </View>
+            )}
+
+            {movie.categories.length > 0 && (
+              <View style={styles.chips}>
+                {movie.categories.map((c) => (
+                  <Pill key={c.id} tone="neutral">
+                    {c.name}
+                  </Pill>
+                ))}
+              </View>
+            )}
+
+            <Synopsis text={movie.description} title={t.movie.synopsis} />
+
+            <View style={styles.infoBlock}>
+              <SectionHeader title={t.movie.details} inset={false} />
+              <InfoGrid
+                items={[
+                  { label: t.movie.duration, value: formatDuration(movie.duration) },
+                  { label: t.movie.releaseYear, value: String(movie.releaseYear) },
+                  { label: t.movie.rating, value: movie.rating.toFixed(1) },
+                  { label: t.movie.genre, value: movie.genre },
+                  { label: t.movie.language, value: movie.language },
+                ]}
+              />
+            </View>
           </View>
 
-          {!canWatch && (
-            <View style={styles.lockedNote}>
-              <Ionicons name="lock-closed" size={14} color={theme.colors.premium} />
-              <ThemedText variant="caption" style={styles.lockedText}>
-                {t.movie.subscriptionLocked}
-              </ThemedText>
-            </View>
-          )}
-
-          {movie.categories.length > 0 && (
-            <View style={styles.chips}>
-              {movie.categories.map((c) => (
-                <Pill key={c.id} tone="neutral">
-                  {c.name}
-                </Pill>
-              ))}
-            </View>
-          )}
-
-          <Synopsis text={movie.description} title={t.movie.synopsis} />
-
-          <View style={styles.infoBlock}>
-            <SectionHeader title={t.movie.details} inset={false} />
-            <InfoGrid
-              items={[
-                { label: t.movie.duration, value: formatDuration(movie.duration) },
-                { label: t.movie.releaseYear, value: String(movie.releaseYear) },
-                { label: t.movie.rating, value: movie.rating.toFixed(1) },
-                { label: t.movie.genre, value: movie.genre },
-                { label: t.movie.language, value: movie.language },
-              ]}
-            />
+          <View style={styles.similarRow}>
+            <MovieRow title={t.movie.similarMovies} movies={similarMovies} onPressMovie={goToDetails} />
           </View>
-        </View>
 
-        <View style={styles.similarRow}>
-          <MovieRow title={t.movie.similarMovies} movies={similarMovies} onPressMovie={goToDetails} />
-        </View>
-      </ScrollView>
+          <View style={styles.comments}>
+            <CommentsSection movieId={movieId} />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <TopBar transparent onBack={() => navigation.goBack()} backAccessibilityLabel={t.common.back} />
     </View>
@@ -155,6 +179,7 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
+  flex: { flex: 1 },
   center: { flex: 1, backgroundColor: theme.colors.background, alignItems: "center", justifyContent: "center" },
   scrollContent: { paddingBottom: theme.layout.tabBarClearance },
   spine: {
@@ -175,4 +200,5 @@ const styles = StyleSheet.create({
   chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
   infoBlock: { gap: theme.spacing.sm },
   similarRow: { marginTop: theme.spacing.xl },
+  comments: { marginTop: theme.spacing.xl },
 });

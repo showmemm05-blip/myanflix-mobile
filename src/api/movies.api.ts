@@ -1,5 +1,5 @@
 import { apiClient } from "@/api/client";
-import type { PaginatedResponse, PaginationParams } from "@/types/api";
+import type { PaginatedResponse, PaginationParams, RequestSignalOptions } from "@/types/api";
 import type { Movie, MovieQuery } from "@/types/movie";
 import type { MovieCategoryRef } from "@/types/category";
 
@@ -17,8 +17,9 @@ export interface BackendPurchaseEntry {
 }
 
 export const moviesApi = {
-  getMovies(query: MovieQuery = {}) {
-    return apiClient.get<PaginatedResponse<BackendMovie>>("/movies", { params: query });
+  /** `options.signal` is the search's abort handle — see RequestSignalOptions. */
+  getMovies(query: MovieQuery = {}, options: RequestSignalOptions = {}) {
+    return apiClient.get<PaginatedResponse<BackendMovie>>("/movies", { params: query, ...options });
   },
 
   getMovieById(id: string) {

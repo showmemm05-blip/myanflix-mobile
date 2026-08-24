@@ -1,6 +1,6 @@
 import { seriesApi } from "@/api/series.api";
 import { mapMovie } from "@/services/movies.service";
-import type { PaginatedResponse, PaginationParams } from "@/types/api";
+import type { PaginatedResponse, PaginationParams, RequestSignalOptions } from "@/types/api";
 import type { Movie } from "@/types/movie";
 import type {
   PlayerEpisodesResponse,
@@ -12,8 +12,11 @@ import type {
 } from "@/types/series";
 
 export const seriesService = {
-  async getSeries(query: SeriesQuery = {}): Promise<PaginatedResponse<SeriesListItem>> {
-    return seriesApi.getSeries(query);
+  async getSeries(
+    query: SeriesQuery = {},
+    options: RequestSignalOptions = {},
+  ): Promise<PaginatedResponse<SeriesListItem>> {
+    return seriesApi.getSeries(query, options);
   },
 
   async getSeriesById(id: string): Promise<Series> {

@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+  type ListRenderItemInfo,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ThemedText } from "@/components/ui/ThemedText";
@@ -17,7 +26,7 @@ import { movieCardContent, seriesCardContent } from "@/components/movie/mediaIte
 import { useMovies, useMostPurchased } from "@/hooks/useMovies";
 import { useSeriesList } from "@/hooks/useSeries";
 import { useCategories } from "@/hooks/useCategories";
-import { useDebounce } from "@/hooks/useDebounce";
+import { useSearchTerm, SEARCH_MIN_LENGTH } from "@/hooks/useSearchTerm";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 import type { SearchStackParamList } from "@/navigation/types";
@@ -34,11 +43,31 @@ const RECENT_LIMIT = 6;
 /** Shared empty list so the loading rails don't get a fresh array each render. */
 const NO_MOVIES: Movie[] = [];
 
+/**
+ * Module scope on purpose. Both are handed to FlatList, whose cells are
+ * PureComponents — an inline `() => <View/>` separator or `(item) => item.id`
+ * extractor would be a fresh identity on every keystroke and re-render every
+ * visible row for a change that only touched the search field.
+ */
+function ListSeparator() {
+  return <View style={styles.separator} />;
+}
+const keyExtractor = (item: { id: string }) => item.id;
+
 export function SearchScreen({ navigation, route }: Props) {
   const { t } = useLanguage();
   const [tab, setTab] = useState<Tab>(route.params?.initialTab ?? "all");
-  const [searchText, setSearchText] = useState("");
-  const debouncedSearch = useDebounce(searchText, 400);
+  // `searchText` is what the field shows (every keystroke); `effectiveTerm` is
+  // the debounced, >= SEARCH_MIN_LENGTH term that is allowed to reach a query
+  // key or a filter. Nothing below should read `searchText` for filtering.
+  const {
+    term: searchText,
+    setTerm: setSearchText,
+    effectiveTerm,
+    isDebouncing,
+    isTooShort,
+    clear: clearSearch,
+  } = useSearchTerm();
   const [categoryId, setCategoryId] = useState<string | undefined>();
   const [language, setLanguage] = useState<string | undefined>();
   const [year, setYear] = useState<number | undefined>();
@@ -60,7 +89,9 @@ export function SearchScreen({ navigation, route }: Props) {
   }, [requestedTab, navigation]);
 
   const categoriesQuery = useCategories();
-  const moviesQuery = useMovies({ search: debouncedSearch || undefined, categoryId, limit: 50 });
+  // A too-short term simply omits `search`, rather than disabling the query —
+  // the key stays valid and the unfiltered catalogue keeps showing.
+  const moviesQuery = useMovies({ search: effectiveTerm || undefined, categoryId, limit: 50 });
   const seriesQuery = useSeriesList({ limit: 100, accessType: access === "ALL" ? undefined : access });
   const popularQuery = useMostPurchased();
 
@@ -87,15 +118,19 @@ export function SearchScreen({ navigation, route }: Props) {
     [moviesQuery.data, language, year, access],
   );
 
+  // Series search is client-side because the backend's /series endpoint has no
+  // `search` param at all — not an oversight here. It still keys off the same
+  // `effectiveTerm` as the movies query, so both tabs update in lockstep and a
+  // keystroke does not re-filter this list SEARCH_DEBOUNCE_MS early.
   const filteredSeries = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase();
+    const query = effectiveTerm.toLowerCase();
     return (seriesQuery.data?.items ?? []).filter(
       (s) =>
         (!query || s.title.toLowerCase().includes(query)) &&
         (!categoryId || s.categories.some((c) => c.id === categoryId)) &&
         (!language || s.language === language),
     );
-  }, [seriesQuery.data, debouncedSearch, categoryId, language]);
+  }, [seriesQuery.data, effectiveTerm, categoryId, language]);
 
   const recommendedMovies = useMemo(
     () => [...(moviesQuery.data?.items ?? [])].sort((a, b) => b.rating - a.rating),
@@ -131,17 +166,60 @@ export function SearchScreen({ navigation, route }: Props) {
     [seriesQuery.data, t, goToSeriesDetails],
   );
 
-  const rememberSearch = (term: string) => {
+  const rememberSearch = useCallback((term: string) => {
     const trimmed = term.trim();
     if (!trimmed) return;
     setRecentSearches((current) => [trimmed, ...current.filter((item) => item !== trimmed)].slice(0, RECENT_LIMIT));
-  };
+  }, []);
 
-  const isSearching = tab === "movies" || tab === "series";
-  /** The field has text the debounce hasn't handed to the query yet. */
-  const isTyping = isSearching && searchText.trim() !== debouncedSearch.trim();
+  // The row renderers must not close over `searchText` — that would give them a
+  // new identity on every keystroke and re-render every visible FlatList cell
+  // (RN's CellRenderer is a PureComponent, so a stable renderItem is what keeps
+  // the rows still). Read the field's value at press time from a ref instead.
+  const searchTextRef = useRef(searchText);
+  useEffect(() => {
+    searchTextRef.current = searchText;
+  }, [searchText]);
+  const rememberCurrentSearch = useCallback(() => rememberSearch(searchTextRef.current), [rememberSearch]);
+
+  const renderMovieItem = useCallback(
+    ({ item }: ListRenderItemInfo<Movie>) => (
+      <MediaCard
+        {...movieCardContent(item)}
+        onPress={() => {
+          rememberCurrentSearch();
+          goToMovieDetails(item);
+        }}
+      />
+    ),
+    [rememberCurrentSearch, goToMovieDetails],
+  );
+
+  const renderSeriesItem = useCallback(
+    ({ item }: ListRenderItemInfo<SeriesListItem>) => (
+      <MediaCard
+        {...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount)))}
+        onPress={() => {
+          rememberCurrentSearch();
+          goToSeriesDetails(item);
+        }}
+      />
+    ),
+    [t, rememberCurrentSearch, goToSeriesDetails],
+  );
+
+  /** The two tabs that own the search field. */
+  const isSearchTab = tab === "movies" || tab === "series";
+  /**
+   * The loading affordance. True through the debounce window as well as the
+   * request, which is the point — without the first half the field sits silent
+   * for SEARCH_DEBOUNCE_MS showing the previous term's results. On the series
+   * tab the filtering is client-side, so only its page load counts.
+   */
+  const resultsQuery = tab === "series" ? seriesQuery : moviesQuery;
+  const isSearching = isSearchTab && (isDebouncing || resultsQuery.isFetching);
   const resultCount = tab === "movies" ? filteredMovies.length : filteredSeries.length;
-  const showRecents = isSearching && searchText.length === 0 && recentSearches.length > 0;
+  const showRecents = isSearchTab && searchText.length === 0 && recentSearches.length > 0;
   const resetFilters = () => {
     setCategoryId(undefined);
     setLanguage(undefined);
@@ -179,7 +257,7 @@ export function SearchScreen({ navigation, route }: Props) {
     <View style={styles.container}>
       <AppTopBar
         trailing={
-          isSearching ? (
+          isSearchTab ? (
             <PressableScale
               style={styles.filterButton}
               onPress={() => setFiltersOpen(true)}
@@ -198,31 +276,48 @@ export function SearchScreen({ navigation, route }: Props) {
         }
       >
         <View style={styles.headerBlock}>
-          {isSearching && (
-            <View style={styles.searchBar}>
-              <Ionicons name="search" size={18} color={theme.colors.textFaint} />
-              <TextInput
-                style={styles.input}
-                placeholder={t.search.placeholder}
-                placeholderTextColor={theme.colors.textFaint}
-                value={searchText}
-                onChangeText={setSearchText}
-                returnKeyType="search"
-                autoCorrect={false}
-                onSubmitEditing={() => rememberSearch(searchText)}
-              />
-              {isTyping ? (
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-              ) : searchText.length > 0 ? (
-                <PressableScale
-                  onPress={() => setSearchText("")}
-                  style={styles.clearButton}
-                  accessibilityLabel={t.common.clear}
-                >
-                  <Ionicons name="close-circle" size={18} color={theme.colors.textFaint} />
-                </PressableScale>
-              ) : null}
-            </View>
+          {isSearchTab && (
+            <>
+              <View style={styles.searchBar}>
+                {/* The field's own glyph doubles as the progress indicator —
+                    the leading search icon becomes a spinner in place, exactly
+                    as the web browse bar does it. It must NOT take over the
+                    trailing clear button's slot: `isSearching` is true from the
+                    first keystroke through the request, which is precisely when
+                    a user wants to abandon the search, and this is the only
+                    clear affordance on the screen. */}
+                <View style={styles.searchGlyph}>
+                  {isSearching ? (
+                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                  ) : (
+                    <Ionicons name="search" size={18} color={theme.colors.textFaint} />
+                  )}
+                </View>
+                <TextInput
+                  style={styles.input}
+                  placeholder={t.search.placeholder}
+                  placeholderTextColor={theme.colors.textFaint}
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  returnKeyType="search"
+                  autoCorrect={false}
+                  onSubmitEditing={rememberCurrentSearch}
+                />
+                {/* Mounted for as long as there is anything to clear — never
+                    gated on the loading state. */}
+                {searchText.length > 0 && (
+                  <PressableScale onPress={clearSearch} style={styles.clearButton} accessibilityLabel={t.common.clear}>
+                    <Ionicons name="close-circle" size={18} color={theme.colors.textFaint} />
+                  </PressableScale>
+                )}
+              </View>
+              {/* A hint, not an error — the unfiltered view stays on screen. */}
+              {isTooShort && (
+                <ThemedText variant="caption" style={styles.hint}>
+                  {t.search.minChars.replace("{n}", String(SEARCH_MIN_LENGTH))}
+                </ThemedText>
+              )}
+            </>
           )}
 
           <SegmentedControl
@@ -299,7 +394,7 @@ export function SearchScreen({ navigation, route }: Props) {
           <EmptyState message={t.common.somethingWentWrong} icon="cloud-offline-outline" tone={theme.colors.danger} />
         ) : filteredMovies.length === 0 ? (
           <EmptyState
-            message={debouncedSearch ? t.search.noResults : t.profile.empty}
+            message={effectiveTerm ? t.search.noResults : t.profile.empty}
             icon="film-outline"
             actionLabel={activeFilterCount > 0 ? t.common.reset : undefined}
             onAction={activeFilterCount > 0 ? resetFilters : undefined}
@@ -307,21 +402,13 @@ export function SearchScreen({ navigation, route }: Props) {
         ) : (
           <FlatList
             data={filteredMovies}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             ListHeaderComponent={listHeader}
             contentContainerStyle={styles.listContent}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
+            ItemSeparatorComponent={ListSeparator}
             keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => (
-              <MediaCard
-                {...movieCardContent(item)}
-                onPress={() => {
-                  rememberSearch(searchText);
-                  goToMovieDetails(item);
-                }}
-              />
-            )}
+            renderItem={renderMovieItem}
             initialNumToRender={6}
             maxToRenderPerBatch={6}
             windowSize={5}
@@ -334,7 +421,7 @@ export function SearchScreen({ navigation, route }: Props) {
         <EmptyState message={t.common.somethingWentWrong} icon="cloud-offline-outline" tone={theme.colors.danger} />
       ) : filteredSeries.length === 0 ? (
         <EmptyState
-          message={debouncedSearch ? t.search.noResults : t.profile.empty}
+          message={effectiveTerm ? t.search.noResults : t.profile.empty}
           icon="tv-outline"
           actionLabel={activeFilterCount > 0 ? t.common.reset : undefined}
           onAction={activeFilterCount > 0 ? resetFilters : undefined}
@@ -342,21 +429,13 @@ export function SearchScreen({ navigation, route }: Props) {
       ) : (
         <FlatList
           data={filteredSeries}
-          keyExtractor={(item) => item.id}
+          keyExtractor={keyExtractor}
           ListHeaderComponent={listHeader}
           contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ItemSeparatorComponent={ListSeparator}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => (
-            <MediaCard
-              {...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount)))}
-              onPress={() => {
-                rememberSearch(searchText);
-                goToSeriesDetails(item);
-              }}
-            />
-          )}
+          renderItem={renderSeriesItem}
           initialNumToRender={6}
           maxToRenderPerBatch={6}
           windowSize={5}
@@ -462,7 +541,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: theme.font.regular,
   },
+  /** Fixed box so the icon → spinner swap never nudges the input's width. */
+  searchGlyph: { width: 20, height: 20, alignItems: "center", justifyContent: "center" },
   clearButton: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
+  hint: { paddingHorizontal: theme.spacing.xs },
   filterButton: {
     width: theme.layout.minTouch,
     height: theme.layout.minTouch,
