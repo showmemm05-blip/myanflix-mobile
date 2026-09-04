@@ -3,12 +3,15 @@ import { commentsService } from "@/services/comments.service";
 import type { CommentTarget } from "@/types/comment";
 
 /**
- * One key per title, spelled out with both ids so a movie and a series can
- * never collide in the cache and so posting a comment invalidates exactly the
- * thread it belongs to.
+ * One key per title, spelled out with all three ids so a movie, a series and
+ * a book can never collide in the cache and so posting a comment invalidates
+ * exactly the thread it belongs to.
  */
 function commentsKey(target: CommentTarget) {
-  return ["comments", { movieId: target.movieId ?? null, seriesId: target.seriesId ?? null }] as const;
+  return [
+    "comments",
+    { movieId: target.movieId ?? null, seriesId: target.seriesId ?? null, bookId: target.bookId ?? null },
+  ] as const;
 }
 
 export function useComments(target: CommentTarget) {

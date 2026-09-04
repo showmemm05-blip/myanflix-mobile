@@ -6,6 +6,7 @@ import type {
   PlayerEpisodesResponse,
   SeasonSummary,
   Series,
+  SeriesFacets,
   SeriesListItem,
   SeriesPurchaseEntry,
   SeriesQuery,
@@ -17,6 +18,10 @@ export const seriesService = {
     options: RequestSignalOptions = {},
   ): Promise<PaginatedResponse<SeriesListItem>> {
     return seriesApi.getSeries(query, options);
+  },
+
+  async getFacets(): Promise<SeriesFacets> {
+    return seriesApi.getFacets();
   },
 
   async getSeriesById(id: string): Promise<Series> {

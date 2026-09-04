@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { MediaCard, MediaCardSkeleton } from "@/components/common/MediaCard";
 import { TopBar } from "@/components/layout/TopBar";
 import { useWatchHistory } from "@/hooks/useVideo";
+import { usePosterGrid } from "@/hooks/usePosterGrid";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { formatDuration } from "@/utils/format";
 import { theme } from "@/theme";
@@ -14,6 +15,7 @@ type Props = NativeStackScreenProps<LibraryStackParamList, "WatchHistory">;
 
 export function WatchHistoryScreen({ navigation }: Props) {
   const { t } = useLanguage();
+  const grid = usePosterGrid();
   const historyQuery = useWatchHistory({ limit: 50 });
   // Presentation-only spinner state for pull-to-refresh.
   const [refreshing, setRefreshing] = useState(false);
@@ -36,9 +38,10 @@ export function WatchHistoryScreen({ navigation }: Props) {
       <TopBar title={t.profile.watchHistory} onBack={() => navigation.goBack()} backAccessibilityLabel={t.common.back} />
 
       {historyQuery.isLoading ? (
-        <View style={styles.skeletonList}>
-          <MediaCardSkeleton />
-          <MediaCardSkeleton />
+        <View style={styles.skeletonGrid}>
+          {Array.from({ length: 6 }).map((_, index) => (
+            <MediaCardSkeleton key={index} width={grid.cellWidth} />
+          ))}
         </View>
       ) : historyQuery.isError ? (
         <EmptyState message={t.common.somethingWentWrong} icon="alert-circle-outline" tone={theme.colors.danger} />
@@ -46,9 +49,13 @@ export function WatchHistoryScreen({ navigation }: Props) {
         <EmptyState message={t.profile.empty} icon="time-outline" />
       ) : (
         <FlatList
+          key={`history-grid-${grid.columns}`}
           data={historyQuery.data.items}
+          numColumns={grid.columns}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={styles.gridContent}
+          columnWrapperStyle={styles.gridRow}
+          ItemSeparatorComponent={RowSeparator}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
@@ -59,8 +66,8 @@ export function WatchHistoryScreen({ navigation }: Props) {
               progressBackgroundColor={theme.colors.surface}
             />
           }
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
+          initialNumToRender={9}
+          maxToRenderPerBatch={9}
           windowSize={7}
           removeClippedSubviews
           renderItem={({ item }) => {
@@ -68,16 +75,14 @@ export function WatchHistoryScreen({ navigation }: Props) {
             return (
               <MediaCard
                 title={item.movieTitle}
-                imageUrl={item.posterUrl}
-                // Only a poster exists on a history entry, so it fills the
-                // 16:9 still and the overlapping tile is suppressed.
-                showPoster={false}
+                posterUrl={item.posterUrl}
                 progress={percent / 100}
-                meta={[item.durationMinutes ? formatDuration(item.durationMinutes) : null, `${percent}%`]}
+                cornerLabel={`${percent}%`}
+                meta={[item.durationMinutes ? formatDuration(item.durationMinutes) : null]}
+                width={grid.cellWidth}
+                // Tap resumes via the detail screen — the old explicit "resume"
+                // button pointed at the exact same destination.
                 onPress={() => goToDetails(item.movieId)}
-                // Same destination as pressing the card — a explicit "continue"
-                // affordance, not a new action.
-                action={{ icon: "play", label: t.movie.resume, onPress: () => goToDetails(item.movieId) }}
               />
             );
           }}
@@ -87,13 +92,24 @@ export function WatchHistoryScreen({ navigation }: Props) {
   );
 }
 
+function RowSeparator() {
+  return <View style={styles.rowGap} />;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  skeletonList: { paddingHorizontal: theme.layout.screenPadding, paddingTop: theme.spacing.md, gap: theme.spacing.lg },
-  listContent: {
-    paddingHorizontal: theme.layout.screenPadding,
+  rowGap: { height: 16 },
+  gridContent: {
     paddingTop: theme.spacing.md,
     paddingBottom: theme.layout.tabBarClearance,
-    gap: theme.spacing.lg,
+  },
+  gridRow: { gap: 12, paddingHorizontal: theme.layout.screenPadding },
+  skeletonGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    rowGap: 16,
+    paddingHorizontal: theme.layout.screenPadding,
+    paddingTop: theme.spacing.md,
   },
 });

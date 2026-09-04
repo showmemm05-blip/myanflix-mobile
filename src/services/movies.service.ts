@@ -1,5 +1,5 @@
 import { moviesApi, type BackendMovie } from "@/api/movies.api";
-import type { Movie, MovieQuery, PurchaseEntry } from "@/types/movie";
+import type { Movie, MovieFacets, MovieQuery, PurchaseEntry } from "@/types/movie";
 import type { PaginatedResponse, PaginationParams, RequestSignalOptions } from "@/types/api";
 
 export function mapMovie(raw: BackendMovie): Movie {
@@ -10,6 +10,10 @@ export const moviesService = {
   async getMovies(query: MovieQuery = {}, options: RequestSignalOptions = {}): Promise<PaginatedResponse<Movie>> {
     const res = await moviesApi.getMovies(query, options);
     return { ...res, items: res.items.map(mapMovie) };
+  },
+
+  async getFacets(): Promise<MovieFacets> {
+    return moviesApi.getFacets();
   },
 
   async getMovieById(id: string): Promise<Movie> {

@@ -1,4 +1,4 @@
-import type { AccessType } from "@/types/movie";
+import type { AccessType, FacetValue } from "@/types/movie";
 import type { MovieCategoryRef } from "@/types/category";
 
 export interface Series {
@@ -56,8 +56,29 @@ export interface PlayerEpisodesResponse {
   seasons: PlayerSeasonGroup[];
 }
 
+/**
+ * The series subset of the canonical sort vocabulary — no rating/mostViewed/
+ * mostPurchased in v1 (Series has no rating column and no per-series watch
+ * aggregate), so the UI simply doesn't offer them on the series tab.
+ */
+export type SeriesSort = "relevance" | "recentlyAdded" | "newest" | "oldest" | "title";
+
+/** Same wire format as MovieQuery: arrays travel as CSV, OR within a facet. */
 export interface SeriesQuery {
   page?: number;
   limit?: number;
   accessType?: AccessType;
+  search?: string;
+  genres?: string[];
+  languages?: string[];
+  yearFrom?: number;
+  yearTo?: number;
+  sort?: SeriesSort;
+}
+
+/** GET /series/facets — genres/languages/years over published series only. */
+export interface SeriesFacets {
+  genres: FacetValue[];
+  languages: FacetValue[];
+  years: { min: number; max: number } | null;
 }

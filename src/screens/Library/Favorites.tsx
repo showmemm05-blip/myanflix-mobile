@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react";
-import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
+import { Alert, FlatList, RefreshControl, StyleSheet, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { MediaCard, MediaCardSkeleton } from "@/components/common/MediaCard";
 import { TopBar } from "@/components/layout/TopBar";
+import { movieCardContent, seriesCardContent } from "@/components/movie/mediaItems";
 import { useMovies } from "@/hooks/useMovies";
 import { useSeriesList } from "@/hooks/useSeries";
+import { usePosterGrid } from "@/hooks/usePosterGrid";
 import { useToggleWatchlist, useWatchlist } from "@/hooks/useWatchlist";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { formatDuration } from "@/utils/format";
 import { theme } from "@/theme";
 import type { LibraryStackParamList } from "@/navigation/types";
 import type { Movie } from "@/types/movie";
@@ -20,6 +21,7 @@ type Tab = "movies" | "series";
 
 export function FavoritesScreen({ navigation }: Props) {
   const { t } = useLanguage();
+  const grid = usePosterGrid();
   const [tab, setTab] = useState<Tab>("movies");
   const watchlistQuery = useWatchlist();
   const toggleWatchlist = useToggleWatchlist();
@@ -40,9 +42,15 @@ export function FavoritesScreen({ navigation }: Props) {
     return (seriesQuery.data?.items ?? []).filter((s) => ids.has(s.id));
   }, [watchlistQuery.data, seriesQuery.data]);
 
-  // Un-favourite in place, same as the web watchlist's per-card remove control:
-  // one tap, no confirmation, the row disappears as the ids come back.
-  const removeFavorite = (id: string) => toggleWatchlist.mutate(id);
+  // The old card carried a per-row remove button; the portrait card has no
+  // trailing control, so the same capability lives on long-press with a
+  // confirm — the row disappears as the ids come back.
+  const confirmRemove = (id: string, title: string) => {
+    Alert.alert(t.movie.removeFromFavorites, title, [
+      { text: t.common.cancel, style: "cancel" },
+      { text: t.common.remove, style: "destructive", onPress: () => toggleWatchlist.mutate(id) },
+    ]);
+  };
 
   const goToMovieDetails = (movie: Movie) => {
     navigation.getParent()?.navigate("HomeTab", { screen: "MovieDetails", params: { movieId: movie.id } });
@@ -89,9 +97,10 @@ export function FavoritesScreen({ navigation }: Props) {
       </TopBar>
 
       {isLoading ? (
-        <View style={styles.skeletonList}>
-          <MediaCardSkeleton />
-          <MediaCardSkeleton />
+        <View style={styles.skeletonGrid}>
+          {Array.from({ length: 6 }).map((_, index) => (
+            <MediaCardSkeleton key={index} width={grid.cellWidth} />
+          ))}
         </View>
       ) : isError ? (
         <EmptyState message={t.common.somethingWentWrong} icon="alert-circle-outline" tone={theme.colors.danger} />
@@ -100,30 +109,25 @@ export function FavoritesScreen({ navigation }: Props) {
           <EmptyState message={t.profile.empty} icon="heart-outline" tone={theme.colors.danger} />
         ) : (
           <FlatList
+            key={`movies-grid-${grid.columns}`}
             data={favoriteMovies}
+            numColumns={grid.columns}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={styles.gridContent}
+            columnWrapperStyle={styles.gridRow}
+            ItemSeparatorComponent={RowSeparator}
             showsVerticalScrollIndicator={false}
             refreshControl={refreshControl}
-            initialNumToRender={6}
-            maxToRenderPerBatch={6}
+            initialNumToRender={9}
+            maxToRenderPerBatch={9}
             windowSize={5}
             removeClippedSubviews
             renderItem={({ item }) => (
               <MediaCard
-                title={item.title}
-                imageUrl={item.coverUrl ?? item.posterUrl}
-                posterUrl={item.posterUrl}
-                accessType={item.accessType}
-                rating={item.rating}
-                meta={[item.releaseYear, item.duration ? formatDuration(item.duration) : null, item.genre]}
+                {...movieCardContent(item)}
+                width={grid.cellWidth}
                 onPress={() => goToMovieDetails(item)}
-                action={{
-                  icon: "heart-dislike",
-                  label: t.movie.removeFromFavorites,
-                  onPress: () => removeFavorite(item.id),
-                  color: theme.colors.danger,
-                }}
+                onLongPress={() => confirmRemove(item.id, item.title)}
               />
             )}
           />
@@ -132,33 +136,25 @@ export function FavoritesScreen({ navigation }: Props) {
         <EmptyState message={t.profile.empty} icon="heart-outline" tone={theme.colors.danger} />
       ) : (
         <FlatList
+          key={`series-grid-${grid.columns}`}
           data={favoriteSeries}
+          numColumns={grid.columns}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={styles.gridContent}
+          columnWrapperStyle={styles.gridRow}
+          ItemSeparatorComponent={RowSeparator}
           showsVerticalScrollIndicator={false}
           refreshControl={refreshControl}
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
+          initialNumToRender={9}
+          maxToRenderPerBatch={9}
           windowSize={5}
           removeClippedSubviews
           renderItem={({ item }) => (
             <MediaCard
-              title={item.title}
-              imageUrl={item.coverUrl ?? item.posterUrl}
-              posterUrl={item.posterUrl}
-              accessType={item.accessType}
-              meta={[
-                item.releaseYear,
-                t.series.episodeCount.replace("{n}", String(item.episodeCount)),
-                item.genre,
-              ]}
+              {...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount)))}
+              width={grid.cellWidth}
               onPress={() => goToSeriesDetails(item)}
-              action={{
-                icon: "heart-dislike",
-                label: t.movie.removeFromFavorites,
-                onPress: () => removeFavorite(item.id),
-                color: theme.colors.danger,
-              }}
+              onLongPress={() => confirmRemove(item.id, item.title)}
             />
           )}
         />
@@ -167,15 +163,25 @@ export function FavoritesScreen({ navigation }: Props) {
   );
 }
 
+function RowSeparator() {
+  return <View style={styles.rowGap} />;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   segment: { paddingHorizontal: theme.layout.screenPadding, paddingBottom: theme.spacing.sm },
-  skeletonList: { paddingHorizontal: theme.layout.screenPadding, paddingTop: theme.spacing.md, gap: theme.spacing.lg },
-  // One column: a 16:9 dossier card at half width is unreadable on a phone.
-  listContent: {
-    paddingHorizontal: theme.layout.screenPadding,
+  rowGap: { height: 16 },
+  gridContent: {
     paddingTop: theme.spacing.md,
     paddingBottom: theme.layout.tabBarClearance,
-    gap: theme.spacing.lg,
+  },
+  gridRow: { gap: 12, paddingHorizontal: theme.layout.screenPadding },
+  skeletonGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    rowGap: 16,
+    paddingHorizontal: theme.layout.screenPadding,
+    paddingTop: theme.spacing.md,
   },
 });

@@ -32,6 +32,10 @@ export function SubscribeScreen({ navigation }: Props) {
   const plans = plansQuery.data ?? [];
   const balance = walletQuery.data?.balance ?? 0;
 
+  // Same `{n}` + separate-singular convention as comments.count/countOne.
+  const formatPlanDuration = (days: number) =>
+    days === 1 ? t.subscription.planDurationOne : t.subscription.planDuration.replace("{n}", String(days));
+
   const handleSubscribe = async (planId: string) => {
     setError(null);
     setPendingPlanId(planId);
@@ -147,6 +151,9 @@ export function SubscribeScreen({ navigation }: Props) {
                       <ThemedText variant="section" numberOfLines={1}>
                         {plan.name}
                       </ThemedText>
+                      <ThemedText variant="caption" style={styles.planDuration}>
+                        {formatPlanDuration(plan.durationDays)}
+                      </ThemedText>
                     </View>
 
                     <ThemedText variant="display" tabular numberOfLines={1} style={styles.planPrice}>
@@ -224,6 +231,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
   },
   planTitleBlock: { gap: theme.spacing.xs, alignItems: "flex-start" },
+  planDuration: { color: theme.colors.textMuted },
   planPrice: { color: theme.colors.premium },
   noPlans: { alignItems: "center", gap: theme.spacing.sm, paddingVertical: theme.spacing.lg },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: theme.spacing.md, padding: theme.layout.screenPadding },

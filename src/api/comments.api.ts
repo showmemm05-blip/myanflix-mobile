@@ -9,8 +9,8 @@ export interface CreateCommentInput {
 
 export const commentsApi = {
   /**
-   * A title's visible thread. Public — reading works without a token, so the
-   * section renders for a signed-out visitor too.
+   * A title's visible thread (movie, series or book). Public — reading works
+   * without a token, so the section renders for a signed-out visitor too.
    *
    * Deliberately not paginated: the server caps one read and returns every
    * top-level comment with its replies nested, which is exactly what the

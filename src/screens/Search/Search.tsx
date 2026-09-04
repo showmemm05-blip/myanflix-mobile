@@ -15,33 +15,50 @@ import { ThemedText } from "@/components/ui/ThemedText";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PressableScale } from "@/components/ui/PressableScale";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import { BottomSheet } from "@/components/ui/BottomSheet";
-import { Button } from "@/components/ui/Button";
 import { AppTopBar } from "@/components/layout/AppTopBar";
 import { Chip } from "@/components/common/Chip";
 import { MediaCard, MediaCardSkeleton } from "@/components/common/MediaCard";
 import { MovieRow } from "@/components/movie/MovieRow";
 import { MediaRail } from "@/components/movie/MediaRail";
 import { movieCardContent, seriesCardContent } from "@/components/movie/mediaItems";
-import { useMovies, useMostPurchased } from "@/hooks/useMovies";
-import { useSeriesList } from "@/hooks/useSeries";
-import { useCategories } from "@/hooks/useCategories";
+import {
+  AGE_RATING_LABELS,
+  DEFAULT_MOVIE_SORT,
+  DEFAULT_SERIES_SORT,
+  DURATION_SLIDER_MAX,
+  SearchFilterSheet,
+  countMovieFilters,
+  countSeriesFilters,
+  createMovieFilters,
+  createSeriesFilters,
+  movieFiltersToQuery,
+  seriesFiltersToQuery,
+  type MovieFilters,
+  type SeriesFilters,
+} from "@/components/search/SearchFilterSheet";
+import { useMovies, useMostPurchased, useMoviesInfinite } from "@/hooks/useMovies";
+import { useSeriesList, useSeriesInfinite } from "@/hooks/useSeries";
+import { usePosterGrid } from "@/hooks/usePosterGrid";
+import { useBooksInfinite } from "@/hooks/useBooks";
+import { BookCard } from "@/components/books/BookCard";
+import type { Book } from "@/types/book";
 import { useSearchTerm, SEARCH_MIN_LENGTH } from "@/hooks/useSearchTerm";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 import type { SearchStackParamList } from "@/navigation/types";
-import type { Movie, AccessType } from "@/types/movie";
-import type { SeriesListItem } from "@/types/series";
+import type { Movie, MovieSort } from "@/types/movie";
+import type { SeriesListItem, SeriesSort } from "@/types/series";
 
 type Props = NativeStackScreenProps<SearchStackParamList, "Search">;
 
 type Tab = "all" | "movies" | "series" | "books" | "music";
-type AccessFilter = "ALL" | AccessType;
 
 /** How many past queries the in-memory recent list keeps. */
 const RECENT_LIMIT = 6;
 /** Shared empty list so the loading rails don't get a fresh array each render. */
 const NO_MOVIES: Movie[] = [];
+/** Both frontends page the filtered catalog with this (backend caps at 100). */
+const PAGE_SIZE = 30;
 
 /**
  * Module scope on purpose. Both are handed to FlatList, whose cells are
@@ -49,13 +66,21 @@ const NO_MOVIES: Movie[] = [];
  * extractor would be a fresh identity on every keystroke and re-render every
  * visible row for a change that only touched the search field.
  */
-function ListSeparator() {
-  return <View style={styles.separator} />;
+function RowSeparator() {
+  return <View style={styles.rowGap} />;
 }
 const keyExtractor = (item: { id: string }) => item.id;
 
+/** One removable pill in the active-filters row. */
+interface FilterPill {
+  key: string;
+  label: string;
+  onRemove: () => void;
+}
+
 export function SearchScreen({ navigation, route }: Props) {
   const { t } = useLanguage();
+  const grid = usePosterGrid();
   const [tab, setTab] = useState<Tab>(route.params?.initialTab ?? "all");
   // `searchText` is what the field shows (every keystroke); `effectiveTerm` is
   // the debounced, >= SEARCH_MIN_LENGTH term that is allowed to reach a query
@@ -68,10 +93,10 @@ export function SearchScreen({ navigation, route }: Props) {
     isTooShort,
     clear: clearSearch,
   } = useSearchTerm();
-  const [categoryId, setCategoryId] = useState<string | undefined>();
-  const [language, setLanguage] = useState<string | undefined>();
-  const [year, setYear] = useState<number | undefined>();
-  const [access, setAccess] = useState<AccessFilter>("ALL");
+  // THE canonical filter state — one object per tab, nothing else re-derives
+  // or re-implements any of it. The server does all filtering and sorting.
+  const [filters, setFilters] = useState<MovieFilters>(createMovieFilters);
+  const [seriesFilters, setSeriesFilters] = useState<SeriesFilters>(createSeriesFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Purely local (in-memory) — nothing is persisted or sent anywhere.
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -88,60 +113,70 @@ export function SearchScreen({ navigation, route }: Props) {
     navigation.setParams({ initialTab: undefined });
   }, [requestedTab, navigation]);
 
-  const categoriesQuery = useCategories();
-  // A too-short term simply omits `search`, rather than disabling the query —
-  // the key stays valid and the unfiltered catalogue keeps showing.
-  const moviesQuery = useMovies({ search: effectiveTerm || undefined, categoryId, limit: 50 });
-  const seriesQuery = useSeriesList({ limit: 100, accessType: access === "ALL" ? undefined : access });
+  // Relevance is only honest while a term is active — the server would fall
+  // back to recentlyAdded anyway, so the state follows it to keep the sheet
+  // and the chips row truthful when the term is cleared.
+  useEffect(() => {
+    if (effectiveTerm) return;
+    setFilters((f) => (f.sort === "relevance" ? { ...f, sort: DEFAULT_MOVIE_SORT } : f));
+    setSeriesFilters((f) => (f.sort === "relevance" ? { ...f, sort: DEFAULT_SERIES_SORT } : f));
+  }, [effectiveTerm]);
+
+  // The browse rails on the "all" tab — deliberately unfiltered.
+  // Two rails, two server sorts — client-sorting one 50-row page was only
+  // honest while the catalog fit in 50 rows.
+  const railsQuery = useMovies({ limit: 12, sort: "rating" });
+  const latestRailQuery = useMovies({ limit: 12, sort: "recentlyAdded" });
+  const seriesRailQuery = useSeriesList({ limit: 100 });
   const popularQuery = useMostPurchased();
 
-  // Backend has no language/year filter params for movies, and no
-  // search/genre/language/year params at all for series — derived and
-  // filtered client-side over whatever page came back, same limitation the
-  // web app documents on its MovieQuery type.
-  const availableLanguages = useMemo(
-    () => [...new Set((moviesQuery.data?.items ?? []).map((m) => m.language))],
-    [moviesQuery.data],
-  );
-  const availableYears = useMemo(
-    () => [...new Set((moviesQuery.data?.items ?? []).map((m) => m.releaseYear))].sort((a, b) => b - a),
-    [moviesQuery.data],
-  );
-  const filteredMovies = useMemo(
-    () =>
-      (moviesQuery.data?.items ?? []).filter(
-        (m) =>
-          (!language || m.language === language) &&
-          (!year || m.releaseYear === year) &&
-          (access === "ALL" || m.accessType === access),
-      ),
-    [moviesQuery.data, language, year, access],
-  );
+  // The filtered catalog queries. Every filter travels to the backend — there
+  // is ZERO client-side catalog filtering or sorting on this screen anymore.
+  const moviesQuery = useMoviesInfinite({
+    search: effectiveTerm || undefined,
+    ...movieFiltersToQuery(filters),
+    limit: PAGE_SIZE,
+  });
+  const seriesQuery = useSeriesInfinite({
+    search: effectiveTerm || undefined,
+    ...seriesFiltersToQuery(seriesFilters),
+    limit: PAGE_SIZE,
+  });
+  const movies = useMemo(() => moviesQuery.data?.pages.flatMap((page) => page.items) ?? [], [moviesQuery.data]);
+  const series = useMemo(() => seriesQuery.data?.pages.flatMap((page) => page.items) ?? [], [seriesQuery.data]);
 
-  // Series search is client-side because the backend's /series endpoint has no
-  // `search` param at all — not an oversight here. It still keys off the same
-  // `effectiveTerm` as the movies query, so both tabs update in lockstep and a
-  // keystroke does not re-filter this list SEARCH_DEBOUNCE_MS early.
-  const filteredSeries = useMemo(() => {
-    const query = effectiveTerm.toLowerCase();
-    return (seriesQuery.data?.items ?? []).filter(
-      (s) =>
-        (!query || s.title.toLowerCase().includes(query)) &&
-        (!categoryId || s.categories.some((c) => c.id === categoryId)) &&
-        (!language || s.language === language),
-    );
-  }, [seriesQuery.data, effectiveTerm, categoryId, language]);
+  // Books live inline on this tab exactly like movies and series do — the
+  // segment used to be a "go to the catalog" door, which read as broken
+  // ("why are books not rendering here?"). Same search term, same grid.
+  const booksQuery = useBooksInfinite({ search: effectiveTerm || undefined, limit: 24 });
+  const books = useMemo(
+    () => booksQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [booksQuery.data],
+  );
+  const renderBookItem = useCallback(
+    ({ item }: { item: Book }) => (
+      <BookCard
+        title={item.title}
+        author={item.author}
+        coverUrl={item.coverUrl}
+        width={grid.cellWidth}
+        onPress={() => navigation.navigate("BookDetails", { bookId: item.id })}
+      />
+    ),
+    [grid.cellWidth, navigation],
+  );
+  const bookKeyExtractor = useCallback((item: Book) => item.id, []);
 
   const recommendedMovies = useMemo(
-    () => [...(moviesQuery.data?.items ?? [])].sort((a, b) => b.rating - a.rating),
-    [moviesQuery.data],
+    () => (railsQuery.data?.items ?? []),
+    [railsQuery.data],
   );
   const latestMovies = useMemo(
-    () => [...(moviesQuery.data?.items ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [moviesQuery.data],
+    () => (latestRailQuery.data?.items ?? []),
+    [railsQuery.data],
   );
   const popularMovies = useMemo(() => popularQuery.data ?? [], [popularQuery.data]);
-  const activeFilterCount = [categoryId, language, year, access !== "ALL" ? access : undefined].filter(Boolean).length;
+  const activeFilterCount = tab === "series" ? countSeriesFilters(seriesFilters) : countMovieFilters(filters);
 
   // Stable identities so the browse rails' memoized cards survive a keystroke
   // in the search field or a filter change.
@@ -158,12 +193,12 @@ export function SearchScreen({ navigation, route }: Props) {
 
   const seriesRailItems = useMemo(
     () =>
-      (seriesQuery.data?.items ?? []).map((series) => ({
-        key: series.id,
-        ...seriesCardContent(series, t.series.episodeCount.replace("{n}", String(series.episodeCount))),
-        onPress: () => goToSeriesDetails(series),
+      (seriesRailQuery.data?.items ?? []).map((item) => ({
+        key: item.id,
+        ...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount))),
+        onPress: () => goToSeriesDetails(item),
       })),
-    [seriesQuery.data, t, goToSeriesDetails],
+    [seriesRailQuery.data, t, goToSeriesDetails],
   );
 
   const rememberSearch = useCallback((term: string) => {
@@ -182,50 +217,217 @@ export function SearchScreen({ navigation, route }: Props) {
   }, [searchText]);
   const rememberCurrentSearch = useCallback(() => rememberSearch(searchTextRef.current), [rememberSearch]);
 
+  const cellWidth = grid.cellWidth;
   const renderMovieItem = useCallback(
     ({ item }: ListRenderItemInfo<Movie>) => (
       <MediaCard
         {...movieCardContent(item)}
+        width={cellWidth}
         onPress={() => {
           rememberCurrentSearch();
           goToMovieDetails(item);
         }}
       />
     ),
-    [rememberCurrentSearch, goToMovieDetails],
+    [cellWidth, rememberCurrentSearch, goToMovieDetails],
   );
 
   const renderSeriesItem = useCallback(
     ({ item }: ListRenderItemInfo<SeriesListItem>) => (
       <MediaCard
         {...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount)))}
+        width={cellWidth}
         onPress={() => {
           rememberCurrentSearch();
           goToSeriesDetails(item);
         }}
       />
     ),
-    [t, rememberCurrentSearch, goToSeriesDetails],
+    [t, cellWidth, rememberCurrentSearch, goToSeriesDetails],
   );
 
-  /** The two tabs that own the search field. */
-  const isSearchTab = tab === "movies" || tab === "series";
+  /** The two tabs that own the search field and the filter sheet. */
+  // Books ride here too: the books grid is filtered by the same search term
+  // server-side, so hiding the field on that tab turned a term typed on
+  // Movies into an INVISIBLE filter with no way to see or clear it.
+  const isSearchTab = tab === "movies" || tab === "series" || tab === "books";
   /**
    * The loading affordance. True through the debounce window as well as the
    * request, which is the point — without the first half the field sits silent
-   * for SEARCH_DEBOUNCE_MS showing the previous term's results. On the series
-   * tab the filtering is client-side, so only its page load counts.
+   * for SEARCH_DEBOUNCE_MS showing the previous term's results.
    */
   const resultsQuery = tab === "series" ? seriesQuery : moviesQuery;
   const isSearching = isSearchTab && (isDebouncing || resultsQuery.isFetching);
-  const resultCount = tab === "movies" ? filteredMovies.length : filteredSeries.length;
+  /**
+   * The match count is the BACKEND total for the filtered query — never
+   * items.length, which is only however many pages happen to be loaded.
+   */
+  const resultTotal = tab === "series" ? seriesQuery.data?.pages[0]?.total : moviesQuery.data?.pages[0]?.total;
+  const hasActiveQuery = Boolean(effectiveTerm) || activeFilterCount > 0;
   const showRecents = isSearchTab && searchText.length === 0 && recentSearches.length > 0;
-  const resetFilters = () => {
-    setCategoryId(undefined);
-    setLanguage(undefined);
-    setYear(undefined);
-    setAccess("ALL");
-  };
+  const resetFilters = useCallback(() => {
+    setFilters(createMovieFilters());
+    setSeriesFilters(createSeriesFilters());
+  }, []);
+
+  const sortLabel = useCallback(
+    (sort: MovieSort | SeriesSort): string => {
+      switch (sort) {
+        case "relevance":
+          return t.search.sortRelevance;
+        case "newest":
+          return t.search.sortNewest;
+        case "oldest":
+          return t.search.sortOldest;
+        case "rating":
+          return t.search.sortRating;
+        case "title":
+          return t.search.sortTitle;
+        case "mostViewed":
+          return t.search.sortMostViewed;
+        case "mostPurchased":
+          return t.search.sortMostPurchased;
+        default:
+          return t.search.sortRecentlyAdded;
+      }
+    },
+    [t],
+  );
+
+  const yearPillLabel = useCallback(
+    (f: MovieFilters | SeriesFilters): string => {
+      switch (f.yearPreset) {
+        case "this":
+          return t.search.yearPresetThis;
+        case "last5":
+          return t.search.yearPresetLast5;
+        case "2010s":
+          return "2010s";
+        case "2000s":
+          return "2000s";
+        case "older":
+          return t.search.yearPresetOlder;
+        default:
+          return `${f.yearFrom ?? ""}–${f.yearTo ?? ""}`;
+      }
+    },
+    [t],
+  );
+
+  /** One pill per active value — tap removes exactly that value. */
+  const filterPills = useMemo<FilterPill[]>(() => {
+    const pills: FilterPill[] = [];
+    if (tab === "series") {
+      const f = seriesFilters;
+      const set = (partial: Partial<SeriesFilters>) => setSeriesFilters((prev) => ({ ...prev, ...partial }));
+      if (f.sort !== DEFAULT_SERIES_SORT)
+        pills.push({ key: "sort", label: sortLabel(f.sort), onRemove: () => set({ sort: DEFAULT_SERIES_SORT }) });
+      for (const genre of f.genres)
+        pills.push({
+          key: `genre:${genre}`,
+          label: genre,
+          onRemove: () => set({ genres: f.genres.filter((v) => v !== genre) }),
+        });
+      for (const language of f.languages)
+        pills.push({
+          key: `language:${language}`,
+          label: language,
+          onRemove: () => set({ languages: f.languages.filter((v) => v !== language) }),
+        });
+      if (f.yearPreset !== "any")
+        pills.push({
+          key: "year",
+          label: yearPillLabel(f),
+          onRemove: () => set({ yearPreset: "any", yearFrom: undefined, yearTo: undefined }),
+        });
+      if (f.access !== "ALL")
+        pills.push({
+          key: "access",
+          label: f.access === "FREE" ? t.search.accessFree : t.search.accessSubscription,
+          onRemove: () => set({ access: "ALL" }),
+        });
+      return pills;
+    }
+
+    const f = filters;
+    const set = (partial: Partial<MovieFilters>) => setFilters((prev) => ({ ...prev, ...partial }));
+    if (f.sort !== DEFAULT_MOVIE_SORT)
+      pills.push({ key: "sort", label: sortLabel(f.sort), onRemove: () => set({ sort: DEFAULT_MOVIE_SORT }) });
+    for (const genre of f.genres)
+      pills.push({
+        key: `genre:${genre}`,
+        label: genre,
+        onRemove: () => set({ genres: f.genres.filter((v) => v !== genre) }),
+      });
+    for (const language of f.languages)
+      pills.push({
+        key: `language:${language}`,
+        label: language,
+        onRemove: () => set({ languages: f.languages.filter((v) => v !== language) }),
+      });
+    for (const actor of f.actors)
+      pills.push({
+        key: `actor:${actor.id}`,
+        label: actor.name,
+        onRemove: () => set({ actors: f.actors.filter((a) => a.id !== actor.id) }),
+      });
+    for (const director of f.directors)
+      pills.push({
+        key: `director:${director}`,
+        label: director,
+        onRemove: () => set({ directors: f.directors.filter((v) => v !== director) }),
+      });
+    for (const country of f.countries)
+      pills.push({
+        key: `country:${country}`,
+        label: country,
+        onRemove: () => set({ countries: f.countries.filter((v) => v !== country) }),
+      });
+    for (const rating of f.ageRatings)
+      pills.push({
+        key: `ageRating:${rating}`,
+        label: AGE_RATING_LABELS[rating],
+        onRemove: () => set({ ageRatings: f.ageRatings.filter((v) => v !== rating) }),
+      });
+    if (f.yearPreset !== "any")
+      pills.push({
+        key: "year",
+        label: yearPillLabel(f),
+        onRemove: () => set({ yearPreset: "any", yearFrom: undefined, yearTo: undefined }),
+      });
+    if (f.ratingMin > 0 || f.ratingMax < 10)
+      pills.push({
+        key: "rating",
+        label: `★ ${f.ratingMin}–${f.ratingMax}`,
+        onRemove: () => set({ ratingMin: 0, ratingMax: 10 }),
+      });
+    if (f.durationBucket !== "any") {
+      const label =
+        f.durationBucket === "short"
+          ? t.search.durationShort
+          : f.durationBucket === "medium"
+            ? t.search.durationMedium
+            : f.durationBucket === "long"
+              ? t.search.durationLong
+              : `${f.durationMin ?? 0}–${
+                  (f.durationMax ?? DURATION_SLIDER_MAX) >= DURATION_SLIDER_MAX
+                    ? `${DURATION_SLIDER_MAX}+`
+                    : f.durationMax
+                } min`;
+      pills.push({
+        key: "duration",
+        label,
+        onRemove: () => set({ durationBucket: "any", durationMin: undefined, durationMax: undefined }),
+      });
+    }
+    if (f.access !== "ALL")
+      pills.push({
+        key: "access",
+        label: f.access === "FREE" ? t.search.accessFree : t.search.accessSubscription,
+        onRemove: () => set({ access: "ALL" }),
+      });
+    return pills;
+  }, [tab, filters, seriesFilters, sortLabel, yearPillLabel, t]);
 
   const listHeader = (
     <View style={styles.listHeader}>
@@ -247,11 +449,25 @@ export function SearchScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
-      <ThemedText variant="caption" tabular>
-        {t.search.resultsCount.replace("{n}", String(resultCount))}
-      </ThemedText>
+      {/* Only claimed while a search or filter is active, and always the
+          backend's total for the filtered query — never items.length. */}
+      {hasActiveQuery && resultTotal !== undefined && (
+        <ThemedText variant="caption" tabular>
+          {resultTotal === 1
+            ? t.search.resultsCountOne
+            : t.search.resultsCount.replace("{n}", String(resultTotal))}
+        </ThemedText>
+      )}
     </View>
   );
+
+  /** Skeleton row while the next page streams in. */
+  const listFooter =
+    resultsQuery.isFetchingNextPage ? (
+      <View style={styles.footerLoading}>
+        <ActivityIndicator size="small" color={theme.colors.primary} />
+      </View>
+    ) : null;
 
   return (
     <View style={styles.container}>
@@ -334,13 +550,37 @@ export function SearchScreen({ navigation, route }: Props) {
         </View>
       </AppTopBar>
 
+      {/* Active filters, spelled out — one removable chip per value. */}
+      {isSearchTab && filterPills.length > 0 && (
+        <View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillsRow}
+            keyboardShouldPersistTaps="handled"
+          >
+            {filterPills.map((pill) => (
+              <Chip
+                key={pill.key}
+                label={pill.label}
+                selected
+                trailingIcon="close"
+                onPress={pill.onRemove}
+                accessibilityLabel={t.search.removeFilter.replace("{label}", pill.label)}
+              />
+            ))}
+            <Chip label={t.search.clearAll} icon="trash-outline" onPress={resetFilters} />
+          </ScrollView>
+        </View>
+      )}
+
       {tab === "all" ? (
-        moviesQuery.isLoading || popularQuery.isLoading ? (
+        railsQuery.isLoading || popularQuery.isLoading ? (
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.browseContent}>
             <MovieRow title={t.search.recommendedRow} movies={NO_MOVIES} onPressMovie={goToMovieDetails} loading />
             <MovieRow title={t.search.popularRow} movies={NO_MOVIES} onPressMovie={goToMovieDetails} loading />
           </ScrollView>
-        ) : moviesQuery.isError ? (
+        ) : railsQuery.isError ? (
           <EmptyState message={t.common.somethingWentWrong} icon="cloud-offline-outline" tone={theme.colors.danger} />
         ) : (
           <ScrollView
@@ -348,11 +588,11 @@ export function SearchScreen({ navigation, route }: Props) {
             contentContainerStyle={styles.browseContent}
             refreshControl={
               <RefreshControl
-                refreshing={moviesQuery.isRefetching || popularQuery.isRefetching || seriesQuery.isRefetching}
+                refreshing={railsQuery.isRefetching || popularQuery.isRefetching || seriesRailQuery.isRefetching}
                 onRefresh={() => {
-                  moviesQuery.refetch();
+                  railsQuery.refetch();
                   popularQuery.refetch();
-                  seriesQuery.refetch();
+                  seriesRailQuery.refetch();
                 }}
                 tintColor={theme.colors.primary}
                 colors={[theme.colors.primary]}
@@ -384,7 +624,36 @@ export function SearchScreen({ navigation, route }: Props) {
           </ScrollView>
         )
       ) : tab === "books" ? (
-        <EmptyState message={t.search.booksComingSoon} icon="book-outline" />
+        booksQuery.isLoading ? (
+          <ResultsSkeleton />
+        ) : booksQuery.isError ? (
+          <EmptyState message={t.common.somethingWentWrong} icon="cloud-offline-outline" tone={theme.colors.danger} />
+        ) : books.length === 0 ? (
+          <EmptyState message={effectiveTerm ? t.search.noResults : t.search.booksReady} icon="book-outline" />
+        ) : (
+          <FlatList
+            key={`books-grid-${grid.columns}`}
+            data={books}
+            numColumns={grid.columns}
+            keyExtractor={bookKeyExtractor}
+            contentContainerStyle={styles.gridContent}
+            columnWrapperStyle={styles.gridRow}
+            ItemSeparatorComponent={RowSeparator}
+            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled"
+            renderItem={renderBookItem}
+            onEndReachedThreshold={0.6}
+            onEndReached={() => {
+              if (booksQuery.hasNextPage && !booksQuery.isFetchingNextPage) {
+                booksQuery.fetchNextPage();
+              }
+            }}
+            initialNumToRender={9}
+            maxToRenderPerBatch={9}
+            windowSize={5}
+            removeClippedSubviews
+          />
+        )
       ) : tab === "music" ? (
         <EmptyState message={t.search.musicComingSoon} icon="musical-notes-outline" />
       ) : tab === "movies" ? (
@@ -392,7 +661,7 @@ export function SearchScreen({ navigation, route }: Props) {
           <ResultsSkeleton />
         ) : moviesQuery.isError ? (
           <EmptyState message={t.common.somethingWentWrong} icon="cloud-offline-outline" tone={theme.colors.danger} />
-        ) : filteredMovies.length === 0 ? (
+        ) : movies.length === 0 ? (
           <EmptyState
             message={effectiveTerm ? t.search.noResults : t.profile.empty}
             icon="film-outline"
@@ -401,16 +670,35 @@ export function SearchScreen({ navigation, route }: Props) {
           />
         ) : (
           <FlatList
-            data={filteredMovies}
+            key={`movies-grid-${grid.columns}`}
+            data={movies}
+            numColumns={grid.columns}
             keyExtractor={keyExtractor}
             ListHeaderComponent={listHeader}
-            contentContainerStyle={styles.listContent}
-            ItemSeparatorComponent={ListSeparator}
+            ListFooterComponent={listFooter}
+            contentContainerStyle={styles.gridContent}
+            columnWrapperStyle={styles.gridRow}
+            ItemSeparatorComponent={RowSeparator}
             keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="handled"
             renderItem={renderMovieItem}
-            initialNumToRender={6}
-            maxToRenderPerBatch={6}
+            onEndReachedThreshold={0.6}
+            onEndReached={() => {
+              if (moviesQuery.hasNextPage && !moviesQuery.isFetchingNextPage) {
+                moviesQuery.fetchNextPage();
+              }
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={moviesQuery.isRefetching && !moviesQuery.isFetchingNextPage}
+                onRefresh={() => moviesQuery.refetch()}
+                tintColor={theme.colors.primary}
+                colors={[theme.colors.primary]}
+                progressBackgroundColor={theme.colors.surface}
+              />
+            }
+            initialNumToRender={9}
+            maxToRenderPerBatch={9}
             windowSize={5}
             removeClippedSubviews
           />
@@ -419,7 +707,7 @@ export function SearchScreen({ navigation, route }: Props) {
         <ResultsSkeleton />
       ) : seriesQuery.isError ? (
         <EmptyState message={t.common.somethingWentWrong} icon="cloud-offline-outline" tone={theme.colors.danger} />
-      ) : filteredSeries.length === 0 ? (
+      ) : series.length === 0 ? (
         <EmptyState
           message={effectiveTerm ? t.search.noResults : t.profile.empty}
           icon="tv-outline"
@@ -428,93 +716,63 @@ export function SearchScreen({ navigation, route }: Props) {
         />
       ) : (
         <FlatList
-          data={filteredSeries}
+          key={`series-grid-${grid.columns}`}
+          data={series}
+          numColumns={grid.columns}
           keyExtractor={keyExtractor}
           ListHeaderComponent={listHeader}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={ListSeparator}
+          ListFooterComponent={listFooter}
+          contentContainerStyle={styles.gridContent}
+          columnWrapperStyle={styles.gridRow}
+          ItemSeparatorComponent={RowSeparator}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           renderItem={renderSeriesItem}
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
+          onEndReachedThreshold={0.6}
+          onEndReached={() => {
+            if (seriesQuery.hasNextPage && !seriesQuery.isFetchingNextPage) {
+              seriesQuery.fetchNextPage();
+            }
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={seriesQuery.isRefetching && !seriesQuery.isFetchingNextPage}
+              onRefresh={() => seriesQuery.refetch()}
+              tintColor={theme.colors.primary}
+              colors={[theme.colors.primary]}
+              progressBackgroundColor={theme.colors.surface}
+            />
+          }
+          initialNumToRender={9}
+          maxToRenderPerBatch={9}
           windowSize={5}
           removeClippedSubviews
         />
       )}
 
-      <BottomSheet
+      <SearchFilterSheet
         visible={filtersOpen}
         onClose={() => setFiltersOpen(false)}
-        snapHeight={520}
-        title={t.search.filters}
-        showClose
-        footer={<Button title={t.common.done} onPress={() => setFiltersOpen(false)} fullWidth />}
-      >
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <FilterGroup label={t.search.filterGenre}>
-            <Chip label={t.search.allGenres} selected={!categoryId} onPress={() => setCategoryId(undefined)} />
-            {(categoriesQuery.data ?? []).map((c) => (
-              <Chip key={c.id} label={c.name} selected={categoryId === c.id} onPress={() => setCategoryId(c.id)} />
-            ))}
-          </FilterGroup>
-
-          <FilterGroup label={t.search.filterAccess}>
-            <Chip label={t.search.accessAll} selected={access === "ALL"} onPress={() => setAccess("ALL")} />
-            <Chip
-              label={t.search.accessFree}
-              tone="finance"
-              selected={access === "FREE"}
-              onPress={() => setAccess("FREE")}
-            />
-            <Chip
-              label={t.search.accessSubscription}
-              tone="premium"
-              icon="diamond"
-              selected={access === "SUBSCRIPTION"}
-              onPress={() => setAccess("SUBSCRIPTION")}
-            />
-          </FilterGroup>
-
-          {tab === "movies" && availableLanguages.length > 1 && (
-            <FilterGroup label={t.search.filterLanguage}>
-              <Chip label={t.search.allLanguages} selected={!language} onPress={() => setLanguage(undefined)} />
-              {availableLanguages.map((l) => (
-                <Chip key={l} label={l} selected={language === l} onPress={() => setLanguage(l)} />
-              ))}
-            </FilterGroup>
-          )}
-
-          {tab === "movies" && availableYears.length > 1 && (
-            <FilterGroup label={t.search.filterYear}>
-              <Chip label={t.search.allYears} selected={!year} onPress={() => setYear(undefined)} />
-              {availableYears.map((y) => (
-                <Chip key={y} label={String(y)} selected={year === y} onPress={() => setYear(y)} />
-              ))}
-            </FilterGroup>
-          )}
-        </ScrollView>
-      </BottomSheet>
+        tab={tab === "series" ? "series" : "movies"}
+        filters={filters}
+        onChangeFilters={setFilters}
+        seriesFilters={seriesFilters}
+        onChangeSeriesFilters={setSeriesFilters}
+        total={resultTotal}
+        isFetching={resultsQuery.isFetching}
+        hasSearchTerm={Boolean(effectiveTerm)}
+      />
     </View>
   );
 }
 
-/** One labelled block of wrapping filter chips inside the filters sheet. */
-function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.filterGroup}>
-      <ThemedText variant="overline">{label.toUpperCase()}</ThemedText>
-      <View style={styles.filterRow}>{children}</View>
-    </View>
-  );
-}
-
-/** Placeholder cards that hold the grid's shape while results load. */
+/** Placeholder poster cells that hold the grid's shape while results load. */
 function ResultsSkeleton() {
+  const { cellWidth } = usePosterGrid();
   return (
-    <View style={styles.skeletonList}>
-      {Array.from({ length: 3 }).map((_, index) => (
-        <MediaCardSkeleton key={index} />
+    <View style={styles.skeletonGrid}>
+      {Array.from({ length: 6 }).map((_, index) => (
+        <MediaCardSkeleton key={index} width={cellWidth} />
       ))}
     </View>
   );
@@ -565,24 +823,36 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   filterBadgeText: { color: theme.colors.onPrimary },
-  listHeader: { gap: theme.spacing.md, paddingBottom: theme.spacing.sm },
+  pillsRow: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.layout.screenPadding,
+    paddingVertical: theme.spacing.sm,
+  },
+  listHeader: {
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.layout.screenPadding,
+    paddingBottom: theme.spacing.sm,
+  },
   recents: { gap: theme.spacing.sm },
   recentsHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   clearRecent: { minHeight: theme.layout.minTouch, justifyContent: "center", paddingLeft: theme.spacing.sm },
   recentRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
-  separator: { height: theme.spacing.lg },
-  listContent: {
-    paddingHorizontal: theme.layout.screenPadding,
+  rowGap: { height: 16 },
+  gridContent: {
     paddingTop: theme.spacing.md,
     paddingBottom: theme.layout.tabBarClearance,
   },
-  skeletonList: {
+  gridRow: { gap: 12, paddingHorizontal: theme.layout.screenPadding },
+  skeletonGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    rowGap: 16,
     paddingHorizontal: theme.layout.screenPadding,
     paddingTop: theme.spacing.md,
-    gap: theme.spacing.lg,
   },
   browseContent: { paddingTop: theme.spacing.md, paddingBottom: theme.layout.tabBarClearance },
   rows: { gap: theme.spacing.lg },
-  filterGroup: { gap: theme.spacing.sm, marginBottom: theme.spacing.lg },
-  filterRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
+  footerLoading: { paddingVertical: theme.spacing.md, alignItems: "center" },
 });

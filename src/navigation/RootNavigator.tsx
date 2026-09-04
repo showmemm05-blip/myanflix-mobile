@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { AuthNavigator } from "@/navigation/AuthNavigator";
 import { MainTabNavigator } from "@/navigation/MainTabNavigator";
 import { PlayerScreen } from "@/screens/Player/Player";
+import { BookReaderScreen } from "@/screens/Books/BookReader";
 import { NotificationsScreen } from "@/screens/Notifications/Notifications";
 import { ProfileOverviewScreen } from "@/screens/Profile/ProfileOverview";
 import { useAuth } from "@/hooks/useAuth";
@@ -21,6 +22,7 @@ export function RootNavigator() {
         <>
           <Stack.Screen name="Main" component={MainTabNavigator} />
           <Stack.Screen name="Player" component={PlayerScreen} options={{ presentation: "fullScreenModal" }} />
+          <Stack.Screen name="BookReader" component={BookReaderScreen} options={{ presentation: "fullScreenModal" }} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
           <Stack.Screen name="Profile" component={ProfileOverviewScreen} />
         </>

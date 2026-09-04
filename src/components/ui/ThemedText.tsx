@@ -67,9 +67,26 @@ const VARIANT_COLOR: Record<ThemedTextVariant, string> = {
  * mis-stack combining marks on many Android devices), and this is the one
  * place that font is wired in.
  */
+/**
+ * Myanmar script must never be letter-spaced: tracking pulls combining marks
+ * away from their base consonants, and mm is this app's default language.
+ * The check is content-driven rather than locale-driven because plenty of
+ * strings mix scripts (titles, counts) — only text that actually carries
+ * Myanmar codepoints loses its tracking, so Latin overlines keep theirs.
+ */
+const MYANMAR_SCRIPT = /[\u1000-\u109F\uAA60-\uAA7F]/;
+
+function containsMyanmar(children: Props["children"]): boolean {
+  if (typeof children === "string") return MYANMAR_SCRIPT.test(children);
+  if (Array.isArray(children)) return children.some((c) => typeof c === "string" && MYANMAR_SCRIPT.test(c));
+  return false;
+}
+
 export function ThemedText({ variant = "body", weight, tabular, color, style, ...rest }: Props) {
   const scale = theme.type[VARIANT_ROLE[variant]];
   const resolvedWeight: ThemedTextWeight = weight ?? scale.weight;
+  const letterSpacing =
+    scale.letterSpacing !== 0 && containsMyanmar(rest.children) ? 0 : scale.letterSpacing;
 
   return (
     <Text
@@ -80,7 +97,7 @@ export function ThemedText({ variant = "body", weight, tabular, color, style, ..
           fontSize: scale.fontSize,
           lineHeight: scale.lineHeight,
           color: color ?? VARIANT_COLOR[variant],
-          letterSpacing: scale.letterSpacing,
+          letterSpacing,
         },
         tabular && tabularNums,
         style,

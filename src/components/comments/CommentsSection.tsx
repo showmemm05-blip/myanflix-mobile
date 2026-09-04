@@ -17,7 +17,7 @@ import { theme } from "@/theme";
 import { COMMENT_MAX_LENGTH, type Comment, type CommentTarget } from "@/types/comment";
 
 /**
- * The comment thread under a movie or a series — the mobile counterpart of the
+ * The comment thread under a movie, a series or a book — the mobile counterpart of the
  * website's components/comments/CommentsSection.tsx, same behaviour and the
  * same strings, drawn in this app's idioms (Surface rows, violet accents,
  * ThemedText type scale) rather than the web's.

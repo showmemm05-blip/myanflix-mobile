@@ -288,6 +288,8 @@ export function PlayerScreen({ route, navigation }: Props) {
 
   const movie = movieQuery.data;
   const seriesId = movie?.seriesId;
+  // null when the runtime was never measured — the Pill is dropped rather than reading "0m".
+  const runtime = formatDuration(movie?.duration);
   const showEpisodesRail = !!seriesId && !isFullscreen;
   const episodeLabel =
     movie?.seasonNumber && movie?.episodeNumber
@@ -429,7 +431,7 @@ export function PlayerScreen({ route, navigation }: Props) {
               </Pill>
             )}
             <Pill tone="neutral">{String(movie.releaseYear)}</Pill>
-            <Pill tone="neutral">{formatDuration(movie.duration)}</Pill>
+            {runtime && <Pill tone="neutral">{runtime}</Pill>}
             <Pill tone="neutral">{movie.genre}</Pill>
           </View>
 

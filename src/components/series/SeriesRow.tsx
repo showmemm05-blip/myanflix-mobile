@@ -1,6 +1,7 @@
 import { FlatList, View, StyleSheet } from "react-native";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { MediaCard, useRailCardWidth } from "@/components/common/MediaCard";
+import { seriesCardContent } from "@/components/movie/mediaItems";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 import type { SeriesListItem } from "@/types/series";
@@ -12,9 +13,9 @@ interface Props {
   onSeeAll?: () => void;
 }
 
-const ITEM_GAP = theme.spacing.md;
+const ITEM_GAP = 12;
 
-/** Horizontal series rail built from the app's signature MediaCard. */
+/** Horizontal series rail built from the app's portrait MediaCard — mirrors MediaRail's numbers. */
 export function SeriesRow({ title, series, onPressSeries, onSeeAll }: Props) {
   const { t } = useLanguage();
   const cardWidth = useRailCardWidth();
@@ -33,20 +34,17 @@ export function SeriesRow({ title, series, onPressSeries, onSeeAll }: Props) {
         ItemSeparatorComponent={() => <View style={{ width: ITEM_GAP }} />}
         snapToInterval={cardWidth + ITEM_GAP}
         decelerationRate="fast"
+        snapToAlignment="start"
         renderItem={({ item }) => (
           <MediaCard
-            title={item.title}
-            imageUrl={item.coverUrl ?? item.posterUrl}
-            posterUrl={item.posterUrl}
-            accessType={item.accessType}
-            meta={[item.releaseYear, t.series.episodeCount.replace("{n}", String(item.episodeCount)), item.genre]}
+            {...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount)))}
             width={cardWidth}
             onPress={() => onPressSeries(item)}
           />
         )}
         getItemLayout={(_, index) => ({
           length: cardWidth,
-          offset: (cardWidth + ITEM_GAP) * index,
+          offset: theme.layout.screenPadding + (cardWidth + ITEM_GAP) * index,
           index,
         })}
       />
@@ -55,6 +53,6 @@ export function SeriesRow({ title, series, onPressSeries, onSeeAll }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: theme.spacing.sm },
+  container: { gap: theme.spacing.xs },
   listContent: { paddingHorizontal: theme.layout.screenPadding },
 });

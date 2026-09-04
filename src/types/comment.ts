@@ -22,13 +22,15 @@ export interface Comment {
 }
 
 /**
- * Which title a thread belongs to. Modelled as a union rather than two
- * optional fields because the API rejects a request carrying both — this way
- * that rule is a compile error here instead of a 400 at runtime.
+ * Which title a thread belongs to — exactly one id of the three. Modelled as
+ * a union rather than three optional fields because the API rejects a request
+ * carrying more than one — this way that rule is a compile error here instead
+ * of a 400 at runtime.
  */
 export type CommentTarget =
-  | { movieId: string; seriesId?: undefined }
-  | { seriesId: string; movieId?: undefined };
+  | { movieId: string; seriesId?: undefined; bookId?: undefined }
+  | { seriesId: string; movieId?: undefined; bookId?: undefined }
+  | { bookId: string; movieId?: undefined; seriesId?: undefined };
 
 /** Same bound the server enforces — the composer stops typing at it. */
 export const COMMENT_MAX_LENGTH = 1000;

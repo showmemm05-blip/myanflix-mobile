@@ -15,7 +15,9 @@ export type HomeStackParamList = {
 };
 
 export type SearchStackParamList = {
-  Search: { initialTab?: "movies" | "series" } | undefined;
+  Search: { initialTab?: "movies" | "series" | "books" | "music" } | undefined;
+  BooksCatalog: undefined;
+  BookDetails: { bookId: string };
 };
 
 export type LibraryStackParamList = {
@@ -47,6 +49,14 @@ export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
   Main: NavigatorScreenParams<MainTabParamList>;
   Player: { movieId: string };
+  /**
+   * Full-screen reading surface, registered like Player (fullScreenModal,
+   * headerShown false). `editionId`/`chapterId`/`sectionId`/`pageNumber` are optional
+   * entry hints — BookReader validates each against the loaded book and
+   * falls back (preferred language → bookmark → first READY chapter) rather
+   * than trusting a stale link.
+   */
+  BookReader: { bookId: string; editionId?: string; chapterId?: string; sectionId?: string; pageNumber?: number };
   Notifications: undefined;
   Profile: undefined;
 };

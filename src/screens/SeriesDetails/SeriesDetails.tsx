@@ -5,14 +5,15 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { CompositeScreenProps } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { IconButton } from "@/components/ui/IconButton";
 import { SectionHeader } from "@/components/ui/SectionHeader";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { Chip } from "@/components/common/Chip";
+import { StatTile } from "@/components/common/StatTile";
 import { TopBar } from "@/components/layout/TopBar";
-import { DetailHero } from "@/components/detail/DetailHero";
-import { Synopsis } from "@/components/detail/Synopsis";
+import { SeriesHero, SeriesHeroSkeleton } from "@/components/series/SeriesHero";
+import { StorylineCard } from "@/components/series/StorylineCard";
+import { SeriesFacts } from "@/components/series/SeriesFacts";
 import { EpisodeRow } from "@/components/series/EpisodeRow";
 import { SeriesRow } from "@/components/series/SeriesRow";
 import { CommentsSection } from "@/components/comments/CommentsSection";
@@ -30,6 +31,12 @@ type Props = CompositeScreenProps<
   CompositeScreenProps<BottomTabScreenProps<MainTabParamList>, NativeStackScreenProps<RootStackParamList>>
 >;
 
+/**
+ * The series detail page, restructured to the web IA: full-bleed hero, then
+ * one spine of CTA → storyline → stats → facts, then the season-chipped
+ * episode list, similar series and comments. ONE access gate covers the whole
+ * show — episodes are never purchased individually.
+ */
 export function SeriesDetailsScreen({ route, navigation }: Props) {
   const { seriesId } = route.params;
   const { t } = useLanguage();
@@ -41,7 +48,8 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
 
   const series = seriesQuery.data;
-  const canWatch = !!series && hasAccess(series.accessType, subscriptionQuery.data?.isActive ?? false);
+  const isSubscribed = subscriptionQuery.data?.isActive ?? false;
+  const canWatch = !!series && hasAccess(series.accessType, isSubscribed);
 
   const similarQuery = useSeriesList({ limit: 20 });
   const similarSeries = (similarQuery.data?.items ?? []).filter(
@@ -74,6 +82,12 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
   const episodesFailed = episodesQuery.isError;
   const episodesUnknown = episodesPending || episodesFailed;
 
+  // One translated sentence, shown only once BOTH counts are actually known.
+  const seasonSummary =
+    !episodesUnknown && episodeCount > 0
+      ? t.series.seasonSummary.replace("{s}", String(seasons.length)).replace("{e}", String(episodeCount))
+      : null;
+
   const handleWatch = () => {
     if (firstEpisode) navigation.getParent()?.navigate("Player", { movieId: firstEpisode.id });
   };
@@ -86,8 +100,12 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
 
   if (seriesQuery.isLoading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={theme.colors.primary} />
+      <View style={styles.container}>
+        <SeriesHeroSkeleton />
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={theme.colors.primary} />
+        </View>
+        <TopBar transparent onBack={() => navigation.goBack()} backAccessibilityLabel={t.common.back} />
       </View>
     );
   }
@@ -96,9 +114,13 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
     return (
       <View style={styles.center}>
         <ThemedText variant="muted">{t.common.somethingWentWrong}</ThemedText>
+        <TopBar transparent onBack={() => navigation.goBack()} backAccessibilityLabel={t.common.back} />
       </View>
     );
   }
+
+  // The watch CTA hides only when the episode list is KNOWN to be empty.
+  const showWatchCta = canWatch && (episodesUnknown || !!firstEpisode);
 
   return (
     <View style={styles.container}>
@@ -113,77 +135,79 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
           // Without this the first tap on "Post" only dismisses the keyboard.
           keyboardShouldPersistTaps="handled"
         >
-          <DetailHero
+          <SeriesHero
             title={series.title}
             backdropUrl={series.coverUrl ?? series.posterUrl}
-            posterUrl={series.posterUrl}
             accessType={series.accessType}
-            meta={[
-              series.releaseYear,
-              episodeCount > 0 ? t.series.episodeCount.replace("{n}", String(episodeCount)) : null,
-              series.genre,
-            ]}
+            releaseYear={series.releaseYear}
+            language={series.language}
+            seasonSummary={seasonSummary}
           />
 
           <View style={styles.spine}>
-            <View style={styles.ctaRow}>
-              <Button
-                title={
-                  canWatch
-                    ? firstEpisode || episodesUnknown
-                      ? t.movie.watchButton
-                      : t.series.episodesEmpty
-                    : t.movie.subscribeButton
-                }
-                icon={canWatch && firstEpisode ? "play" : canWatch ? undefined : "diamond"}
-                size="lg"
-                color={canWatch ? undefined : theme.colors.premium}
-                onPress={canWatch ? handleWatch : handleSubscribe}
-                loading={canWatch && episodesPending}
-                disabled={canWatch && !firstEpisode}
-                style={styles.ctaSolid}
-              />
-              <IconButton
-                icon={isFavorite ? "heart" : "heart-outline"}
-                variant={isFavorite ? "soft" : "outline"}
-                size="lg"
-                color={isFavorite ? theme.colors.primary : undefined}
-                accessibilityLabel={isFavorite ? t.movie.removeFromFavorites : t.movie.addToFavorites}
-                onPress={() => toggleWatchlist.mutate(seriesId)}
-              />
-              <IconButton
-                icon="share-outline"
-                variant="outline"
-                size="lg"
-                accessibilityLabel={t.movie.share}
-                onPress={handleShare}
-              />
+            <View style={styles.ctaBlock}>
+              <View style={styles.ctaRow}>
+                {canWatch ? (
+                  showWatchCta && (
+                    <Button
+                      title={t.series.startWatching}
+                      icon="play"
+                      size="lg"
+                      onPress={handleWatch}
+                      loading={episodesPending}
+                      disabled={!firstEpisode}
+                      style={styles.ctaSolid}
+                    />
+                  )
+                ) : (
+                  <Button
+                    title={t.series.subscribeToWatch}
+                    icon="diamond"
+                    size="lg"
+                    color={theme.colors.premium}
+                    onPress={handleSubscribe}
+                    style={styles.ctaSolid}
+                  />
+                )}
+                <IconButton
+                  icon={isFavorite ? "heart" : "heart-outline"}
+                  variant={isFavorite ? "soft" : "outline"}
+                  size="lg"
+                  color={isFavorite ? theme.colors.primary : undefined}
+                  accessibilityLabel={isFavorite ? t.movie.removeFromFavorites : t.movie.addToFavorites}
+                  onPress={() => toggleWatchlist.mutate(seriesId)}
+                />
+                <IconButton
+                  icon="share-outline"
+                  variant="outline"
+                  size="lg"
+                  accessibilityLabel={t.movie.share}
+                  onPress={handleShare}
+                />
+              </View>
+
+              {isSubscribed && series.accessType === "SUBSCRIPTION" && (
+                <ThemedText variant="caption" color={theme.colors.textMuted} style={styles.unlockedNote}>
+                  {t.series.unlockedNote}
+                </ThemedText>
+              )}
             </View>
 
-            {!canWatch && (
-              <View style={styles.lockedNote}>
-                <Ionicons name="lock-closed" size={14} color={theme.colors.premium} />
-                <ThemedText variant="caption" style={styles.lockedText}>
-                  {t.movie.subscriptionLocked}
-                </ThemedText>
+            <StorylineCard genre={series.genre} description={series.description} categories={series.categories} />
+
+            {!episodesUnknown && episodeCount > 0 && (
+              <View style={styles.statRow}>
+                <StatTile label={t.series.seasonsStat} value={String(seasons.length)} icon="layers-outline" style={styles.statTile} />
+                <StatTile label={t.series.episodesStat} value={String(episodeCount)} icon="albums-outline" style={styles.statTile} />
               </View>
             )}
 
-            {series.categories.length > 0 && (
-              <View style={styles.chips}>
-                {series.categories.map((c) => (
-                  <Pill key={c.id} tone="neutral">
-                    {c.name}
-                  </Pill>
-                ))}
-              </View>
-            )}
-
-            <Synopsis text={series.description} title={t.movie.synopsis} />
+            <SeriesFacts releaseYear={series.releaseYear} language={series.language} genre={series.genre} />
 
             <View style={styles.episodesSection}>
               <SectionHeader
                 title={t.series.episodesTitle}
+                eyebrow={activeSeason ? t.series.season.replace("{n}", String(activeSeason.seasonNumber)) : undefined}
                 icon="albums-outline"
                 inset={false}
                 accessory={
@@ -196,15 +220,20 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
               />
 
               {seasons.length > 1 && !episodesUnknown && (
-                <SegmentedControl
-                  options={seasons.map((season) => ({
-                    value: String(season.seasonNumber),
-                    label: t.series.season.replace("{n}", String(season.seasonNumber)),
-                  }))}
-                  value={String(activeSeason?.seasonNumber ?? "")}
-                  onChange={(value) => setSelectedSeason(Number(value))}
-                  scrollable={seasons.length > 3}
-                />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.seasonChips}
+                >
+                  {seasons.map((season) => (
+                    <Chip
+                      key={season.seasonNumber}
+                      label={t.series.season.replace("{n}", String(season.seasonNumber))}
+                      selected={season.seasonNumber === activeSeason?.seasonNumber}
+                      onPress={() => setSelectedSeason(season.seasonNumber)}
+                    />
+                  ))}
+                </ScrollView>
               )}
 
               {episodesPending ? (
@@ -235,7 +264,9 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
                       episodeNumber={episode.episodeNumber}
                       durationMinutes={episode.duration}
                       thumbnailUrl={episode.coverUrl ?? episode.posterUrl}
+                      description={episode.description}
                       locked={!canWatch}
+                      onLockedPress={handleSubscribe}
                       onPress={handleEpisodePress}
                     />
                   ))}
@@ -268,24 +299,21 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   flex: { flex: 1 },
   center: { flex: 1, backgroundColor: theme.colors.background, alignItems: "center", justifyContent: "center" },
+  loadingBody: { paddingVertical: theme.spacing.xl, alignItems: "center" },
   scrollContent: { paddingBottom: theme.layout.tabBarClearance },
   spine: {
     paddingHorizontal: theme.layout.screenPadding,
-    paddingTop: theme.spacing.md,
+    paddingTop: theme.spacing.lg,
     gap: theme.spacing.lg,
   },
+  ctaBlock: { gap: theme.spacing.sm },
   ctaRow: { flexDirection: "row", gap: theme.spacing.sm, alignItems: "center" },
   ctaSolid: { flex: 1 },
-  lockedNote: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: theme.spacing.xs,
-    marginTop: -theme.spacing.sm,
-  },
-  lockedText: { color: theme.colors.premium },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
+  unlockedNote: { textAlign: "center" },
+  statRow: { flexDirection: "row", gap: theme.spacing.sm },
+  statTile: { flex: 1 },
   episodesSection: { gap: theme.spacing.md },
+  seasonChips: { flexDirection: "row", gap: theme.spacing.sm, paddingVertical: 2 },
   episodeList: { gap: theme.spacing.sm },
   episodesState: {
     alignItems: "center",

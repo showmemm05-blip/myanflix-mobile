@@ -19,7 +19,7 @@ import { useMovie, useMovies } from "@/hooks/useMovies";
 import { useSubscriptionStatus } from "@/hooks/useSubscription";
 import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { formatDuration } from "@/utils/format";
+import { formatDuration, UNKNOWN_DURATION } from "@/utils/format";
 import { hasAccess } from "@/utils/access";
 import { theme } from "@/theme";
 import type { HomeStackParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
@@ -152,7 +152,7 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
               <SectionHeader title={t.movie.details} inset={false} />
               <InfoGrid
                 items={[
-                  { label: t.movie.duration, value: formatDuration(movie.duration) },
+                  { label: t.movie.duration, value: formatDuration(movie.duration) ?? UNKNOWN_DURATION },
                   { label: t.movie.releaseYear, value: String(movie.releaseYear) },
                   { label: t.movie.rating, value: movie.rating.toFixed(1) },
                   { label: t.movie.genre, value: movie.genre },

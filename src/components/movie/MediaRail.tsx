@@ -5,15 +5,15 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import { MediaCard, MediaCardSkeleton, useRailCardWidth, type MediaCardProps } from "@/components/common/MediaCard";
 import { theme } from "@/theme";
 
-const GAP = theme.spacing.md;
+const GAP = 12;
 /** The rail's leading content inset — item 0 starts this far in. */
 const EDGE = theme.layout.screenPadding;
-const SKELETON_COUNT = 2;
+const SKELETON_COUNT = 4;
 
 export interface MediaRailItem
   extends Pick<
     MediaCardProps,
-    "title" | "imageUrl" | "posterUrl" | "accessType" | "rating" | "meta" | "progress" | "cornerLabel" | "showPoster"
+    "title" | "posterUrl" | "coverUrl" | "accessType" | "rating" | "meta" | "progress" | "cornerLabel"
   > {
   /** Stable list key — the record id. */
   key: string;
@@ -48,23 +48,22 @@ const RailCard = memo(function RailCard({ item, width }: { item: MediaRailItem; 
     <MediaCard
       width={width}
       title={item.title}
-      imageUrl={item.imageUrl}
       posterUrl={item.posterUrl}
+      coverUrl={item.coverUrl}
       accessType={item.accessType}
       rating={item.rating}
       meta={item.meta}
       progress={item.progress}
       cornerLabel={item.cornerLabel}
-      showPoster={item.showPoster}
       onPress={item.onPress}
     />
   );
 });
 
 /**
- * A horizontally scrolling shelf of MediaCards — the one rail used by Home,
- * Search and the detail screens. Cards sit at ~78% of the screen so the 16:9
- * still stays readable and the next card peeks in to invite the swipe.
+ * A horizontally scrolling shelf of portrait MediaCards — the one rail used by
+ * Home, Search and the detail screens. Cards sit at ~36% of the screen so two
+ * and a bit posters show at once and the next card peeks in to invite the swipe.
  */
 export function MediaRail({ title, items, eyebrow, icon, accent, onSeeAll, seeAllLabel, loading }: Props) {
   const cardWidth = useRailCardWidth();
@@ -118,8 +117,8 @@ export function MediaRail({ title, items, eyebrow, icon, accent, onSeeAll, seeAl
           snapToInterval={cardWidth + GAP}
           decelerationRate="fast"
           snapToAlignment="start"
-          initialNumToRender={3}
-          maxToRenderPerBatch={4}
+          initialNumToRender={4}
+          maxToRenderPerBatch={6}
           windowSize={5}
           renderItem={renderItem}
           getItemLayout={getItemLayout}
@@ -132,6 +131,6 @@ export function MediaRail({ title, items, eyebrow, icon, accent, onSeeAll, seeAl
 const styles = StyleSheet.create({
   container: { gap: theme.spacing.xs },
   listContent: { paddingHorizontal: EDGE, paddingBottom: theme.spacing.xs },
-  skeletonRow: { flexDirection: "row", gap: GAP, paddingHorizontal: EDGE },
+  skeletonRow: { flexDirection: "row", gap: GAP, paddingHorizontal: EDGE, overflow: "hidden" },
   separator: { width: GAP },
 });

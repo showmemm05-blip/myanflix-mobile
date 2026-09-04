@@ -10,31 +10,38 @@ import type { SeriesListItem } from "@/types/series";
  */
 export type MediaCardContent = Pick<
   MediaCardProps,
-  "title" | "imageUrl" | "posterUrl" | "accessType" | "rating" | "meta"
+  "title" | "posterUrl" | "coverUrl" | "accessType" | "rating" | "meta"
 >;
 
-/** Movie → card: 16:9 cover (poster as fallback), year · runtime · genre. */
+/**
+ * Movie → card. Web meta parity: rated → "year · ★x.x" (the star renders via
+ * the card's `rating` prop), unrated → "year · runtime". The backend stores
+ * unrated as 0, so 0 is normalised to null here.
+ */
 export function movieCardContent(movie: Movie): MediaCardContent {
+  const rating = movie.rating > 0 ? movie.rating : null;
   return {
     title: movie.title,
-    imageUrl: movie.coverUrl ?? movie.posterUrl,
-    posterUrl: movie.posterUrl,
+    posterUrl: movie.posterUrl ?? movie.coverUrl,
+    coverUrl: movie.coverUrl ?? movie.posterUrl,
     accessType: movie.accessType,
-    rating: movie.rating,
-    meta: [movie.releaseYear, formatDuration(movie.duration), movie.genre],
+    rating,
+    meta: rating !== null ? [movie.releaseYear] : [movie.releaseYear, formatDuration(movie.duration)],
   };
 }
 
 /**
- * Series → card. `episodesLabel` is passed in already translated
- * (`t.series.episodeCount`) so this stays free of localization imports.
+ * Series → card: "year · {n} episodes". `episodesLabel` is passed in already
+ * translated (`t.series.episodeCount`) so this stays free of localization
+ * imports.
  */
 export function seriesCardContent(series: SeriesListItem, episodesLabel: string): MediaCardContent {
   return {
     title: series.title,
-    imageUrl: series.coverUrl ?? series.posterUrl,
-    posterUrl: series.posterUrl,
+    posterUrl: series.posterUrl ?? series.coverUrl,
+    coverUrl: series.coverUrl ?? series.posterUrl,
     accessType: series.accessType,
-    meta: [series.releaseYear, episodesLabel, series.genre],
+    rating: null,
+    meta: [series.releaseYear, episodesLabel],
   };
 }

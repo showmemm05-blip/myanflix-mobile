@@ -2,8 +2,8 @@
  * Shared presentation pieces every screen area builds on. Import either from
  * here (`@/components/common`) or from the file directly — both work.
  */
-export { MediaCard, MediaCardSkeleton, useRailCardWidth, MEDIA_CARD_RAIL_RATIO, MEDIA_CARD_POSTER_WIDTH } from "@/components/common/MediaCard";
-export type { MediaCardProps, MediaCardAction } from "@/components/common/MediaCard";
+export { MediaCard, MediaCardSkeleton, useRailCardWidth } from "@/components/common/MediaCard";
+export type { MediaCardProps } from "@/components/common/MediaCard";
 export { Chip } from "@/components/common/Chip";
 export type { ChipTone, ChipSize } from "@/components/common/Chip";
 export { StatTile } from "@/components/common/StatTile";

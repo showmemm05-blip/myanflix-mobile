@@ -2,21 +2,23 @@ import { StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ui/ThemedText";
+import { Pill } from "@/components/ui/Pill";
 import { PressableScale } from "@/components/ui/PressableScale";
 import { ProgressTrack } from "@/components/common/ProgressTrack";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { formatDuration } from "@/utils/format";
-import { theme } from "@/theme";
+import { formatDuration, UNKNOWN_DURATION } from "@/utils/format";
+import { theme, withAlpha } from "@/theme";
 
-const THUMB_WIDTH = 128;
+const THUMB_WIDTH = 112;
 const THUMB_HEIGHT = Math.round((THUMB_WIDTH * 9) / 16);
 const COMPLETED_THRESHOLD = 95;
 
 /**
- * Fixed row height — the 16:9 still is always the tallest element (a two-line
- * title plus its meta line measures 63pt against the still's 72pt), so the row
- * never grows. The in-player list relies on this being constant to virtualize
- * with exact offsets.
+ * Fixed row height for DESCRIPTION-LESS rows — the 16:9 still is the tallest
+ * element there (a two-line title plus its meta line measures exactly the
+ * still's 63pt), so those rows never grow. The in-player list never passes a
+ * description and relies on this constant to virtualize with exact offsets;
+ * SeriesDetails passes one, and its rows treat this as a minimum instead.
  */
 export const EPISODE_ROW_HEIGHT = THUMB_HEIGHT + theme.spacing.sm * 2 + 2;
 
@@ -24,11 +26,19 @@ interface Props {
   episodeId: string;
   title: string;
   episodeNumber: number | null;
-  /** Runtime in minutes. */
+  /** Runtime in minutes — 0/unknown renders an em-dash, never "0m". */
   durationMinutes: number;
   thumbnailUrl?: string | null;
-  /** The gating decision stays with the screen; a locked row is not pressable. */
+  /** One or two lines of synopsis under the meta line (SeriesDetails only). */
+  description?: string | null;
+  /** The gating decision stays with the screen. */
   locked?: boolean;
+  /**
+   * Locked rows stay PRESSABLE when this is provided — the tap routes to the
+   * subscribe flow instead of the player. Without it a locked row is inert
+   * (the in-player list's behavior).
+   */
+  onLockedPress?: () => void;
   /** The episode currently playing — violet ring, violet title, "Now Playing". */
   isCurrent?: boolean;
   /** 0–100 watch progress, when the list knows it. */
@@ -39,8 +49,8 @@ interface Props {
 /**
  * THE episode row — one design for every episode list in the app (the season
  * list on SeriesDetails and the list under / beside the player), so the same
- * content never wears two looks. States it carries: locked (visible but not
- * pressable), current, watched, part-watched.
+ * content never wears two looks. States it carries: locked (pressable into
+ * Subscribe when the screen wires it), current, watched, part-watched.
  */
 export function EpisodeRow({
   episodeId,
@@ -48,7 +58,9 @@ export function EpisodeRow({
   episodeNumber,
   durationMinutes,
   thumbnailUrl,
+  description,
   locked = false,
+  onLockedPress,
   isCurrent = false,
   progressPercent = 0,
   onPress,
@@ -56,19 +68,24 @@ export function EpisodeRow({
   const { t } = useLanguage();
   const isCompleted = progressPercent >= COMPLETED_THRESHOLD;
   const isInProgress = progressPercent > 0 && !isCompleted;
+  const displayTitle =
+    title.trim().length > 0
+      ? title
+      : t.series.episodeFallbackTitle.replace("{n}", episodeNumber != null ? String(episodeNumber) : "—");
 
   return (
     <PressableScale
       onPress={() => {
-        if (!locked) onPress(episodeId);
+        if (locked) onLockedPress?.();
+        else onPress(episodeId);
       }}
-      disabled={locked}
+      disabled={locked && !onLockedPress}
       activeScale={0.98}
       dimOnPress
-      accessibilityLabel={title}
+      accessibilityLabel={locked ? `${displayTitle} · ${t.series.lockedEpisode}` : displayTitle}
       style={styles.container}
     >
-      <View style={[styles.row, isCurrent && styles.rowCurrent]}>
+      <View style={[styles.row, description ? styles.rowGrows : styles.rowFixed, isCurrent && styles.rowCurrent]}>
         <View style={[styles.thumb, isCurrent && styles.thumbCurrent]}>
           {thumbnailUrl ? (
             <Image source={{ uri: thumbnailUrl }} style={StyleSheet.absoluteFill} contentFit="cover" transition={160} />
@@ -91,7 +108,9 @@ export function EpisodeRow({
 
           {locked && (
             <View style={styles.lockScrim}>
-              <Ionicons name="lock-closed" size={16} color={theme.colors.premium} />
+              <View style={styles.lockDisc}>
+                <Ionicons name="lock-closed" size={14} color={theme.colors.premium} />
+              </View>
             </View>
           )}
 
@@ -101,10 +120,10 @@ export function EpisodeRow({
             </View>
           )}
 
-          {!isCurrent && (
+          {!isCurrent && episodeNumber != null && (
             <View style={styles.numberTag}>
               <ThemedText variant="caption" weight="bold" tabular style={styles.numberText}>
-                {episodeNumber ?? "-"}
+                {episodeNumber}
               </ThemedText>
             </View>
           )}
@@ -113,12 +132,18 @@ export function EpisodeRow({
         </View>
 
         <View style={styles.info}>
-          <ThemedText variant="body" weight="semibold" numberOfLines={2} style={isCurrent ? styles.titleCurrent : undefined}>
-            {title}
+          <ThemedText
+            variant="body"
+            weight="semibold"
+            numberOfLines={description ? 1 : 2}
+            style={isCurrent ? styles.titleCurrent : undefined}
+          >
+            {displayTitle}
           </ThemedText>
           <View style={styles.metaRow}>
+            <Ionicons name="time-outline" size={12} color={theme.colors.textFaint} />
             <ThemedText variant="caption" tabular numberOfLines={1} style={styles.meta}>
-              {locked ? t.series.subscribeToWatch : formatDuration(durationMinutes)}
+              {formatDuration(durationMinutes) ?? UNKNOWN_DURATION}
             </ThemedText>
             {isCompleted && !locked && (
               <ThemedText variant="caption" weight="semibold" numberOfLines={1} style={styles.completedText}>
@@ -126,15 +151,20 @@ export function EpisodeRow({
               </ThemedText>
             )}
           </View>
+          {description ? (
+            <ThemedText variant="caption" numberOfLines={2} color={theme.colors.textMuted}>
+              {description}
+            </ThemedText>
+          ) : null}
         </View>
 
-        <View style={[styles.trailing, locked ? styles.trailingLocked : styles.trailingActive]}>
-          <Ionicons
-            name={locked ? "lock-closed" : isCurrent ? "pulse" : "play"}
-            size={16}
-            color={locked ? theme.colors.textFaint : theme.colors.primary}
-          />
-        </View>
+        {locked ? (
+          <Pill tone="premium">{t.series.lockedEpisode}</Pill>
+        ) : (
+          <View style={styles.trailing}>
+            <Ionicons name={isCurrent ? "pulse" : "play"} size={16} color={theme.colors.primary} />
+          </View>
+        )}
 
         {isCurrent && <View style={styles.currentRail} pointerEvents="none" />}
       </View>
@@ -145,7 +175,6 @@ export function EpisodeRow({
 const styles = StyleSheet.create({
   container: { width: "100%" },
   row: {
-    height: EPISODE_ROW_HEIGHT,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing.md,
@@ -156,7 +185,11 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     overflow: "hidden",
   },
-  rowCurrent: { backgroundColor: theme.colors.accent, borderColor: theme.colors.primary + "3D" },
+  /** The virtualization contract — every description-less row is exactly this tall. */
+  rowFixed: { height: EPISODE_ROW_HEIGHT },
+  /** A synopsis may add a line or two; the height becomes a floor, not a cage. */
+  rowGrows: { minHeight: EPISODE_ROW_HEIGHT },
+  rowCurrent: { backgroundColor: theme.colors.accent, borderColor: withAlpha(theme.colors.primary, 0.24) },
   thumb: {
     width: THUMB_WIDTH,
     height: THUMB_HEIGHT,
@@ -190,6 +223,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: theme.colors.scrimSoft,
   },
+  lockDisc: {
+    width: 28,
+    height: 28,
+    borderRadius: theme.radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.overlay,
+    borderWidth: 1,
+    borderColor: theme.colors.ring,
+  },
   completedBadge: {
     position: "absolute",
     top: 5,
@@ -217,10 +260,10 @@ const styles = StyleSheet.create({
   numberText: { color: theme.colors.text },
   progress: { position: "absolute", left: 0, right: 0, bottom: 0, borderRadius: 0 },
   info: { flex: 1, gap: 3 },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs },
   meta: { color: theme.colors.textFaint, flexShrink: 1 },
   titleCurrent: { color: theme.colors.primary },
-  completedText: { color: theme.colors.finance },
+  completedText: { color: theme.colors.finance, marginLeft: theme.spacing.xs },
   trailing: {
     width: 40,
     height: 40,
@@ -228,9 +271,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
+    backgroundColor: theme.colors.primarySoft,
+    borderColor: withAlpha(theme.colors.primary, 0.24),
   },
-  trailingActive: { backgroundColor: theme.colors.primarySoft, borderColor: theme.colors.primary + "3D" },
-  trailingLocked: { backgroundColor: theme.colors.secondary, borderColor: theme.colors.border },
   currentRail: {
     position: "absolute",
     left: 0,

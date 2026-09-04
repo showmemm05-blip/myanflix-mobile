@@ -10,6 +10,7 @@ import { movieCardContent, seriesCardContent } from "@/components/movie/mediaIte
 import { useMovies } from "@/hooks/useMovies";
 import { useSeriesList } from "@/hooks/useSeries";
 import { useCategory } from "@/hooks/useCategories";
+import { usePosterGrid } from "@/hooks/usePosterGrid";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 import type { HomeStackParamList } from "@/navigation/types";
@@ -19,13 +20,11 @@ import type { SeriesListItem } from "@/types/series";
 type Props = NativeStackScreenProps<HomeStackParamList, "CategoryDetail">;
 type Tab = "movies" | "series";
 
-/**
- * One genre, browsed as a single column of MediaCards — a 16:9 still at half a
- * phone's width is unreadable, so the grid trades density for legibility.
- */
+/** One genre, browsed as a portrait poster grid — same layout brain as Search. */
 export function CategoryDetailScreen({ route, navigation }: Props) {
   const { categoryId } = route.params;
   const { t } = useLanguage();
+  const grid = usePosterGrid();
   const [tab, setTab] = useState<Tab>("movies");
   const categoryQuery = useCategory(categoryId);
   const moviesQuery = useMovies({ categoryId, limit: 50 });
@@ -84,9 +83,9 @@ export function CategoryDetailScreen({ route, navigation }: Props) {
       </TopBar>
 
       {isLoading ? (
-        <View style={styles.skeletonList}>
-          {Array.from({ length: 3 }).map((_, index) => (
-            <MediaCardSkeleton key={index} />
+        <View style={styles.skeletonGrid}>
+          {Array.from({ length: 6 }).map((_, index) => (
+            <MediaCardSkeleton key={index} width={grid.cellWidth} />
           ))}
         </View>
       ) : isError ? (
@@ -96,17 +95,20 @@ export function CategoryDetailScreen({ route, navigation }: Props) {
           <EmptyState message={t.profile.empty} icon="film-outline" />
         ) : (
           <FlatList
+            key={`movies-grid-${grid.columns}`}
             data={movies}
+            numColumns={grid.columns}
             keyExtractor={(item) => item.id}
             ListHeaderComponent={listHeader}
-            contentContainerStyle={styles.listContent}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
+            contentContainerStyle={styles.gridContent}
+            columnWrapperStyle={styles.gridRow}
+            ItemSeparatorComponent={RowSeparator}
             refreshControl={refreshControl}
             renderItem={({ item }) => (
-              <MediaCard {...movieCardContent(item)} onPress={() => goToMovieDetails(item)} />
+              <MediaCard {...movieCardContent(item)} width={grid.cellWidth} onPress={() => goToMovieDetails(item)} />
             )}
-            initialNumToRender={6}
-            maxToRenderPerBatch={6}
+            initialNumToRender={9}
+            maxToRenderPerBatch={9}
             windowSize={5}
             removeClippedSubviews
           />
@@ -115,20 +117,24 @@ export function CategoryDetailScreen({ route, navigation }: Props) {
         <EmptyState message={t.profile.empty} icon="tv-outline" />
       ) : (
         <FlatList
+          key={`series-grid-${grid.columns}`}
           data={seriesInCategory}
+          numColumns={grid.columns}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={listHeader}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          contentContainerStyle={styles.gridContent}
+          columnWrapperStyle={styles.gridRow}
+          ItemSeparatorComponent={RowSeparator}
           refreshControl={refreshControl}
           renderItem={({ item }) => (
             <MediaCard
               {...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount)))}
+              width={grid.cellWidth}
               onPress={() => goToSeriesDetails(item)}
             />
           )}
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
+          initialNumToRender={9}
+          maxToRenderPerBatch={9}
           windowSize={5}
           removeClippedSubviews
         />
@@ -137,15 +143,26 @@ export function CategoryDetailScreen({ route, navigation }: Props) {
   );
 }
 
+function RowSeparator() {
+  return <View style={styles.rowGap} />;
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   segment: { paddingHorizontal: theme.layout.screenPadding, paddingBottom: theme.spacing.sm },
-  count: { paddingBottom: theme.spacing.sm },
-  separator: { height: theme.spacing.lg },
-  listContent: {
-    paddingHorizontal: theme.layout.screenPadding,
+  count: { paddingHorizontal: theme.layout.screenPadding, paddingBottom: theme.spacing.sm },
+  rowGap: { height: 16 },
+  gridContent: {
     paddingTop: theme.spacing.md,
     paddingBottom: theme.layout.tabBarClearance,
   },
-  skeletonList: { paddingHorizontal: theme.layout.screenPadding, paddingTop: theme.spacing.md, gap: theme.spacing.lg },
+  gridRow: { gap: 12, paddingHorizontal: theme.layout.screenPadding },
+  skeletonGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    rowGap: 16,
+    paddingHorizontal: theme.layout.screenPadding,
+    paddingTop: theme.spacing.md,
+  },
 });

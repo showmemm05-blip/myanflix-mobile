@@ -13,9 +13,9 @@ interface Props {
 }
 
 /**
- * "Pick up where you left off" shelf. Same MediaCard as every other rail, with
- * the watch-progress line across the artwork and the percentage in the corner.
- * The poster tile is suppressed — history entries only carry the one image.
+ * "Pick up where you left off" shelf. Same portrait MediaCard as every other
+ * rail, with the watch-progress line along the poster's bottom edge and the
+ * percentage in the corner pill.
  */
 export function ContinueWatchingRow({ title, entries, onPress, onSeeAll, seeAllLabel, loading }: Props) {
   // Stable identity keeps the rail's memoized cards out of the parent's render path.
@@ -24,8 +24,7 @@ export function ContinueWatchingRow({ title, entries, onPress, onSeeAll, seeAllL
       entries.map((entry) => ({
         key: entry.id,
         title: entry.movieTitle,
-        imageUrl: entry.posterUrl,
-        showPoster: false,
+        posterUrl: entry.posterUrl,
         meta: [entry.durationMinutes ? formatDuration(entry.durationMinutes) : null],
         progress: Math.min(100, Math.max(0, entry.progress)) / 100,
         cornerLabel: `${Math.round(Math.min(100, Math.max(0, entry.progress)))}%`,

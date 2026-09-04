@@ -147,6 +147,27 @@ async function request<T>(
   }
 }
 
+/**
+ * Canonical wire format for catalog queries: array params travel as CSV
+ * ("genres=Action,Drama"), never as axios's repeated/bracketed forms — the
+ * backend accepts all three, but every client speaks CSV so deep links,
+ * logs and caches agree on one spelling. Empty arrays and undefined values
+ * are dropped entirely instead of sending "genres=".
+ */
+export function csvParams(query: object): Record<string, string | number | boolean> {
+  const params: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      params[key] = value.map(String).join(",");
+    } else {
+      params[key] = value as string | number | boolean;
+    }
+  }
+  return params;
+}
+
 export const apiClient = {
   get: <T>(path: string, options?: RequestOptions) => request<T>(path, { ...options, method: "GET" }),
   post: <T>(path: string, data?: unknown, options?: RequestOptions) =>

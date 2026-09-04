@@ -1,10 +1,11 @@
-import { apiClient } from "@/api/client";
+import { apiClient, csvParams } from "@/api/client";
 import type { BackendMovie } from "@/api/movies.api";
 import type { PaginatedResponse, PaginationParams, RequestSignalOptions } from "@/types/api";
 import type {
   PlayerEpisodesResponse,
   SeasonSummary,
   Series,
+  SeriesFacets,
   SeriesListItem,
   SeriesPurchaseEntry,
   SeriesQuery,
@@ -13,7 +14,12 @@ import type {
 export const seriesApi = {
   /** `options.signal` is the search's abort handle — see RequestSignalOptions. */
   getSeries(query: SeriesQuery = {}, options: RequestSignalOptions = {}) {
-    return apiClient.get<PaginatedResponse<SeriesListItem>>("/series", { params: query, ...options });
+    return apiClient.get<PaginatedResponse<SeriesListItem>>("/series", { params: csvParams(query), ...options });
+  },
+
+  /** DB-derived filter vocabulary for the series tab — genres/languages/years only. */
+  getFacets() {
+    return apiClient.get<SeriesFacets>("/series/facets");
   },
 
   getSeriesById(id: string) {
