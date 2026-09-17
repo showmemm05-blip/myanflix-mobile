@@ -1,6 +1,6 @@
 import { moviesApi, type BackendMovie } from "@/api/movies.api";
-import type { Movie, MovieFacets, MovieQuery, PurchaseEntry } from "@/types/movie";
-import type { PaginatedResponse, PaginationParams, RequestSignalOptions } from "@/types/api";
+import type { Movie, MovieFacets, MovieQuery } from "@/types/movie";
+import type { PaginatedResponse, RequestSignalOptions } from "@/types/api";
 
 export function mapMovie(raw: BackendMovie): Movie {
   return raw;
@@ -12,32 +12,17 @@ export const moviesService = {
     return { ...res, items: res.items.map(mapMovie) };
   },
 
-  async getFacets(): Promise<MovieFacets> {
-    return moviesApi.getFacets();
+  async getFacets(options: RequestSignalOptions = {}): Promise<MovieFacets> {
+    return moviesApi.getFacets(options);
   },
 
-  async getMovieById(id: string): Promise<Movie> {
-    const raw = await moviesApi.getMovieById(id);
+  async getMovieById(id: string, options: RequestSignalOptions = {}): Promise<Movie> {
+    const raw = await moviesApi.getMovieById(id, options);
     return mapMovie(raw);
   },
 
-  async getMostPurchased(): Promise<Movie[]> {
-    const raw = await moviesApi.getMostPurchased();
+  async getMostPurchased(options: RequestSignalOptions = {}): Promise<Movie[]> {
+    const raw = await moviesApi.getMostPurchased(options);
     return raw.map(mapMovie);
-  },
-
-  async getMyPurchases(pagination: PaginationParams = {}): Promise<PaginatedResponse<PurchaseEntry>> {
-    const res = await moviesApi.getMyPurchases(pagination);
-    return {
-      ...res,
-      items: res.items.map((p) => ({
-        id: p.id,
-        movieId: p.movieId,
-        movieTitle: p.movieTitle,
-        posterUrl: p.posterUrl,
-        price: p.amount,
-        purchasedAt: p.createdAt,
-      })),
-    };
   },
 };

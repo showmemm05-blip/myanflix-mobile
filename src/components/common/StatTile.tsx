@@ -1,9 +1,11 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { PressableScale } from "@/components/ui/PressableScale";
 import { Surface } from "@/components/ui/Surface";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { theme } from "@/theme";
+import { theme, withAlpha } from "@/theme";
 
 export type StatTileTone = "neutral" | "primary" | "finance" | "premium" | "danger" | "warning" | "info";
 
@@ -41,7 +43,12 @@ export function StatTile({ label, value, icon, tone = "neutral", caption, onPres
   const body = (
     <Surface padded style={[styles.surface, horizontal && styles.horizontal, style]}>
       {icon && (
-        <View style={[styles.iconTile, { backgroundColor: accent + "1F", borderColor: accent + "33" }]}>
+        <View
+          style={[
+            styles.iconTile,
+            { backgroundColor: withAlpha(accent, 0.12), borderColor: withAlpha(accent, 0.2) },
+          ]}
+        >
           <Ionicons name={icon} size={16} color={accent} />
         </View>
       )}

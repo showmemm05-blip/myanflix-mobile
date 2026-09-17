@@ -42,9 +42,26 @@ export function HomeScreen({ navigation }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const featuredY = useRef(0);
 
-  /** Every game surface CTAs into the same place — the games hub (Search root). */
+  /**
+   * Every game surface CTAs into the same place — the games hub (Search root).
+   *
+   * Both flags on the nested payload are load-bearing; neither is boilerplate:
+   *
+   * `initial: false` — bottom tabs are lazy, so the FIRST jump into the Media
+   * tab is what CREATES its stack, and react-navigation builds that stack from
+   * the payload ALONE: one route, with no Search screen beneath it. That is how
+   * the Books lane used to strand the tab on BooksCatalog forever, with Search
+   * unreachable from the tab bar. `initial: false` makes the tab build its
+   * normal [Search] root first and then navigate on top of it.
+   *
+   * `pop: true` — in react-navigation 7, `navigate` only reuses a route when
+   * its name matches the CURRENTLY FOCUSED one; otherwise it PUSHES a
+   * duplicate. Without this flag, arriving on a Media tab that is sitting on
+   * BookDetails pushed a SECOND Search on top, so back revealed a page the user
+   * had already left. `pop: true` pops back to the existing screen instead.
+   */
   const goToArcadeHub = useCallback(
-    () => navigation.navigate("SearchTab", { screen: "Search" }),
+    () => navigation.navigate("SearchTab", { screen: "Search", initial: false, pop: true }),
     [navigation],
   );
 
@@ -53,6 +70,12 @@ export function HomeScreen({ navigation }: Props) {
     scrollRef.current?.scrollTo({ y: featuredY.current, animated: true });
   }, []);
 
+  /**
+   * The explore strip's lanes each open the Media tab on a segment. Every one
+   * carries `initial: false` and `pop: true` for the reasons spelled out on
+   * `goToArcadeHub` above — a cold Media tab must still get its Search root
+   * underneath, and a warm one must be popped back to rather than duplicated.
+   */
   const openLane = useCallback(
     (id: LaneId) => {
       switch (id) {
@@ -60,25 +83,35 @@ export function HomeScreen({ navigation }: Props) {
           navigation.navigate("SearchTab", {
             screen: "Search",
             params: { initialTab: "movies" },
+            initial: false,
+            pop: true,
           });
           break;
         case "series":
           navigation.navigate("SearchTab", {
             screen: "Search",
             params: { initialTab: "series" },
+            initial: false,
+            pop: true,
           });
           break;
         case "book":
-          navigation.navigate("SearchTab", { screen: "BooksCatalog" });
+          navigation.navigate("SearchTab", {
+            screen: "BooksCatalog",
+            initial: false,
+            pop: true,
+          });
           break;
         case "music":
           navigation.navigate("SearchTab", {
             screen: "Search",
             params: { initialTab: "music" },
+            initial: false,
+            pop: true,
           });
           break;
         default:
-          navigation.navigate("SearchTab", { screen: "Search" });
+          navigation.navigate("SearchTab", { screen: "Search", initial: false, pop: true });
       }
     },
     [navigation],

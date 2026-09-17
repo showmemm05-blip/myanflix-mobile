@@ -15,8 +15,12 @@ interface Props {
   volume: number;
   muted: boolean;
   /**
-   * The subtitle rendition to display, picked out of the list reported by
-   * `onSubtitleTracksChange`. `null` turns subtitles off.
+   * The rendition the NATIVE renderer should paint, picked out of the list
+   * reported by `onSubtitleTracksChange`. Normally `null`: the app draws
+   * captions itself (see SubtitleOverlay), and this is the only way to stop
+   * the player drawing a second copy underneath. The screen passes a real
+   * track only as a fallback, when the cue file behind its own overlay could
+   * not be read.
    */
   subtitleTrack: SubtitleTrack | null;
   /**
@@ -51,6 +55,12 @@ interface Props {
 const SEEK_SETTLE_MS = 10000;
 const SEEK_PROXIMITY_SECONDS = 1.5;
 
+// The caption overlay decides which cue is showing from the position this tick
+// reports, so the tick IS the caption clock: at the old 0.5s a line could
+// appear half a second after it was spoken and linger as long past its end.
+// 0.25 halves that error; expo-video has no cue event to use instead.
+const TIME_UPDATE_INTERVAL_SECONDS = 0.25;
+
 export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   {
     playlistUrl,
@@ -77,8 +87,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   const appliedSubtitleRef = useRef<SubtitleTrack | null | undefined>(undefined);
 
   const player = useVideoPlayer({ uri: playlistUrl, contentType: "hls" }, (p) => {
-    p.timeUpdateEventInterval = 0.5;
+    p.timeUpdateEventInterval = TIME_UPDATE_INTERVAL_SECONDS;
   });
+
+  // WHICH player the selection above was written to. expo-video keys the
+  // player on the source, so a refreshed signed link hands this component a
+  // brand-new one without remounting it — see the subtitle effect.
+  const appliedPlayerRef = useRef<typeof player | null>(null);
 
   useImperativeHandle(
     ref,
@@ -127,7 +142,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
 
   /**
    * Pushes the chosen rendition into the player, asserting it ONCE as soon as
-   * the tracks exist even when the choice is "off".
+   * the tracks exist even when the choice is `null` — which, now that the app
+   * paints its own captions, is the usual case.
    *
    * That first assertion is not redundant. ExoPlayer's default track selection
    * treats a text track carrying `SELECTION_FLAG_DEFAULT` as eligible on its
@@ -138,22 +154,32 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
    * `null` while captions are visibly on screen. Comparing against the getter
    * would therefore skip the write, leaving the menu saying "Off" over burnt-in
    * captions the viewer cannot turn off. Writing `null` disables the text
-   * renderer outright, which is what makes "Off" mean off.
-   *
-   * Which is exactly why `null` must mean a DELIBERATE "Off" by the time it
-   * reaches here. The screen resolves "viewer has never chosen" to the
-   * manifest's DEFAULT=YES track instead of null, so the default is asserted
-   * rather than switched off — see playerPrefsStore's three-way preference.
+   * renderer outright — which is what keeps the native cues from showing
+   * through UNDER the overlay's own, and what makes "Off" mean off.
    *
    * The guard is against what THIS component last wrote, so a re-report of the
    * same renditions (new objects, equal values) does not needlessly tear down
    * and rebuild the text renderer mid-playback.
+   *
+   * It is also keyed on the player the write landed on, because the player is
+   * NOT the same object for the life of this component: `useVideoPlayer` keys
+   * it on the source, so refetching an expired signed link builds a fresh one
+   * with ExoPlayer's own defaults back — including the `DEFAULT=YES` text
+   * rendition. Matching only on the value would treat "already off" as true of
+   * a player that was never told, and the native cues would come back up under
+   * the overlay after every link refresh.
    */
   useEffect(() => {
     if (!subtitleTracksReady) return;
-    if (appliedSubtitleRef.current !== undefined && isSameSubtitleTrack(appliedSubtitleRef.current, subtitleTrack)) {
+    const sameNativePlayer = appliedPlayerRef.current === player;
+    if (
+      sameNativePlayer &&
+      appliedSubtitleRef.current !== undefined &&
+      isSameSubtitleTrack(appliedSubtitleRef.current, subtitleTrack)
+    ) {
       return;
     }
+    appliedPlayerRef.current = player;
     appliedSubtitleRef.current = subtitleTrack;
     player.subtitleTrack = subtitleTrack;
   }, [player, subtitleTrack, subtitleTracksReady]);

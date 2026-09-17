@@ -2,8 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import { format } from "date-fns";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
+// Deep subpath, NOT `from "date-fns"`. Metro does not tree-shake, so the root
+// barrel pulls all 304 date-fns modules (165 KB minified) plus its locale
+// bundles in for this one `format` call. Keep the subpath.
+import { format } from "date-fns/format";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -108,6 +113,13 @@ export function BookDetailsScreen({ route, navigation }: Props) {
     },
     [navigation, bookId, selectedEdition],
   );
+
+  /**
+   * One handler for every chapter row. `ChapterRow` is memoized and the list
+   * is mapped in flow, so a per-row arrow re-rendered every row in the book on
+   * each sort toggle, edition change and settling query.
+   */
+  const openChapter = useCallback((chapterId: string) => openReader(chapterId), [openReader]);
 
   /** A section link: written books land on the heading, page books on the start page. */
   const openSection = useCallback(
@@ -309,7 +321,7 @@ export function BookDetailsScreen({ route, navigation }: Props) {
                                 chapter={chapter}
                                 isPdf={book.type === "PDF"}
                                 bookmarked={progress?.chapterId === chapter.id}
-                                onPress={() => openReader(chapter.id)}
+                                onPress={openChapter}
                               />
                               {chapter.status === "READY" && (chapter.sections?.length ?? 0) > 0 && (
                                 <SectionList
@@ -328,7 +340,7 @@ export function BookDetailsScreen({ route, navigation }: Props) {
                           chapter={chapter}
                           isPdf={book.type === "PDF"}
                           bookmarked={progress?.chapterId === chapter.id}
-                          onPress={() => openReader(chapter.id)}
+                          onPress={openChapter}
                         />
                       ))}
                 </View>
@@ -457,7 +469,9 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scrollContent: { paddingBottom: theme.layout.tabBarClearance },
   band: { overflow: "hidden", backgroundColor: theme.colors.surface },
-  bandWash: { backgroundColor: withAlpha("#0E1018", 0.55) },
+  // Same colour as before — the token IS "#0E1018". Reading it from the theme
+  // means this scrim follows the background if that token ever moves.
+  bandWash: { backgroundColor: withAlpha(theme.colors.background, 0.55) },
   bandFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 120 },
   bandContent: {
     paddingTop: 108,
@@ -475,7 +489,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.ring,
     marginBottom: theme.spacing.sm,
   },
-  coverFallback: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  coverFallback: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
   title: { maxWidth: "94%" },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm, marginTop: theme.spacing.xs },
   spine: {

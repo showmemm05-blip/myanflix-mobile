@@ -103,19 +103,6 @@ export interface BookSection extends BookSectionSummary {
   updatedAt: string;
 }
 
-/** An optional grouping of chapters ("Part 1") inside one edition — structural only, owns no content. */
-export interface BookPart {
-  id: string;
-  editionId: string;
-  title: string;
-  order: number;
-  /** 1-based position among the edition's parts. */
-  number: number;
-  chapterCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
 /**
  * The numbered tree every table of contents renders from —
  * `GET /books/:id/editions/:editionId/contents`. Unparted `chapters` read

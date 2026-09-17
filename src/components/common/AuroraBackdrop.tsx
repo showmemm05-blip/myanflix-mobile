@@ -1,6 +1,6 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { theme } from "@/theme";
+import { theme, withAlpha } from "@/theme";
 
 export type AuroraTone = "violet" | "emerald" | "gold" | "crimson" | "night";
 
@@ -24,14 +24,6 @@ const TONES: Record<AuroraTone, [string, string]> = {
   night: [theme.colors.aurora.indigo, theme.colors.aurora.violet],
 };
 
-function alpha(hex: string, value: number): string {
-  const clamped = Math.max(0, Math.min(1, value));
-  const hexAlpha = Math.round(clamped * 255)
-    .toString(16)
-    .padStart(2, "0");
-  return hex + hexAlpha;
-}
-
 /**
  * The ambient light wash behind hero areas, auth screens and empty pages.
  * Two crossing linear gradients (no blur, no images) fading to transparent, so
@@ -41,13 +33,13 @@ export function AuroraBackdrop({ tone = "violet", height = 340, intensity = 1, a
   const [primaryHue, secondaryHue] = TONES[tone];
   const fromTop = anchor === "top";
   const glowColors: readonly [string, string, string] = [
-    alpha(primaryHue, 0.42 * intensity),
-    alpha(primaryHue, 0.1 * intensity),
+    withAlpha(primaryHue, 0.42 * intensity),
+    withAlpha(primaryHue, 0.1 * intensity),
     "transparent",
   ];
   const sweepColors: readonly [string, string, string] = [
     "transparent",
-    alpha(secondaryHue, 0.26 * intensity),
+    withAlpha(secondaryHue, 0.26 * intensity),
     "transparent",
   ];
   const fadeColors: readonly [string, string] = fromTop

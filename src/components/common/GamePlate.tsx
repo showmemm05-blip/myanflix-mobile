@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.ring,
   },
   dim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(11,13,22,0.45)",
   },
   scrim: {

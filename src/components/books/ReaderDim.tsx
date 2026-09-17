@@ -20,7 +20,7 @@ export function ReaderDim({ brightness }: Props) {
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "#000000",
     // Above ReaderTopBar/ReaderFooter (zIndex 10) — the dimmer owns the screen.
     zIndex: 50,

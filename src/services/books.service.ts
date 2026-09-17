@@ -38,9 +38,9 @@ export const booksService = {
    * state); every other failure still throws so a network error never
    * masquerades as a missing book.
    */
-  async getBookById(id: string): Promise<BookDetail | null> {
+  async getBookById(id: string, options: RequestSignalOptions = {}): Promise<BookDetail | null> {
     try {
-      return await booksApi.getBookById(id);
+      return await booksApi.getBookById(id, options);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) return null;
       throw err;
@@ -82,8 +82,12 @@ export const booksService = {
     return pages.map((page) => ({ ...page, url: absolute(page.url) }));
   },
 
-  getReadingProgress(bookId: string, editionId: string): Promise<BookReadingProgress | null> {
-    return booksApi.getReadingProgress(bookId, editionId);
+  getReadingProgress(
+    bookId: string,
+    editionId: string,
+    options: RequestSignalOptions = {},
+  ): Promise<BookReadingProgress | null> {
+    return booksApi.getReadingProgress(bookId, editionId, options);
   },
 
   updateReadingProgress(

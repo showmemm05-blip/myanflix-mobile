@@ -4,6 +4,6 @@ import { financeSettingsService } from "@/services/finance-settings.service";
 export function useFinanceSettings() {
   return useQuery({
     queryKey: ["finance-settings"],
-    queryFn: () => financeSettingsService.getSettings(),
+    queryFn: ({ signal }) => financeSettingsService.getSettings({ signal }),
   });
 }

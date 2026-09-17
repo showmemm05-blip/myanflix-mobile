@@ -1,9 +1,10 @@
 import { commentsApi, type CreateCommentInput } from "@/api/comments.api";
+import type { RequestSignalOptions } from "@/types/api";
 import type { CommentTarget } from "@/types/comment";
 
 export const commentsService = {
-  getComments(target: CommentTarget) {
-    return commentsApi.getComments(target);
+  getComments(target: CommentTarget, options: RequestSignalOptions = {}) {
+    return commentsApi.getComments(target, options);
   },
 
   postComment(target: CommentTarget, input: CreateCommentInput) {

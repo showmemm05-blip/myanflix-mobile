@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Button } from "@/components/ui/Button";
@@ -16,9 +18,9 @@ import { useLanguage } from "@/localization/LanguageProvider";
 import { formatKyat } from "@/utils/currency";
 import { ApiError } from "@/utils/errors";
 import { theme } from "@/theme";
-import type { HomeStackParamList } from "@/navigation/types";
+import type { MediaDetailParamList } from "@/navigation/types";
 
-type Props = NativeStackScreenProps<HomeStackParamList, "Subscribe">;
+type Props = NativeStackScreenProps<MediaDetailParamList, "Subscribe">;
 
 export function SubscribeScreen({ navigation }: Props) {
   const { t } = useLanguage();
@@ -133,6 +135,24 @@ export function SubscribeScreen({ navigation }: Props) {
               <Skeleton height={148} radius="2xl" />
               <Skeleton height={148} radius="2xl" />
             </View>
+          ) : plansQuery.isError ? (
+            /* A failed fetch is NOT an empty catalogue — same rule the
+               balance card above follows. Telling a buyer there are no plans
+               when the request failed reads as "MyanFlix stopped selling
+               subscriptions", and leaves no way to try again. */
+            <Surface radius="2xl" padded style={styles.noPlans}>
+              <Ionicons name="cloud-offline-outline" size={22} color={theme.colors.danger} />
+              <ThemedText variant="muted" style={styles.centerText}>
+                {t.common.somethingWentWrong}
+              </ThemedText>
+              <Button
+                title={t.common.retry}
+                icon="refresh"
+                variant="soft"
+                loading={plansQuery.isFetching}
+                onPress={() => plansQuery.refetch()}
+              />
+            </Surface>
           ) : plans.length === 0 ? (
             <Surface radius="2xl" padded style={styles.noPlans}>
               <Ionicons name="pricetags-outline" size={22} color={theme.colors.textFaint} />

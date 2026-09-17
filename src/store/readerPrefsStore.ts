@@ -283,8 +283,12 @@ useReaderPrefsStore.subscribe((state) => {
  * "page" -> "screen"); defaults otherwise. The legacy key is never written
  * again and never deleted — other users on the device may still migrate.
  *
- * Call site: BookReader on [user?.id] — the reader is the only consumer
- * surface; languageStore continues to own the app language.
+ * Call site: RootNavigator on [user?.id] — NOT BookReader, which is no longer
+ * the only consumer (BookDetails picks its edition from readingLanguage and
+ * writes it back). Hydrating there armed `activeKey` too late: the first book
+ * of a session saw defaults, its write was dropped, and after a logout the
+ * key still pointed at the previous user. languageStore continues to own the
+ * app language.
  */
 export async function hydrateReaderPrefs(userId: string | null): Promise<void> {
   const key = keyFor(userId);

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import Animated, {
   cancelAnimation,
@@ -8,6 +8,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
+import { useIsFocused } from "@react-navigation/native";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { theme, withAlpha } from "@/theme";
 import { useLanguage } from "@/localization/LanguageProvider";
@@ -39,16 +40,21 @@ const TONES: Record<ArcadeBadgeKind, string> = {
  */
 export function PulseDot({ color }: { color: string }) {
   const reduceMotion = useReducedMotion();
+  // Home stays mounted behind the tab bar and under the Player, so without
+  // this the 6-12 dots on that screen keep breathing on the UI thread for the
+  // rest of the session — including while the viewer is watching a film. Same
+  // guard StoreHero already applies to its auto-advance timer.
+  const isFocused = useIsFocused();
   const opacity = useSharedValue(1);
 
   useEffect(() => {
-    if (reduceMotion) return undefined;
+    if (reduceMotion || !isFocused) return undefined;
     opacity.value = withRepeat(withTiming(0.45, { duration: 900 }), -1, true);
     return () => {
       cancelAnimation(opacity);
       opacity.value = 1;
     };
-  }, [reduceMotion, opacity]);
+  }, [reduceMotion, isFocused, opacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
@@ -56,15 +62,22 @@ export function PulseDot({ color }: { color: string }) {
 }
 
 /**
- * Sharp signage chip — deliberately NOT the app's rounded Pill. A figure that
- * belongs beside a badge (a player count next to "Online") is a sibling
- * SlugText at the call site, never part of the label.
+ * The arcade's sharp signage chip — deliberately NOT the app's rounded Pill,
+ * tinted by whatever role colour the caller passes.
+ *
+ * One shape, because the shelf puts these side by side: `StorePromos` renders a
+ * FreeTag in the same row as a badge, so a radius or padding changed in one
+ * place and not the other shows up as two different chips next to each other.
  */
-export function ArcadeBadge({ kind, style }: Props) {
-  const { t } = useLanguage();
-  const tone = TONES[kind];
-  const pulses = kind === "live" || kind === "online";
-
+export function SignageChip({
+  tone,
+  children,
+  style,
+}: {
+  tone: string;
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
   return (
     <View
       style={[
@@ -73,11 +86,28 @@ export function ArcadeBadge({ kind, style }: Props) {
         style,
       ]}
     >
+      {children}
+    </View>
+  );
+}
+
+/**
+ * A shelf state as signage. A figure that belongs beside a badge (a player
+ * count next to "Online") is a sibling SlugText at the call site, never part
+ * of the label.
+ */
+export function ArcadeBadge({ kind, style }: Props) {
+  const { t } = useLanguage();
+  const tone = TONES[kind];
+  const pulses = kind === "live" || kind === "online";
+
+  return (
+    <SignageChip tone={tone} style={style}>
       {pulses && <PulseDot color={tone} />}
       <ThemedText variant="caption" weight="semibold" style={[styles.label, { color: tone }]}>
         {t.arcade.badge[kind]}
       </ThemedText>
-    </View>
+    </SignageChip>
   );
 }
 

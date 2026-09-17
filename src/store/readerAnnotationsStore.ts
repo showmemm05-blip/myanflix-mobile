@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { HIGHLIGHT_COLORS } from "@/components/books/readerThemes";
 
 /**
  * Client-side annotations for the OPEN book — bookmarks and paragraph
@@ -57,7 +58,6 @@ interface ReaderAnnotationsState {
   /** Key parts of the blob currently loaded; null until loadAnnotations ran. */
   userId: string | null;
   bookId: string | null;
-  loaded: boolean;
   bookmarks: ReaderBookmark[];
   highlights: ReaderHighlight[];
   /** Hydrates the store for one user+book; call on reader mount. */
@@ -88,9 +88,23 @@ export function randomAnnotationId(): string {
   return out;
 }
 
-function sanitizeList<T extends { id?: unknown }>(value: unknown): T[] {
+/**
+ * The colour vocabulary, derived from the palette itself so the two cannot
+ * drift. readerThemes only imports a TYPE from this file, so this value
+ * import is not a runtime cycle.
+ */
+const HIGHLIGHT_COLOR_VALUES = Object.keys(HIGHLIGHT_COLORS);
+
+function sanitizeList<T extends { id?: unknown; color?: unknown }>(value: unknown): T[] {
   return Array.isArray(value)
-    ? (value.filter((row) => row && typeof row === "object" && typeof (row as T).id === "string") as T[])
+    ? (value.filter((row) => {
+        if (!row || typeof row !== "object" || typeof (row as T).id !== "string") return false;
+        // `color` is fed to HIGHLIGHT_COLORS[...] and then to withAlpha(),
+        // which does color.startsWith(...) — an unknown value is a TypeError
+        // during the reader's render, not a missing tint.
+        const color = (row as T).color;
+        return color === undefined || HIGHLIGHT_COLOR_VALUES.includes(color as string);
+      }) as T[])
     : [];
 }
 
@@ -104,13 +118,12 @@ function persist(state: Pick<ReaderAnnotationsState, "userId" | "bookId" | "book
 export const useReaderAnnotationsStore = create<ReaderAnnotationsState>()((set, get) => ({
   userId: null,
   bookId: null,
-  loaded: false,
   bookmarks: [],
   highlights: [],
 
   loadAnnotations: async (userId, bookId) => {
     // Clear first so a slow read never shows the previous book's rows.
-    set({ userId, bookId, loaded: false, bookmarks: [], highlights: [] });
+    set({ userId, bookId, bookmarks: [], highlights: [] });
     let bookmarks: ReaderBookmark[] = [];
     let highlights: ReaderHighlight[] = [];
     try {
@@ -126,7 +139,7 @@ export const useReaderAnnotationsStore = create<ReaderAnnotationsState>()((set, 
     // Another book may have started loading meanwhile — last call wins.
     const current = get();
     if (current.bookId !== bookId || current.userId !== userId) return;
-    set({ loaded: true, bookmarks, highlights });
+    set({ bookmarks, highlights });
   },
 
   addBookmark: (bookmark) => {

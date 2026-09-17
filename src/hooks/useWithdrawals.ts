@@ -5,7 +5,7 @@ import type { PaginationParams } from "@/types/api";
 export function useWithdrawals(pagination: PaginationParams = {}) {
   return useQuery({
     queryKey: ["withdrawals", "mine", pagination],
-    queryFn: () => withdrawalsService.getMyWithdrawals(pagination),
+    queryFn: ({ signal }) => withdrawalsService.getMyWithdrawals(pagination, { signal }),
   });
 }
 

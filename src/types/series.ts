@@ -18,20 +18,6 @@ export interface Series {
 
 export type SeriesListItem = Series & { episodeCount: number };
 
-export interface SeasonSummary {
-  seasonNumber: number;
-  episodeCount: number;
-}
-
-export interface SeriesPurchaseEntry {
-  id: string;
-  seriesId: string;
-  seriesTitle: string;
-  posterUrl: string | null;
-  amount: number;
-  createdAt: string;
-}
-
 export interface PlayerEpisodeProgress {
   progressPercent: number;
   lastPositionSeconds: number;

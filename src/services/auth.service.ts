@@ -20,9 +20,9 @@ export const authService = {
   async verifyOtp(phone: string, code: string, password?: string): Promise<AppUser> {
     const result = await authApi.verifyOtp(phone, code, password);
     await tokenStore.setTokens(result.accessToken, result.refreshToken);
-    const user = await profileService.getProfile();
-    await tokenStore.setUser(user);
-    return user;
+    // Only the tokens are persisted. The user is held in the auth store and
+    // re-fetched on cold start, so there is nothing to write to SecureStore.
+    return profileService.getProfile();
   },
 
   async logout(): Promise<void> {

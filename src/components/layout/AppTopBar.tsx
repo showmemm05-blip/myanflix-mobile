@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUnreadNotificationCount } from "@/hooks/useNotifications";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
+import { displayNameOf, initials } from "@/utils/format";
 import type { MainTabParamList, RootStackParamList } from "@/navigation/types";
 
 type Navigation = CompositeNavigationProp<
@@ -28,11 +29,6 @@ interface Props {
   trailing?: ReactNode;
   /** Row pinned below the bar — search field, segmented control, chips. */
   children?: ReactNode;
-}
-
-function initials(name: string | undefined): string {
-  if (!name) return "?";
-  return name.slice(0, 2).toUpperCase();
 }
 
 /**
@@ -55,7 +51,16 @@ export function AppTopBar({ title, subtitle, eyebrow, trailing, children }: Prop
       eyebrow={eyebrow}
       leading={
         <Pressable
-          onPress={() => navigation.navigate("HomeTab", { screen: "Home" })}
+          /**
+           * `pop: true` is what makes the wordmark keep its promise. In
+           * react-navigation 7, `navigate` reuses a route only when its name
+           * matches the CURRENTLY FOCUSED one; with a movie page open on the
+           * Home stack, plain navigate pushed a SECOND Home on top of it, so
+           * back revealed a stale detail page. `pop: true` pops the Home stack
+           * back to the Home already in it. (The bell and avatar below need no
+           * flag: they push onto the ROOT stack, above the tabs.)
+           */
+          onPress={() => navigation.navigate("HomeTab", { screen: "Home", pop: true })}
           style={styles.logoButton}
           hitSlop={8}
           accessibilityRole="button"
@@ -87,7 +92,8 @@ export function AppTopBar({ title, subtitle, eyebrow, trailing, children }: Prop
             ) : (
               <View style={[styles.avatar, styles.avatarFallback]}>
                 <ThemedText variant="caption" weight="bold">
-                  {initials(user?.username)}
+                  {/* Same avatar as the profile hero, so the same name rule. */}
+                  {initials(displayNameOf(user))}
                 </ThemedText>
               </View>
             )}

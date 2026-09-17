@@ -2,6 +2,20 @@
 export const UNKNOWN_DURATION = "—";
 
 /**
+ * Confines `value` to [min, max] — the one home for the arithmetic that was
+ * written out ten times across the app. NaN-safe callers must guard before
+ * calling: `Math.min/max` propagate NaN rather than falling back to a bound.
+ *
+ * This module deliberately has no imports, so anything may import it — the
+ * theme included. It is a plain JS-thread function: do NOT call it from a
+ * Reanimated worklet (see `PageZoomView`'s own `clampW`, which stays local for
+ * exactly that reason).
+ */
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+/**
  * Runtime in minutes -> "45m" / "1h 32m". Returns null when the runtime is
  * unknown: 0 is the API's not-measured sentinel (a bulk-uploaded title whose
  * probe failed), and it must never surface as "0m".
@@ -51,4 +65,38 @@ export function formatRelativeTime(iso: string, labels: RelativeTimeLabels, now:
   if (elapsed < DAY_MS) return labels.hoursAgo.replace("{n}", String(Math.floor(elapsed / HOUR_MS)));
   if (elapsed < 7 * DAY_MS) return labels.daysAgo.replace("{n}", String(Math.floor(elapsed / DAY_MS)));
   return new Date(timestamp).toLocaleDateString();
+}
+
+/** Player clock: seconds -> "m:ss", or "h:mm:ss" once there is an hour. */
+export function formatTime(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+  const ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/** Avatar fallback: the first two letters of a name, uppercased; "?" when unknown. */
+export function initials(name: string | undefined): string {
+  if (!name) return "?";
+  return name.slice(0, 2).toUpperCase();
+}
+
+/**
+ * The one rule for "what do we call this person": their display name if they
+ * set one, otherwise the username they sign in with. Same rule as the web
+ * app's mapUser, including the trim — a stored name that is only whitespace
+ * counts as unset rather than rendering as a blank line.
+ *
+ * Returns "" for no user at all, so a caller with its own fallback ("You" in
+ * the comment composer) can `||` onto it.
+ */
+export function displayNameOf(
+  user: { displayName?: string | null; username?: string | null } | null | undefined,
+): string {
+  const named = user?.displayName?.trim();
+  if (named) return named;
+  return user?.username ?? "";
 }

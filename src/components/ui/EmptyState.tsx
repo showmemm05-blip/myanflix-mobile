@@ -1,8 +1,10 @@
 import { View, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Button } from "@/components/ui/Button";
-import { theme } from "@/theme";
+import { theme, withAlpha } from "@/theme";
 
 interface Props {
   message: string;
@@ -25,8 +27,8 @@ export function EmptyState({ message, icon, actionLabel, onAction, title, tone, 
   return (
     <View style={[styles.container, fill && styles.fill, style]}>
       {icon && (
-        <View style={[styles.halo, { backgroundColor: accent + "14", borderColor: accent + "29" }]}>
-          <View style={[styles.iconTile, { backgroundColor: accent + "1F" }]}>
+        <View style={[styles.halo, { backgroundColor: withAlpha(accent, 0.08), borderColor: withAlpha(accent, 0.16) }]}>
+          <View style={[styles.iconTile, { backgroundColor: withAlpha(accent, 0.12) }]}>
             <Ionicons name={icon} size={26} color={accent} />
           </View>
         </View>

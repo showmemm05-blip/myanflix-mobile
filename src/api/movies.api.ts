@@ -1,19 +1,10 @@
 import { apiClient, csvParams } from "@/api/client";
-import type { PaginatedResponse, PaginationParams, RequestSignalOptions } from "@/types/api";
+import type { PaginatedResponse, RequestSignalOptions } from "@/types/api";
 import type { Movie, MovieFacets, MovieQuery } from "@/types/movie";
 import type { MovieCategoryRef } from "@/types/category";
 
 export interface BackendMovie extends Omit<Movie, "categories"> {
   categories: MovieCategoryRef[];
-}
-
-export interface BackendPurchaseEntry {
-  id: string;
-  movieId: string;
-  movieTitle: string;
-  posterUrl: string | null;
-  amount: number;
-  createdAt: string;
 }
 
 export const moviesApi = {
@@ -23,19 +14,15 @@ export const moviesApi = {
   },
 
   /** DB-derived filter vocabulary — empty facets hide their controls. */
-  getFacets() {
-    return apiClient.get<MovieFacets>("/movies/facets");
+  getFacets(options: RequestSignalOptions = {}) {
+    return apiClient.get<MovieFacets>("/movies/facets", options);
   },
 
-  getMovieById(id: string) {
-    return apiClient.get<BackendMovie>(`/movies/${id}`);
+  getMovieById(id: string, options: RequestSignalOptions = {}) {
+    return apiClient.get<BackendMovie>(`/movies/${id}`, options);
   },
 
-  getMostPurchased() {
-    return apiClient.get<BackendMovie[]>("/movies/most-purchased");
-  },
-
-  getMyPurchases(pagination: PaginationParams = {}) {
-    return apiClient.get<PaginatedResponse<BackendPurchaseEntry>>("/movies/me/purchases", { params: pagination });
+  getMostPurchased(options: RequestSignalOptions = {}) {
+    return apiClient.get<BackendMovie[]>("/movies/most-purchased", options);
   },
 };

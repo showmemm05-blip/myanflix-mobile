@@ -2,9 +2,11 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "baseUrl": ".",
+    // TypeScript 6 dropped `baseUrl`, so the alias is spelled relative to this
+    // file instead. Must stay in step with the module-resolver alias in
+    // babel.config.js, which is what actually resolves `@/…` at bundle time.
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   }
 }

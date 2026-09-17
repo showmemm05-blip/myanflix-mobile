@@ -13,8 +13,4 @@ export const actorsService = {
   ): Promise<PaginatedResponse<ActorListItem>> {
     return actorsApi.searchActors(query, options);
   },
-
-  async getActorById(id: string): Promise<ActorListItem> {
-    return actorsApi.getActorById(id);
-  },
 };

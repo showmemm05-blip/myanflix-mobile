@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ThemedText } from "@/components/ui/ThemedText";
@@ -23,6 +25,7 @@ import { useWithdrawals } from "@/hooks/useWithdrawals";
 import { useAuth } from "@/hooks/useAuth";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { formatKyat } from "@/utils/currency";
+import { displayNameOf } from "@/utils/format";
 import { tabularNums, theme } from "@/theme";
 import type { WalletStackParamList } from "@/navigation/types";
 
@@ -65,7 +68,11 @@ export function WalletScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <AuroraBackdrop tone="emerald" height={420} intensity={0.75} />
-      <AppTopBar title={t.nav.wallet} />
+      {/* No page title: the tab bar already says which tab this is, and the
+          balance card below is a better answer to "where am I" than the word
+          "Wallet". Dropping it also collapses AppBar to its compact variant,
+          which is what Home has always done. */}
+      <AppTopBar />
 
       {walletQuery.isLoading ? (
         <View style={styles.content}>
@@ -143,9 +150,10 @@ export function WalletScreen({ navigation }: Props) {
                 {formatKyat(wallet?.balance ?? 0)}
               </ThemedText>
 
-              {user?.username ? (
+              {/* The card-owner line is a human name, so the display name wins. */}
+              {displayNameOf(user) ? (
                 <ThemedText variant="caption" weight="semibold" style={styles.heroOwner} numberOfLines={1}>
-                  {user.username}
+                  {displayNameOf(user)}
                 </ThemedText>
               ) : null}
             </View>

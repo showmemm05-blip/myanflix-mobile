@@ -24,8 +24,7 @@ export const actorsApi = {
   searchActors(query: ActorQuery = {}, options: RequestSignalOptions = {}) {
     return apiClient.get<PaginatedResponse<ActorListItem>>("/actors", { params: query, ...options });
   },
-
-  getActorById(id: string) {
-    return apiClient.get<ActorListItem>(`/actors/${id}`);
-  },
+  // No `getActorById`: there is no actor detail screen, and the only actor UI
+  // in the app is the filter sheet's cast picker, which needs search alone.
+  // Restore it (and the service wrapper) when a detail screen lands.
 };

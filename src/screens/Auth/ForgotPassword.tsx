@@ -1,7 +1,9 @@
 import { StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { AuthCard, AuthScreenShell } from "@/components/auth/AuthScreenShell";
+import { AuthScreenShell, AuthTicket } from "@/components/auth/AuthScreenShell";
 import { Button } from "@/components/ui/Button";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { useLanguage } from "@/localization/LanguageProvider";
@@ -19,7 +21,20 @@ export function ForgotPasswordScreen({ navigation }: Props) {
 
   return (
     <AuthScreenShell>
-      <AuthCard>
+      {/* Back lives in the stub: a tear with nothing below it reads as a
+          mistake, and this screen's one action is exactly what a stub is for. */}
+      <AuthTicket
+        stub={
+          <Button
+            title={t.common.back}
+            icon="chevron-back"
+            variant="soft"
+            size="lg"
+            fullWidth
+            onPress={() => navigation.navigate("Login")}
+          />
+        }
+      >
         <View style={styles.badge}>
           <Ionicons name="key-outline" size={22} color={theme.colors.primary} />
         </View>
@@ -30,16 +45,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
             {t.auth.forgotPassword.body}
           </ThemedText>
         </View>
-
-        <Button
-          title={t.common.back}
-          icon="chevron-back"
-          variant="soft"
-          size="lg"
-          fullWidth
-          onPress={() => navigation.navigate("Login")}
-        />
-      </AuthCard>
+      </AuthTicket>
     </AuthScreenShell>
   );
 }

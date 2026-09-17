@@ -1,6 +1,6 @@
 import { apiClient } from "@/api/client";
 import type { Withdrawal } from "@/types/withdrawal";
-import type { PaginatedResponse, PaginationParams } from "@/types/api";
+import type { PaginatedResponse, PaginationParams, RequestSignalOptions } from "@/types/api";
 
 export const withdrawalsApi = {
   createWithdrawal(
@@ -20,7 +20,7 @@ export const withdrawalsApi = {
     });
   },
 
-  getMyWithdrawals(pagination: PaginationParams = {}) {
-    return apiClient.get<PaginatedResponse<Withdrawal>>("/withdrawals/me", { params: pagination });
+  getMyWithdrawals(pagination: PaginationParams = {}, options: RequestSignalOptions = {}) {
+    return apiClient.get<PaginatedResponse<Withdrawal>>("/withdrawals/me", { params: pagination, ...options });
   },
 };

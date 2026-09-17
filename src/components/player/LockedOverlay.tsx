@@ -1,5 +1,7 @@
 import { StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Button } from "@/components/ui/Button";
 import { AuroraBackdrop } from "@/components/common/AuroraBackdrop";
@@ -43,7 +45,7 @@ export function LockedOverlay({ onSubscribe }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     padding: theme.spacing.lg,

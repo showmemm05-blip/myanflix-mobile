@@ -1,7 +1,9 @@
 import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { onSolid, theme } from "@/theme";
+import { onSolid, theme, withAlpha } from "@/theme";
 
 export type ButtonVariant = "solid" | "outline" | "ghost" | "soft";
 export type ButtonSize = "md" | "lg";
@@ -65,9 +67,14 @@ export function Button({
         size === "lg" ? styles.sizeLg : styles.sizeMd,
         fullWidth && styles.fullWidth,
         variant === "solid" && [styles.solid, { backgroundColor: accent, shadowColor: accent }],
-        variant === "soft" && [styles.soft, { backgroundColor: accent + "22", borderColor: accent + "3D" }],
+        // 0.133/0.24 are the exact fractions that round back to the "22"/"3D"
+        // this used to concatenate — same pixels, minus the rgba-token trap.
+        variant === "soft" && [
+          styles.soft,
+          { backgroundColor: withAlpha(accent, 0.133), borderColor: withAlpha(accent, 0.24) },
+        ],
         variant === "outline" && styles.outline,
-        variant === "outline" && color && { borderColor: color + "66" },
+        variant === "outline" && color && { borderColor: withAlpha(color, 0.4) },
         variant === "ghost" && styles.ghost,
         isDisabled && styles.disabled,
         pressed && !isDisabled && styles.pressed,

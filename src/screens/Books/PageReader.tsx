@@ -3,7 +3,6 @@ import {
   FlatList,
   Pressable,
   StyleSheet,
-  TextInput,
   View,
   useWindowDimensions,
   type ListRenderItemInfo,
@@ -12,7 +11,6 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useReducedMotion } from "react-native-reanimated";
-import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ThemedText } from "@/components/ui/ThemedText";
@@ -24,17 +22,19 @@ import { ReaderDim } from "@/components/books/ReaderDim";
 import { ReaderKeepAwake } from "@/components/books/ReaderKeepAwake";
 import { PageSheet, FOLIO_HEIGHT, type PageRotation } from "@/components/books/PageSheet";
 import { PageThumbGrid } from "@/components/books/PageThumbGrid";
-import { PageZoomView, PAGE_ZOOM_MAX, PAGE_ZOOM_MIN } from "@/components/books/PageZoomView";
+import { JumpToPageSheet } from "@/components/books/JumpToPageSheet";
+import { PageZoomView } from "@/components/books/PageZoomView";
 import { READER_THEMES } from "@/components/books/readerThemes";
 import { Skeleton } from "@/components/common/Skeleton";
 import { useChapterPages, useContents } from "@/hooks/useBooks";
 import { useReadingProgressSaver, type ReadingPosition } from "@/hooks/useReadingProgressSaver";
+import { clampZoom, useBookViewMemory } from "@/hooks/useBookViewMemory";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { useAuthStore } from "@/store/authStore";
 import { useReaderAnnotationsStore, type ReaderBookmark } from "@/store/readerAnnotationsStore";
-import { loadBookView, saveBookView } from "@/store/readerBookViewStore";
-import { PAGE_BACKGROUND_COLOR, useReaderPrefsStore, type ReaderPageMode, type ReaderFitMode } from "@/store/readerPrefsStore";
+import { PAGE_BACKGROUND_COLOR, useReaderPrefsStore } from "@/store/readerPrefsStore";
 import { sectionIdAtPage } from "@/utils/chapterSections";
+import { clamp } from "@/utils/format";
 import { theme, withAlpha } from "@/theme";
 import type { BookChapterSummary, BookDetail, BookEdition, BookPage, BookSectionSummary } from "@/types/book";
 
@@ -61,10 +61,6 @@ const PAGED_V_ALLOWANCE = 140;
 const ZOOM_STEP = 0.25;
 /** How long the cap-refusal notice stays up. */
 const NOTICE_MS = 3000;
-
-function clampZoom(value: number): number {
-  return Math.min(PAGE_ZOOM_MAX, Math.max(PAGE_ZOOM_MIN, Math.round(value * 100) / 100));
-}
 
 /** Largest index whose offset is at or above the viewport midpoint. */
 function findItemAt(offsets: number[], y: number): number {
@@ -96,7 +92,8 @@ function findItemAt(offsets: number[], y: number): number {
  *
  * Fit/rotation/background/direction come from readerPrefsStore; the per-book
  * layout memory (pageMode/fit/zoom/rotation) restores from
- * readerBookViewStore on mount and saves debounced on change.
+ * readerBookViewStore on mount and saves debounced on change — that whole
+ * cycle lives in useBookViewMemory, next to the store it guards.
  */
 export function PageReader({ book, edition, chapters, initialChapterId, initialPageNumber, onClose }: Props) {
   const { t } = useLanguage();
@@ -106,86 +103,23 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
   const userId = useAuthStore((s) => s.user?.id ?? null);
 
   const readerTheme = useReaderPrefsStore((s) => s.readerTheme);
-  const fitMode = useReaderPrefsStore((s) => s.fitMode);
-  const storedPageMode = useReaderPrefsStore((s) => s.pageMode);
   const pageBackground = useReaderPrefsStore((s) => s.pageBackground);
   const pageDirection = useReaderPrefsStore((s) => s.pageDirection);
   const brightness = useReaderPrefsStore((s) => s.brightness);
   const keepAwake = useReaderPrefsStore((s) => s.keepAwake);
   const autoHideChrome = useReaderPrefsStore((s) => s.autoHideChrome);
   const fullscreen = useReaderPrefsStore((s) => s.fullscreen);
-  const setPageMode = useReaderPrefsStore((s) => s.setPageMode);
-  const setFitMode = useReaderPrefsStore((s) => s.setFitMode);
-  /**
-   * Per-book memory LAYERS over the global prefs, mirroring the web reader:
-   * opening a book with a remembered layout must not silently rewrite the
-   * default every other book inherits. An explicit edit in the settings
-   * sheet writes the global store — and clears the override below, so the
-   * sheet's choice takes effect immediately in this book too.
-   */
-  const [viewOverride, setViewOverride] = useState<{
-    pageMode?: ReaderPageMode;
-    fit?: ReaderFitMode;
-  }>({});
 
   const colors = READER_THEMES[readerTheme];
   /** Stage colour behind/around the sheets; the sheet itself stays white. */
   const stageColor = PAGE_BACKGROUND_COLOR[pageBackground] ?? colors.bg;
 
-  /* -------- per-book view memory: zoom + rotation local, mode/fit via prefs -------- */
-  const [zoom, setZoom] = useState(1);
-  const [rotation, setRotation] = useState<PageRotation>(0);
-  const memoryReadyRef = useRef(false);
-  useEffect(() => {
-    let cancelled = false;
-    void loadBookView(userId, book.id).then((memory) => {
-      if (cancelled) return;
-      setViewOverride({
-        ...(memory?.pageMode ? { pageMode: memory.pageMode } : {}),
-        ...(memory?.fit ? { fit: memory.fit } : {}),
-      });
-      if (typeof memory?.zoom === "number" && Number.isFinite(memory.zoom)) {
-        setZoom(clampZoom(memory.zoom));
-      }
-      // Strict: a JSON round-trip turns undefined into null, and a null that
-      // slips into rotation state renders "nulldeg" — a crash on every open
-      // of this book until storage is cleared.
-      if (
-        memory?.rotation === 0 ||
-        memory?.rotation === 90 ||
-        memory?.rotation === 180 ||
-        memory?.rotation === 270
-      ) {
-        setRotation(memory.rotation);
-      }
-      memoryReadyRef.current = true;
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, book.id]);
-
-  // A store change after mount can only come from the settings sheet — that
-  // explicit choice beats the remembered layout.
-  const prevStoreView = useRef({ pageMode: storedPageMode, fit: fitMode });
-  useEffect(() => {
-    if (
-      prevStoreView.current.pageMode !== storedPageMode ||
-      prevStoreView.current.fit !== fitMode
-    ) {
-      prevStoreView.current = { pageMode: storedPageMode, fit: fitMode };
-      setViewOverride({});
-    }
-  }, [storedPageMode, fitMode]);
-
-  const pageMode = viewOverride.pageMode ?? storedPageMode;
-
-  const overriddenFit = viewOverride.fit ?? fitMode;
-  const effFit = overriddenFit === "page" ? "screen" : overriddenFit;
-  useEffect(() => {
-    if (!memoryReadyRef.current) return;
-    saveBookView(userId, book.id, { pageMode, fit: effFit, zoom, rotation });
-  }, [userId, book.id, pageMode, effFit, zoom, rotation]);
+  /**
+   * Per-book view memory: the remembered layout, fit, zoom and rotation for
+   * THIS book, layered over the global prefs. `colors`/`stageColor` above stay
+   * here — they are theme, not memory.
+   */
+  const { pageMode, effFit, zoom, setZoom, rotation, setRotation } = useBookViewMemory(userId, book.id);
 
   /* -------- chapter + pages -------- */
   const [chapterId, setChapterId] = useState(initialChapterId);
@@ -279,8 +213,12 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
   const [chromeVisible, setChromeVisible] = useState(true);
   const [contentsOpen, setContentsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /**
+   * The jump sheet's own dialog state lives in JumpToPageSheet; only whether
+   * it is OPEN stays here, because `barsVisible` below ORs it in to pin the
+   * chrome up while the sheet is showing.
+   */
   const [jumpOpen, setJumpOpen] = useState(false);
-  const [jumpText, setJumpText] = useState("");
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const armHideTimer = useCallback(() => {
@@ -326,7 +264,7 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
   const commitPage = useCallback(
     (index: number) => {
       if (pages.length === 0) return;
-      const clamped = Math.max(0, Math.min(pages.length - 1, index));
+      const clamped = clamp(index, 0, pages.length - 1);
       if (clamped === currentIndexRef.current) return;
       currentIndexRef.current = clamped;
       setCurrentIndex(clamped);
@@ -403,7 +341,7 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
   const pendingPageRef = useRef<number | null>(null);
   useEffect(() => {
     if (pendingPageRef.current == null || pages.length === 0) return;
-    const idx = Math.max(0, Math.min(pages.length - 1, pendingPageRef.current - 1));
+    const idx = clamp(pendingPageRef.current - 1, 0, pages.length - 1);
     pendingPageRef.current = null;
     currentIndexRef.current = idx;
     setCurrentIndex(idx);
@@ -415,7 +353,7 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
   const goToPage = useCallback(
     (index: number) => {
       if (pages.length === 0) return;
-      const clamped = Math.max(0, Math.min(pages.length - 1, index));
+      const clamped = clamp(index, 0, pages.length - 1);
       commitPage(clamped);
       scrollToPageIndex(clamped, !reduceMotion);
     },
@@ -669,15 +607,6 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
         ? `${Math.min(currentIndex + 1, pages.length)} / ${pages.length} · ${Math.round(zoom * 100)}%`
         : `${Math.min(currentIndex + 1, pages.length)} / ${pages.length}`;
 
-  const submitJump = useCallback(() => {
-    const target = parseInt(jumpText, 10);
-    setJumpOpen(false);
-    setJumpText("");
-    if (Number.isFinite(target) && target >= 1 && target <= pages.length) {
-      goToPage(target - 1);
-    }
-  }, [jumpText, pages.length, goToPage]);
-
   const initialPagedIndex =
     spreads.length > 0 ? Math.min(itemIndexForPage(currentIndexRef.current), spreads.length - 1) : 0;
 
@@ -835,61 +764,13 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
         pagesControls={pagesControls}
       />
 
-      {/* -------- jump to page: number pad + first/last + thumbnail grid -------- */}
-      <BottomSheet
+      <JumpToPageSheet
         visible={jumpOpen}
         onClose={() => setJumpOpen(false)}
-        title={r.jumpToPage}
-        showClose
-        snapHeight={560}
-        footer={<Button title={r.jumpToPage} fullWidth onPress={submitJump} />}
-      >
-        <TextInput
-          style={styles.jumpInput}
-          value={jumpText}
-          onChangeText={setJumpText}
-          keyboardType="number-pad"
-          placeholder={`1 – ${pages.length}`}
-          placeholderTextColor={theme.colors.textFaint}
-          accessibilityLabel={r.jumpToPage}
-          onSubmitEditing={submitJump}
-        />
-        <View style={styles.jumpQuickRow}>
-          <Button
-            title={r.firstPage}
-            icon="play-back-outline"
-            variant="outline"
-            onPress={() => {
-              setJumpOpen(false);
-              setJumpText("");
-              goToPage(0);
-            }}
-            style={styles.jumpQuick}
-          />
-          <Button
-            title={r.lastPage}
-            trailingIcon="play-forward-outline"
-            variant="outline"
-            onPress={() => {
-              setJumpOpen(false);
-              setJumpText("");
-              goToPage(pages.length - 1);
-            }}
-            style={styles.jumpQuick}
-          />
-        </View>
-        <View style={styles.jumpGrid}>
-          <PageThumbGrid
-            pages={pages}
-            currentIndex={currentIndex}
-            onSelect={(index) => {
-              setJumpOpen(false);
-              setJumpText("");
-              goToPage(index);
-            }}
-          />
-        </View>
-      </BottomSheet>
+        pages={pages}
+        currentIndex={currentIndex}
+        onGoToPage={goToPage}
+      />
 
       {/* The dimmer owns the whole screen — rendered last, above every bar. */}
       <ReaderDim brightness={brightness} />
@@ -935,24 +816,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     zIndex: 20,
   },
-  jumpInput: {
-    minHeight: theme.layout.minTouch,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceElevated,
-    color: theme.colors.text,
-    paddingHorizontal: theme.spacing.md,
-    fontSize: 16,
-    fontFamily: theme.font.regular,
-    textAlign: "center",
-  },
-  jumpQuickRow: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    marginTop: theme.spacing.sm,
-    marginBottom: theme.spacing.sm,
-  },
-  jumpQuick: { flex: 1 },
-  jumpGrid: { flex: 1 },
 });

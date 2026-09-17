@@ -1,7 +1,9 @@
 import { memo } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Pill } from "@/components/ui/Pill";
 import { useLanguage } from "@/localization/LanguageProvider";
@@ -14,7 +16,12 @@ interface Props {
   isPdf: boolean;
   /** The reader's bookmark sits in this chapter — tinted row + continue pill. */
   bookmarked?: boolean;
-  onPress?: () => void;
+  /**
+   * Takes the chapter id rather than a bound closure, so the caller can hand
+   * every row ONE stable handler. With a per-row arrow the `memo` below never
+   * held, and BookDetails maps the whole (uncapped) chapter list in flow.
+   */
+  onPress?: (chapterId: string) => void;
 }
 
 /**
@@ -30,7 +37,7 @@ export const ChapterRow = memo(function ChapterRow({ chapter, isPdf, bookmarked,
 
   return (
     <Pressable
-      onPress={ready ? onPress : undefined}
+      onPress={ready && onPress ? () => onPress(chapter.id) : undefined}
       disabled={!ready || !onPress}
       accessibilityRole="button"
       accessibilityLabel={chapter.title}
@@ -44,7 +51,15 @@ export const ChapterRow = memo(function ChapterRow({ chapter, isPdf, bookmarked,
     >
       <View style={styles.thumb}>
         {chapter.imageUrl ? (
-          <Image source={{ uri: chapter.imageUrl }} style={StyleSheet.absoluteFill} contentFit="cover" transition={160} />
+          <Image
+            source={{ uri: chapter.imageUrl }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={160}
+            // 72x48 thumb — the memory tier costs almost nothing and saves a
+            // disk read plus a decode on every scroll back. See MediaCard.
+            cachePolicy="memory-disk"
+          />
         ) : (
           <View style={styles.thumbFallback}>
             <Ionicons name="book-outline" size={16} color={theme.colors.textFaint} />
@@ -108,7 +123,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.ring,
   },
-  thumbFallback: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  thumbFallback: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
   body: { flex: 1, gap: 2 },
   titleRow: { flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.sm },
   order: { fontSize: 12, color: theme.colors.textFaint, marginTop: 1 },

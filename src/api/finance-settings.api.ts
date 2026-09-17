@@ -1,4 +1,5 @@
 import { apiClient } from "@/api/client";
+import type { RequestSignalOptions } from "@/types/api";
 
 export interface FinanceSettings {
   minDepositAmount: number;
@@ -8,7 +9,7 @@ export interface FinanceSettings {
 }
 
 export const financeSettingsApi = {
-  getSettings() {
-    return apiClient.get<FinanceSettings>("/finance-settings");
+  getSettings(options: RequestSignalOptions = {}) {
+    return apiClient.get<FinanceSettings>("/finance-settings", options);
   },
 };

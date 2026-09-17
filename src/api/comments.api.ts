@@ -1,4 +1,5 @@
 import { apiClient } from "@/api/client";
+import type { RequestSignalOptions } from "@/types/api";
 import type { Comment, CommentTarget } from "@/types/comment";
 
 export interface CreateCommentInput {
@@ -16,8 +17,8 @@ export const commentsApi = {
    * top-level comment with its replies nested, which is exactly what the
    * section draws.
    */
-  getComments(target: CommentTarget) {
-    return apiClient.get<Comment[]>("/comments", { params: target });
+  getComments(target: CommentTarget, options: RequestSignalOptions = {}) {
+    return apiClient.get<Comment[]>("/comments", { params: target, ...options });
   },
 
   createComment(target: CommentTarget, input: CreateCommentInput) {

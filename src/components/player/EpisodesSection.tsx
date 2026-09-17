@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useMemo, useRef } from "react";
 import { ActivityIndicator, FlatList, View, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { EpisodeRow, EPISODE_ROW_HEIGHT } from "@/components/series/EpisodeRow";
@@ -29,6 +31,9 @@ const SEASON_HEADER_HEIGHT = 40;
 const TITLE_HEIGHT = 44;
 const CONTENT_PADDING_TOP = theme.spacing.md;
 
+/** Module scope: a fresh extractor each render defeats FlatList's PureComponent. */
+const keyExtractor = (item: Row) => item.key;
+
 function rowHeight(row: Row): number {
   switch (row.kind) {
     case "title":
@@ -47,8 +52,17 @@ function rowHeight(row: Row): number {
  * gives exact offsets: the one-time scroll to the current episode lands on the
  * right row in EVERY season, not just the first (offsets are list-absolute, not
  * relative to a season block).
+ *
+ * Memoized because the player re-renders four times a second off the playback
+ * tick (VideoPlayer's `timeUpdateEventInterval` is 0.25s) and every prop this
+ * takes is already stable there — so none of those ticks need reach this list.
  */
-export function EpisodesSection({ seriesId, currentEpisodeId, onSelectEpisode, hideHeader }: Props) {
+export const EpisodesSection = memo(function EpisodesSection({
+  seriesId,
+  currentEpisodeId,
+  onSelectEpisode,
+  hideHeader,
+}: Props) {
   const { t } = useLanguage();
   const episodesQuery = usePlayerEpisodes(seriesId);
   const listRef = useRef<FlatList<Row>>(null);
@@ -183,7 +197,7 @@ export function EpisodesSection({ seriesId, currentEpisodeId, onSelectEpisode, h
     <FlatList
       ref={listRef}
       data={rows}
-      keyExtractor={(item) => item.key}
+      keyExtractor={keyExtractor}
       renderItem={renderItem}
       getItemLayout={getItemLayout}
       onContentSizeChange={handleContentSizeChange}
@@ -195,7 +209,7 @@ export function EpisodesSection({ seriesId, currentEpisodeId, onSelectEpisode, h
       windowSize={7}
     />
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

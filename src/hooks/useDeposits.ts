@@ -5,7 +5,7 @@ import type { PaginationParams } from "@/types/api";
 export function useDeposits(pagination: PaginationParams = {}) {
   return useQuery({
     queryKey: ["deposits", "mine", pagination],
-    queryFn: () => depositsService.getMyDeposits(pagination),
+    queryFn: ({ signal }) => depositsService.getMyDeposits(pagination, { signal }),
   });
 }
 

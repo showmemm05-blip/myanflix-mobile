@@ -4,13 +4,13 @@ import { paymentAccountsService } from "@/services/payment-accounts.service";
 export function usePaymentAccounts() {
   return useQuery({
     queryKey: ["payment-accounts"],
-    queryFn: () => paymentAccountsService.getAccounts(),
+    queryFn: ({ signal }) => paymentAccountsService.getAccounts({ signal }),
   });
 }
 
 export function usePaymentAccountTypes() {
   return useQuery({
     queryKey: ["payment-accounts", "types"],
-    queryFn: () => paymentAccountsService.getTypes(),
+    queryFn: ({ signal }) => paymentAccountsService.getTypes({ signal }),
   });
 }

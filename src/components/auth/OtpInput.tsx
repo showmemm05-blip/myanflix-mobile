@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
    * `opacity: 0`, which some Android builds refuse to focus.
    */
   input: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     height: CELL_HEIGHT,
     color: "transparent",
     backgroundColor: "transparent",

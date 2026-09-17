@@ -28,7 +28,30 @@ export const CLIENT_PLATFORM = "MOBILE";
  */
 const platformHeaders = { "X-Client-Platform": CLIENT_PLATFORM } as const;
 
-const http = axios.create({ baseURL: API_BASE_URL, headers: platformHeaders });
+/**
+ * Axios defaults `timeout` to 0 — wait forever — and React Native's XHR
+ * imposes none either, so without this a server that accepts the socket and
+ * never answers pins that promise for the life of the process. That is a
+ * permanent splash screen at boot: bootstrapAuth awaits GET /users/me before
+ * finishBootstrapping(), and App.tsx paints nothing until isBootstrapping is
+ * false. React Query's retry policy cannot rescue it either — a retry never
+ * fires for a request that never settles.
+ *
+ * No new error handling is needed: a timeout surfaces as an AxiosError with
+ * no `response`, which the catch in `request` below already turns into the
+ * "Unable to reach the server" ApiError. Cancelled requests are checked
+ * first, so aborted searches are unaffected.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
+
+/** Uploads move real bytes over a phone connection and need a longer leash. */
+const UPLOAD_TIMEOUT_MS = 60_000;
+
+const http = axios.create({
+  baseURL: API_BASE_URL,
+  headers: platformHeaders,
+  timeout: REQUEST_TIMEOUT_MS,
+});
 
 /**
  * Everything axios accepts except the bits this module owns. `performRequest`
@@ -62,7 +85,14 @@ async function refreshAccessToken(): Promise<string | null> {
     const response = await axios.post<Envelope<{ accessToken: string; refreshToken: string }>>(
       `${API_BASE_URL}/auth/refresh`,
       { refreshToken },
-      { headers: platformHeaders },
+      // The timeout has to be repeated here. This call deliberately uses the
+      // bare `axios` rather than `http` so a 401 on the refresh itself cannot
+      // recurse back through the interceptor — but bypassing the instance also
+      // bypasses its timeout, and axios then waits forever. This path runs at
+      // BOOT (bootstrapAuth → getProfile → 401 → refresh), so without it a
+      // dead network here is the very hang the instance timeout was added to
+      // end, just one call further along.
+      { headers: platformHeaders, timeout: REQUEST_TIMEOUT_MS },
     );
     if (!response.data.success || !response.data.data) return null;
 
@@ -172,6 +202,23 @@ export const apiClient = {
   get: <T>(path: string, options?: RequestOptions) => request<T>(path, { ...options, method: "GET" }),
   post: <T>(path: string, data?: unknown, options?: RequestOptions) =>
     request<T>(path, { ...options, method: "POST", data }),
+  /**
+   * File upload. Goes through the same `request` as everything else, so it
+   * inherits the token, the single-flight refresh-on-401 and the envelope; the
+   * retry after a refresh re-sends the SAME FormData, which is safe because
+   * React Native's FormData holds `{uri,name,type}` descriptors rather than a
+   * consumed stream.
+   *
+   * Content-Type is deliberately NOT set here and must not be added: axios
+   * leaves a FormData body alone, so React Native's XHR writes
+   * `multipart/form-data` WITH its boundary. Setting it by hand omits the
+   * boundary, the server then parses zero parts, and the upload fails as "no
+   * file received" — which looks nothing like a header problem.
+   */
+  postMultipart: <T>(path: string, form: FormData, options?: RequestOptions) =>
+    // The longer timeout goes FIRST so a caller can still override it; the
+    // instance-wide 15 s is too short for an image leaving a phone.
+    request<T>(path, { timeout: UPLOAD_TIMEOUT_MS, ...options, method: "POST", data: form }),
   put: <T>(path: string, data?: unknown, options?: RequestOptions) =>
     request<T>(path, { ...options, method: "PUT", data }),
   patch: <T>(path: string, data?: unknown, options?: RequestOptions) =>

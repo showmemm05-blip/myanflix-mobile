@@ -65,7 +65,17 @@ export function useRealtimeWallet() {
     };
 
     (async () => {
-      const token = await tokenStore.getAccessToken();
+      // SecureStore REJECTS (it does not return null) when a value cannot be
+      // decrypted, and this IIFE is floating — nothing downstream would catch
+      // it, so it would surface as an unhandled rejection at app root. Live
+      // updates are a nicety: degrade to "no socket", which is the same
+      // outcome as an unauthenticated session.
+      let token: string | null = null;
+      try {
+        token = await tokenStore.getAccessToken();
+      } catch {
+        return;
+      }
       if (!token || cancelled) return;
       activeSocket = connectSocket(token);
       activeSocket.on("wallet.balanceUpdated", handleBalanceUpdated);

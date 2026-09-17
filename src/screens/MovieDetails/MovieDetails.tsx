@@ -1,6 +1,8 @@
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Share, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { CompositeScreenProps } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
@@ -22,11 +24,11 @@ import { useLanguage } from "@/localization/LanguageProvider";
 import { formatDuration, UNKNOWN_DURATION } from "@/utils/format";
 import { hasAccess } from "@/utils/access";
 import { theme } from "@/theme";
-import type { HomeStackParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
+import type { MediaDetailParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
 import type { Movie } from "@/types/movie";
 
 type Props = CompositeScreenProps<
-  NativeStackScreenProps<HomeStackParamList, "MovieDetails">,
+  NativeStackScreenProps<MediaDetailParamList, "MovieDetails">,
   CompositeScreenProps<
     BottomTabScreenProps<MainTabParamList>,
     NativeStackScreenProps<RootStackParamList>
@@ -44,13 +46,21 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
   const movie = movieQuery.data;
   const canWatch = !!movie && hasAccess(movie.accessType, subscriptionQuery.data?.isActive ?? false);
 
-  const similarQuery = useMovies({ categoryId: movie?.categories[0]?.id, limit: 10 });
-  // `useMovies` keeps the previous key's data on screen while the next key
-  // loads — right for a search field, wrong here: this query's key starts out
-  // category-less (the movie hasn't resolved yet) and only gains a categoryId
-  // once it does, so the held-over data is the generic top-10 catalogue. Under
-  // a "Similar movies" heading, with tappable cards, that is not a slow row —
-  // it is a wrong one. Show nothing until the row's own results arrive.
+  // Don't ASK until the movie's own category is known. This key would
+  // otherwise start category-less (the movie hasn't resolved yet on first
+  // render, and ["movie", id] is never pre-filled by a list), spending a whole
+  // request on the generic top-10 that the guard below has already decided
+  // never to show, and then fire a second one when the category arrived.
+  const similarCategoryId = movie?.categories[0]?.id;
+  const similarQuery = useMovies(
+    { categoryId: similarCategoryId, limit: 10 },
+    { enabled: !!similarCategoryId },
+  );
+  // The guard stays. `useMovies` keeps the previous key's data on screen while
+  // the next key loads — right for a search field, wrong here: under a "Similar
+  // movies" heading, with tappable cards, a held-over list from another key is
+  // not a slow row, it is a wrong one. Show nothing until this row's own
+  // results arrive.
   const similarMovies = similarQuery.isPlaceholderData
     ? []
     : (similarQuery.data?.items ?? []).filter((m) => m.id !== movieId);

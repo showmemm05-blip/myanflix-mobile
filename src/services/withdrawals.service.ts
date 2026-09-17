@@ -1,5 +1,5 @@
 import { withdrawalsApi } from "@/api/withdrawals.api";
-import type { PaginationParams } from "@/types/api";
+import type { PaginationParams, RequestSignalOptions } from "@/types/api";
 
 export const withdrawalsService = {
   createWithdrawal(
@@ -12,7 +12,7 @@ export const withdrawalsService = {
     return withdrawalsApi.createWithdrawal(amount, accountType, accountName, accountNumber, bankName);
   },
 
-  getMyWithdrawals(pagination: PaginationParams = {}) {
-    return withdrawalsApi.getMyWithdrawals(pagination);
+  getMyWithdrawals(pagination: PaginationParams = {}, options: RequestSignalOptions = {}) {
+    return withdrawalsApi.getMyWithdrawals(pagination, options);
   },
 };

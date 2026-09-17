@@ -22,8 +22,8 @@ export const booksApi = {
     return apiClient.get<PaginatedResponse<Book>>("/books", { params: query, ...options });
   },
 
-  getBookById(id: string) {
-    return apiClient.get<BookDetail>(`/books/${id}`);
+  getBookById(id: string, options: RequestSignalOptions = {}) {
+    return apiClient.get<BookDetail>(`/books/${id}`, options);
   },
 
   /**
@@ -61,9 +61,10 @@ export const booksApi = {
   },
 
   /** Null when this reader has never opened this language. */
-  getReadingProgress(bookId: string, editionId: string) {
+  getReadingProgress(bookId: string, editionId: string, options: RequestSignalOptions = {}) {
     return apiClient.get<BookReadingProgress | null>(
       `/books/${bookId}/editions/${editionId}/reading-progress`,
+      options,
     );
   },
 

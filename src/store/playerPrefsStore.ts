@@ -2,6 +2,9 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+/** Caption text size, the same three steps the web player offers. */
+export type SubtitleSize = "small" | "medium" | "large";
+
 interface PlayerPrefsState {
   preferredSpeed: number;
   setPreferredSpeed: (speed: number) => void;
@@ -27,6 +30,33 @@ interface PlayerPrefsState {
    */
   preferredSubtitleLanguage: string | null | undefined;
   setPreferredSubtitleLanguage: (language: string | null) => void;
+  /**
+   * How the caption itself looks — mobile draws subtitles rather than leaving
+   * them to the native renderer, so these are ours to honour. Defaults match
+   * the web player's DEFAULT_SUBTITLE_STYLE so the same account sees the same
+   * caption on both clients until it is changed on one of them.
+   */
+  subtitleSize: SubtitleSize;
+  setSubtitleSize: (size: SubtitleSize) => void;
+  /** Solid backing plate behind the text vs bare text with a shadow. */
+  subtitleBackground: boolean;
+  setSubtitleBackground: (background: boolean) => void;
+  /**
+   * The rendition to pin, as its LABEL ("720p"), or `null` for Auto — the
+   * master playlist, adapting to bandwidth, which is what plays today.
+   *
+   * A label rather than a URL for the same reason the subtitle preference
+   * stores a language: the URL belongs to one title and expires within the
+   * day, while the choice outlives both. It is resolved against whatever
+   * ladder the title actually offers, so a title with no 720p plays Auto and
+   * the preference stays put for the next one that has it.
+   *
+   * No three-way undefined/null/value here, unlike the subtitle language:
+   * Auto is both "never chosen" and the right default, so one `null` says
+   * both and nothing is lost by collapsing them.
+   */
+  preferredQuality: string | null;
+  setPreferredQuality: (label: string | null) => void;
 }
 
 export const usePlayerPrefsStore = create<PlayerPrefsState>()(
@@ -36,6 +66,15 @@ export const usePlayerPrefsStore = create<PlayerPrefsState>()(
       setPreferredSpeed: (preferredSpeed) => set({ preferredSpeed }),
       preferredSubtitleLanguage: undefined,
       setPreferredSubtitleLanguage: (preferredSubtitleLanguage) => set({ preferredSubtitleLanguage }),
+      // No version bump for these three: an older stored blob simply has no
+      // such keys, and persist shallow-merges over the initial state, so they
+      // rehydrate to exactly these defaults without a migration.
+      subtitleSize: "medium",
+      setSubtitleSize: (subtitleSize) => set({ subtitleSize }),
+      subtitleBackground: true,
+      setSubtitleBackground: (subtitleBackground) => set({ subtitleBackground }),
+      preferredQuality: null,
+      setPreferredQuality: (preferredQuality) => set({ preferredQuality }),
     }),
     {
       name: "myanflix-player-prefs",

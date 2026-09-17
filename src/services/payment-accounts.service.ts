@@ -1,11 +1,12 @@
 import { paymentAccountsApi } from "@/api/payment-accounts.api";
+import type { RequestSignalOptions } from "@/types/api";
 
 export const paymentAccountsService = {
-  getAccounts() {
-    return paymentAccountsApi.getAccounts();
+  getAccounts(options: RequestSignalOptions = {}) {
+    return paymentAccountsApi.getAccounts(options);
   },
 
-  getTypes() {
-    return paymentAccountsApi.getTypes();
+  getTypes(options: RequestSignalOptions = {}) {
+    return paymentAccountsApi.getTypes(options);
   },
 };

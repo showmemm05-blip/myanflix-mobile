@@ -1,13 +1,13 @@
 import { walletApi } from "@/api/wallet.api";
 import type { Wallet } from "@/types/wallet";
-import type { PaginationParams } from "@/types/api";
+import type { PaginationParams, RequestSignalOptions } from "@/types/api";
 
 export const walletService = {
-  getWallet(): Promise<Wallet> {
-    return walletApi.getWallet();
+  getWallet(options: RequestSignalOptions = {}): Promise<Wallet> {
+    return walletApi.getWallet(options);
   },
 
-  getTransactions(pagination: PaginationParams = {}) {
-    return walletApi.getTransactions(pagination);
+  getTransactions(pagination: PaginationParams = {}, options: RequestSignalOptions = {}) {
+    return walletApi.getTransactions(pagination, options);
   },
 };

@@ -1,6 +1,8 @@
 import { StyleSheet, View, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Pill } from "@/components/ui/Pill";
@@ -111,9 +113,9 @@ const styles = StyleSheet.create({
     width: "100%",
     backgroundColor: theme.colors.skeleton,
   },
-  fallback: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  fallback: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
   sideScrim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: withAlpha(theme.colors.background, 0.35),
   },
   content: {

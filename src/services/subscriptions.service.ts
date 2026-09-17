@@ -1,13 +1,14 @@
 import { subscriptionsApi } from "@/api/subscriptions.api";
+import type { RequestSignalOptions } from "@/types/api";
 import type { SubscriptionPlan, SubscriptionStatus } from "@/types/subscription";
 
 export const subscriptionsService = {
-  async getPlans(): Promise<SubscriptionPlan[]> {
-    return subscriptionsApi.getPlans();
+  async getPlans(options: RequestSignalOptions = {}): Promise<SubscriptionPlan[]> {
+    return subscriptionsApi.getPlans(options);
   },
 
-  async getStatus(): Promise<SubscriptionStatus> {
-    return subscriptionsApi.getStatus();
+  async getStatus(options: RequestSignalOptions = {}): Promise<SubscriptionStatus> {
+    return subscriptionsApi.getStatus(options);
   },
 
   async subscribe(planId: string) {

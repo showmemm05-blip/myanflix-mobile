@@ -1,12 +1,15 @@
 import { useState, type ReactNode } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { ActivityIndicator, StyleSheet, TextInput, View } from "react-native";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Chip } from "@/components/common/Chip";
+import { SheetForm, useRevealOnFocus } from "@/components/wallet/SheetForm";
 import { useMovieFacets } from "@/hooks/useMovies";
 import { useSeriesFacets } from "@/hooks/useSeries";
 import { useActorSearch } from "@/hooks/useActors";
@@ -354,7 +357,10 @@ export function SearchFilterSheet({
       showClose
       footer={<Button title={footerTitle} onPress={onClose} loading={isFetching && total === undefined} fullWidth />}
     >
-      <ScrollView showsVerticalScrollIndicator={false}>
+      {/* No `action` here — the "show results" button is the sheet's footer,
+          which BottomSheet lifts above the keyboard itself. SheetForm is still
+          what keeps the cast search field clear of it. */}
+      <SheetForm>
         {/* Sort — single select. Relevance appears only while a term is active. */}
         <FilterSection label={t.search.filterSort}>
           {(isMovies ? movieSortOptions : seriesSortOptions).map((option) => {
@@ -437,18 +443,12 @@ export function SearchFilterSheet({
                 ))}
               </View>
             )}
-            <View style={styles.actorSearchBar}>
-              <Ionicons name="search" size={16} color={theme.colors.textFaint} />
-              <TextInput
-                style={styles.actorInput}
-                placeholder={t.search.actorSearchPlaceholder}
-                placeholderTextColor={theme.colors.textFaint}
-                value={actorTerm}
-                onChangeText={setActorTerm}
-                autoCorrect={false}
-              />
-              {actorResults.isFetching && <ActivityIndicator size="small" color={theme.colors.primary} />}
-            </View>
+            <ActorSearchBar
+              value={actorTerm}
+              onChangeText={setActorTerm}
+              placeholder={t.search.actorSearchPlaceholder}
+              fetching={actorResults.isFetching}
+            />
             {actorTerm.trim().length >= 1 && (
               <View style={styles.chipRow}>
                 {(actorResults.data?.items ?? [])
@@ -658,8 +658,42 @@ export function SearchFilterSheet({
             );
           })}
         </FilterSection>
-      </ScrollView>
+      </SheetForm>
     </BottomSheet>
+  );
+}
+
+/**
+ * The cast search field. Its own component so it sits below `SheetForm` in the
+ * tree and can ask to be scrolled clear of the keyboard when it takes focus —
+ * the hook only answers from inside the form.
+ */
+function ActorSearchBar({
+  value,
+  onChangeText,
+  placeholder,
+  fetching,
+}: {
+  value: string;
+  onChangeText: (next: string) => void;
+  placeholder: string;
+  fetching: boolean;
+}) {
+  const reveal = useRevealOnFocus();
+  return (
+    <View style={styles.actorSearchBar}>
+      <Ionicons name="search" size={16} color={theme.colors.textFaint} />
+      <TextInput
+        style={styles.actorInput}
+        placeholder={placeholder}
+        placeholderTextColor={theme.colors.textFaint}
+        value={value}
+        onChangeText={onChangeText}
+        onFocus={reveal}
+        autoCorrect={false}
+      />
+      {fetching && <ActivityIndicator size="small" color={theme.colors.primary} />}
+    </View>
   );
 }
 

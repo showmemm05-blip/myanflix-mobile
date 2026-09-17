@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -11,7 +13,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useAuth } from "@/hooks/useAuth";
 import { useComments, usePostComment } from "@/hooks/useComments";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { formatRelativeTime } from "@/utils/format";
+import { displayNameOf, formatRelativeTime } from "@/utils/format";
 import { ApiError } from "@/utils/errors";
 import { theme } from "@/theme";
 import { COMMENT_MAX_LENGTH, type Comment, type CommentTarget } from "@/types/comment";
@@ -43,6 +45,16 @@ export function CommentsSection(target: CommentTarget) {
     [comments],
   );
 
+  /**
+   * One handler for every row. `replyingTo` lives above the map and the rows
+   * are memoized, so a per-row arrow here would re-render every comment in the
+   * thread (up to the server's 200, plus replies) to open one reply box.
+   */
+  const toggleReplyTo = useCallback(
+    (id: string) => setReplyingTo((current) => (current === id ? null : id)),
+    [],
+  );
+
   const handleReplyPosted = (parentId: string) => {
     setReplyingTo(null);
     // A thread you just replied to should never sit collapsed under its toggle.
@@ -63,10 +75,13 @@ export function CommentsSection(target: CommentTarget) {
       />
 
       {isAuthenticated ? (
+        /* The display name, because that is what a posted comment renders with
+           (`comment.user.displayName ?? username` below) — using the username
+           here made your own pending comment disagree with its posted self. */
         <Composer
           target={target}
           avatarUrl={user?.avatarUrl ?? null}
-          name={user?.username ?? t.comments.you}
+          name={displayNameOf(user) || t.comments.you}
         />
       ) : (
         /* The tab navigator is only mounted while signed in, so in practice a
@@ -115,11 +130,7 @@ export function CommentsSection(target: CommentTarget) {
               <View key={comment.id}>
                 <CommentRow
                   comment={comment}
-                  onReplyPress={
-                    isAuthenticated
-                      ? () => setReplyingTo(replyingTo === comment.id ? null : comment.id)
-                      : undefined
-                  }
+                  onReplyPress={isAuthenticated ? toggleReplyTo : undefined}
                 />
 
                 {replyingTo === comment.id && (
@@ -127,7 +138,7 @@ export function CommentsSection(target: CommentTarget) {
                     target={target}
                     parentId={comment.id}
                     avatarUrl={user?.avatarUrl ?? null}
-                    name={user?.username ?? t.comments.you}
+                    name={displayNameOf(user) || t.comments.you}
                     onCancel={() => setReplyingTo(null)}
                     onPosted={() => handleReplyPosted(comment.id)}
                   />
@@ -178,7 +189,15 @@ function countLabel(count: number, one: string, many: string): string {
 
 /* ------------------------------------------------------------------ */
 
-function CommentAvatar({ url, name, size }: { url: string | null; name: string; size: number }) {
+const CommentAvatar = memo(function CommentAvatar({
+  url,
+  name,
+  size,
+}: {
+  url: string | null;
+  name: string;
+  size: number;
+}) {
   const dimension = { width: size, height: size, borderRadius: theme.radius.pill };
 
   if (url) {
@@ -192,15 +211,23 @@ function CommentAvatar({ url, name, size }: { url: string | null; name: string; 
       </ThemedText>
     </View>
   );
-}
+});
 
-function CommentRow({
+/**
+ * Memoized: `replyingTo` and `openReplies` live above the map, so a single tap
+ * would otherwise re-render every rendered comment to change one. The `comment`
+ * objects come straight from the query cache, so their identity is stable
+ * between fetches — which is what makes the memo actually hold. Note this is a
+ * plain `.map()` inside a View, not a FlatList, so `memo` genuinely applies.
+ */
+const CommentRow = memo(function CommentRow({
   comment,
   onReplyPress,
   compact = false,
 }: {
   comment: Comment;
-  onReplyPress?: () => void;
+  /** Takes the id, so the section can hand every row ONE stable handler. */
+  onReplyPress?: (commentId: string) => void;
   compact?: boolean;
 }) {
   const { t } = useLanguage();
@@ -226,7 +253,7 @@ function CommentRow({
 
         {onReplyPress && (
           <Pressable
-            onPress={onReplyPress}
+            onPress={() => onReplyPress(comment.id)}
             style={styles.replyAction}
             hitSlop={10}
             accessibilityRole="button"
@@ -241,7 +268,7 @@ function CommentRow({
       </View>
     </View>
   );
-}
+});
 
 /**
  * Collapsed to a single quiet pill until it is tapped — the invitation to
@@ -258,32 +285,7 @@ function Composer({
   name: string;
 }) {
   const { t } = useLanguage();
-  const postComment = usePostComment(target);
   const [expanded, setExpanded] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const collapse = () => {
-    setDraft("");
-    setError(null);
-    setExpanded(false);
-  };
-
-  const post = async () => {
-    const body = draft.trim();
-    if (!body) return;
-    setError(null);
-    try {
-      await postComment.mutateAsync({ body });
-      collapse();
-    } catch (err) {
-      // A failed post keeps what was typed — the notice says why, and
-      // retrying should not mean writing the comment again. The server's own
-      // message is preferred when there is one (it names the actual rule that
-      // was broken); anything else falls back to the localized line.
-      setError(err instanceof ApiError ? err.message : t.comments.postError);
-    }
-  };
 
   if (!expanded) {
     return (
@@ -306,24 +308,16 @@ function Composer({
   return (
     <View style={styles.composer}>
       <CommentAvatar url={avatarUrl} name={name} size={36} />
-      <View style={styles.composerBody}>
-        <CommentInput
-          value={draft}
-          onChangeText={setDraft}
-          placeholder={t.comments.placeholder}
-          accessibilityLabel={t.comments.placeholder}
-        />
-        {error ? <InlineError message={error} /> : null}
-        <View style={styles.composerActions}>
-          <Button title={t.common.cancel} variant="ghost" onPress={collapse} />
-          <Button
-            title={postComment.isPending ? t.comments.posting : t.comments.post}
-            onPress={post}
-            loading={postComment.isPending}
-            disabled={!draft.trim()}
-          />
-        </View>
-      </View>
+      {/* Collapsing unmounts the editor, which is what discards the draft and
+          any error notice — the same clearing the old inline `collapse()` did
+          by hand. */}
+      <CommentEditor
+        target={target}
+        placeholder={t.comments.placeholder}
+        submitLabel={t.comments.post}
+        onCancel={() => setExpanded(false)}
+        onPosted={() => setExpanded(false)}
+      />
     </View>
   );
 }
@@ -344,9 +338,52 @@ function ReplyComposer({
   onPosted: () => void;
 }) {
   const { t } = useLanguage();
-  // Its own mutation instance, so a pending reply spins only this composer's
-  // button and never the top-level one.
-  const postReply = usePostComment(target);
+
+  return (
+    <View style={styles.replyComposer}>
+      <CommentAvatar url={avatarUrl} name={name} size={30} />
+      <CommentEditor
+        target={target}
+        parentId={parentId}
+        placeholder={t.comments.replyPlaceholder}
+        submitLabel={t.comments.reply}
+        minHeight={72}
+        onCancel={onCancel}
+        onPosted={onPosted}
+      />
+    </View>
+  );
+}
+
+/**
+ * The editor both composers wrap: the field, the error notice and the
+ * cancel + submit row. Written once so the post path — above all the rule for
+ * which message a failure shows — has one home instead of two that drifted.
+ *
+ * It holds its own mutation instance because it is instantiated per call site:
+ * a pending reply then spins only its own button and never the top-level
+ * composer's, which is the behaviour the reply path had and must keep.
+ */
+function CommentEditor({
+  target,
+  parentId,
+  placeholder,
+  submitLabel,
+  minHeight,
+  onCancel,
+  onPosted,
+}: {
+  target: CommentTarget;
+  /** Set only by the reply composer; the API refuses a reply to a reply. */
+  parentId?: string;
+  placeholder: string;
+  submitLabel: string;
+  minHeight?: number;
+  onCancel: () => void;
+  onPosted: () => void;
+}) {
+  const { t } = useLanguage();
+  const mutation = usePostComment(target);
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -355,35 +392,36 @@ function ReplyComposer({
     if (!trimmed) return;
     setError(null);
     try {
-      await postReply.mutateAsync({ body: trimmed, parentId });
+      await mutation.mutateAsync(parentId ? { body: trimmed, parentId } : { body: trimmed });
       setBody("");
       onPosted();
     } catch (err) {
+      // A failed post keeps what was typed — the notice says why, and
+      // retrying should not mean writing the comment again. The server's own
+      // message is preferred when there is one (it names the actual rule that
+      // was broken); anything else falls back to the localized line.
       setError(err instanceof ApiError ? err.message : t.comments.postError);
     }
   };
 
   return (
-    <View style={styles.replyComposer}>
-      <CommentAvatar url={avatarUrl} name={name} size={30} />
-      <View style={styles.composerBody}>
-        <CommentInput
-          value={body}
-          onChangeText={setBody}
-          placeholder={t.comments.replyPlaceholder}
-          accessibilityLabel={t.comments.replyPlaceholder}
-          minHeight={72}
+    <View style={styles.composerBody}>
+      <CommentInput
+        value={body}
+        onChangeText={setBody}
+        placeholder={placeholder}
+        accessibilityLabel={placeholder}
+        minHeight={minHeight}
+      />
+      {error ? <InlineError message={error} /> : null}
+      <View style={styles.composerActions}>
+        <Button title={t.common.cancel} variant="ghost" onPress={onCancel} />
+        <Button
+          title={mutation.isPending ? t.comments.posting : submitLabel}
+          onPress={post}
+          loading={mutation.isPending}
+          disabled={!body.trim()}
         />
-        {error ? <InlineError message={error} /> : null}
-        <View style={styles.composerActions}>
-          <Button title={t.common.cancel} variant="ghost" onPress={onCancel} />
-          <Button
-            title={postReply.isPending ? t.comments.posting : t.comments.reply}
-            onPress={post}
-            loading={postReply.isPending}
-            disabled={!body.trim()}
-          />
-        </View>
       </View>
     </View>
   );

@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { StyleSheet, View } from "react-native";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Button } from "@/components/ui/Button";
 import { BottomSheet } from "@/components/ui/BottomSheet";
@@ -10,6 +12,7 @@ import {
   HelperText,
   MethodGrid,
   QuickAmounts,
+  SheetForm,
   SheetInput,
   SheetSuccess,
 } from "@/components/wallet/SheetForm";
@@ -61,6 +64,11 @@ export function WithdrawSheet({ visible, onClose }: Props) {
   };
 
   const handleClose = () => {
+    // Same refusal as ChangePasswordSheet/EditProfileSheet: closing mid-flight
+    // hides the only confirmation this withdrawal ever gets, and an unconfirmed
+    // request gets submitted twice. This guards the header X and Android's
+    // hardware back; `dismissible` below stops the scrim and the drag.
+    if (createWithdrawal.isPending) return;
     onClose();
     // Wait for the sheet's own close animation before resetting, so the
     // form doesn't visibly snap back to defaults while still sliding away.
@@ -122,6 +130,7 @@ export function WithdrawSheet({ visible, onClose }: Props) {
       title={succeeded ? t.wallet.withdrawSuccessTitle : t.wallet.withdrawTitle}
       subtitle={succeeded ? undefined : t.wallet.withdrawAvailable.replace("{balance}", formatKyat(availableBalance))}
       showClose
+      dismissible={!createWithdrawal.isPending}
     >
       {succeeded ? (
         <View style={styles.successPane}>
@@ -129,106 +138,104 @@ export function WithdrawSheet({ visible, onClose }: Props) {
           <Button title={t.common.close} onPress={handleClose} size="lg" style={styles.submitButton} />
         </View>
       ) : (
-        // The sheet lives in a Modal, which never resizes for the keyboard — without
-        // this the account name/number fields are typed into blind behind it.
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        <SheetForm
+          /* Pinned outside the scroll so the submit is never something you have
+             to scroll to find, and floated above the keyboard by SheetForm so
+             it stays reachable while a field is focused. The error rides with
+             the button rather than sitting at the end of the form: a rejected
+             amount or a failed request has to be readable from wherever the
+             form happens to be scrolled. */
+          action={
+            <>
+              {error ? <ErrorNotice message={error} /> : null}
+              <Button
+                title={t.wallet.withdrawSubmit}
+                onPress={handleSubmit}
+                loading={createWithdrawal.isPending}
+                disabled={
+                  !accountType ||
+                  !accountName.trim() ||
+                  !accountNumber.trim() ||
+                  (requiresBankName && !bankName.trim()) ||
+                  numericAmount <= 0
+                }
+                size="lg"
+                icon="arrow-up-circle-outline"
+                style={styles.actionButton}
+              />
+            </>
+          }
         >
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-            <FieldLabel>{t.wallet.depositAmount}</FieldLabel>
-            <SheetInput
-              value={amount}
-              onChangeText={(value) => setAmount(value.replace(/\D/g, ""))}
-              keyboardType="number-pad"
-              placeholder={DEFAULT_AMOUNT}
-              numeric
-              accessibilityLabel={t.wallet.depositAmount}
-            />
-            <QuickAmounts values={QUICK_AMOUNTS} amount={amount} onSelect={(value) => setAmount(String(value))} />
-            <HelperText>{t.wallet.withdrawAvailable.replace("{balance}", formatKyat(availableBalance))}</HelperText>
-            {financeSettings ? (
-              <HelperText>
-                {t.wallet.amountRangeHint
-                  .replace("{min}", formatKyat(financeSettings.minWithdrawalAmount))
-                  .replace("{max}", formatKyat(financeSettings.maxWithdrawalAmount))}
-              </HelperText>
-            ) : null}
+          <FieldLabel>{t.wallet.depositAmount}</FieldLabel>
+          <SheetInput
+            value={amount}
+            onChangeText={(value) => setAmount(value.replace(/\D/g, ""))}
+            keyboardType="number-pad"
+            placeholder={DEFAULT_AMOUNT}
+            numeric
+            accessibilityLabel={t.wallet.depositAmount}
+          />
+          <QuickAmounts values={QUICK_AMOUNTS} amount={amount} onSelect={(value) => setAmount(String(value))} />
+          <HelperText>{t.wallet.withdrawAvailable.replace("{balance}", formatKyat(availableBalance))}</HelperText>
+          {financeSettings ? (
+            <HelperText>
+              {t.wallet.amountRangeHint
+                .replace("{min}", formatKyat(financeSettings.minWithdrawalAmount))
+                .replace("{max}", formatKyat(financeSettings.maxWithdrawalAmount))}
+            </HelperText>
+          ) : null}
 
-            <FieldLabel>{t.wallet.withdrawAccountType}</FieldLabel>
-            <MethodGrid
-              options={(types ?? []).map((ty) => ({ key: ty.value, label: ty.label, logoUrl: ty.logoUrl }))}
-              selectedKey={accountType}
-              onSelect={setAccountType}
-            />
+          <FieldLabel>{t.wallet.withdrawAccountType}</FieldLabel>
+          <MethodGrid
+            options={(types ?? []).map((ty) => ({ key: ty.value, label: ty.label, logoUrl: ty.logoUrl }))}
+            selectedKey={accountType}
+            onSelect={setAccountType}
+          />
 
-            {requiresBankName ? (
-              <>
-                <FieldLabel>{t.wallet.withdrawBankName}</FieldLabel>
-                <SheetInput
-                  value={bankName}
-                  onChangeText={setBankName}
-                  placeholder={t.wallet.withdrawBankNamePlaceholder}
-                  accessibilityLabel={t.wallet.withdrawBankName}
-                />
-              </>
-            ) : null}
+          {requiresBankName ? (
+            <>
+              <FieldLabel>{t.wallet.withdrawBankName}</FieldLabel>
+              <SheetInput
+                value={bankName}
+                onChangeText={setBankName}
+                placeholder={t.wallet.withdrawBankNamePlaceholder}
+                accessibilityLabel={t.wallet.withdrawBankName}
+              />
+            </>
+          ) : null}
 
-            <FieldLabel>{t.wallet.withdrawAccountName}</FieldLabel>
-            <SheetInput
-              value={accountName}
-              onChangeText={setAccountName}
-              placeholder={t.wallet.withdrawAccountNamePlaceholder}
-              accessibilityLabel={t.wallet.withdrawAccountName}
-            />
+          <FieldLabel>{t.wallet.withdrawAccountName}</FieldLabel>
+          <SheetInput
+            value={accountName}
+            onChangeText={setAccountName}
+            placeholder={t.wallet.withdrawAccountNamePlaceholder}
+            accessibilityLabel={t.wallet.withdrawAccountName}
+          />
 
-            <FieldLabel>{t.wallet.withdrawAccountNumber}</FieldLabel>
-            <SheetInput
-              value={accountNumber}
-              onChangeText={setAccountNumber}
-              placeholder="09xxxxxxxxx"
-              accessibilityLabel={t.wallet.withdrawAccountNumber}
-            />
+          <FieldLabel>{t.wallet.withdrawAccountNumber}</FieldLabel>
+          <SheetInput
+            value={accountNumber}
+            onChangeText={setAccountNumber}
+            placeholder="09xxxxxxxxx"
+            accessibilityLabel={t.wallet.withdrawAccountNumber}
+          />
 
-            <View style={styles.confirmBox}>
-              <Ionicons name="information-circle-outline" size={18} color={theme.colors.info} />
-              <ThemedText variant="caption" tabular style={styles.confirmText}>
-                {t.wallet.withdrawConfirm.replace("{amount}", formatKyat(numericAmount))}
-              </ThemedText>
-            </View>
-
-            {error ? <ErrorNotice message={error} /> : null}
-
-            {/* Kept in the scroll flow (not pinned): the sheet renders in a
-                Modal, which doesn't resize for the keyboard — a pinned footer
-                would sit behind it while an input is focused. */}
-            <Button
-              title={t.wallet.withdrawSubmit}
-              onPress={handleSubmit}
-              loading={createWithdrawal.isPending}
-              disabled={
-                !accountType ||
-                !accountName.trim() ||
-                !accountNumber.trim() ||
-                (requiresBankName && !bankName.trim()) ||
-                numericAmount <= 0
-              }
-              size="lg"
-              icon="arrow-up-circle-outline"
-              style={styles.submitButton}
-            />
-          </ScrollView>
-        </KeyboardAvoidingView>
+          <View style={styles.confirmBox}>
+            <Ionicons name="information-circle-outline" size={18} color={theme.colors.info} />
+            <ThemedText variant="caption" tabular style={styles.confirmText}>
+              {t.wallet.withdrawConfirm.replace("{amount}", formatKyat(numericAmount))}
+            </ThemedText>
+          </View>
+        </SheetForm>
       )}
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  form: { paddingBottom: theme.spacing.lg },
   successPane: { flex: 1, justifyContent: "center" },
   submitButton: { marginTop: theme.spacing.lg, alignSelf: "stretch" },
+  actionButton: { alignSelf: "stretch" },
   confirmBox: {
     flexDirection: "row",
     alignItems: "center",

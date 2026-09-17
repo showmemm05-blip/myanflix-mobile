@@ -1,10 +1,17 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Button } from "@/components/ui/Button";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Chip } from "@/components/common/Chip";
-import { ErrorNotice, FieldLabel, HelperText, SheetSuccess } from "@/components/wallet/SheetForm";
+import {
+  ErrorNotice,
+  FieldLabel,
+  HelperText,
+  SheetForm,
+  SheetSuccess,
+  SheetTextArea,
+} from "@/components/wallet/SheetForm";
 import { useSubmitFeedback } from "@/hooks/useFeedback";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { ApiError } from "@/utils/errors";
@@ -104,91 +111,70 @@ export function FeedbackSheet({ visible, onClose }: Props) {
           <Button title={t.common.close} onPress={handleClose} size="lg" style={styles.submitButton} />
         </View>
       ) : (
-        // The sheet lives in a Modal, which never resizes for the keyboard —
-        // without this the message field is typed into blind behind it.
-        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.form}
-            keyboardShouldPersistTaps="handled"
-          >
-            <FieldLabel>{t.feedback.category}</FieldLabel>
-            <View style={styles.categories}>
-              {FEEDBACK_CATEGORIES.map((value) => (
-                <Chip
-                  key={value}
-                  label={categoryLabels[value]}
-                  selected={category === value}
-                  onPress={() => {
-                    setCategory(value);
-                    setError(null);
-                  }}
-                />
-              ))}
-            </View>
+        <SheetForm
+          /* Pinned outside the scroll so the submit is never something you have
+             to scroll to find, and floated above the keyboard by SheetForm so
+             it stays reachable while the message field is focused. The error
+             rides with the button rather than sitting in the form: the
+             rate-limit line has to be readable from wherever the form happens
+             to be scrolled. */
+          action={
+            <>
+              {error ? <ErrorNotice message={error} /> : null}
+              <Button
+                title={t.feedback.submit}
+                onPress={handleSubmit}
+                loading={submitFeedback.isPending}
+                disabled={!canSubmit}
+                size="lg"
+                icon="paper-plane-outline"
+                style={styles.actionButton}
+              />
+            </>
+          }
+        >
+          <FieldLabel>{t.feedback.category}</FieldLabel>
+          <View style={styles.categories}>
+            {FEEDBACK_CATEGORIES.map((value) => (
+              <Chip
+                key={value}
+                label={categoryLabels[value]}
+                selected={category === value}
+                onPress={() => {
+                  setCategory(value);
+                  setError(null);
+                }}
+              />
+            ))}
+          </View>
 
-            <FieldLabel>{t.feedback.message}</FieldLabel>
-            <TextInput
-              value={message}
-              onChangeText={setMessage}
-              placeholder={t.feedback.messagePlaceholder}
-              placeholderTextColor={theme.colors.textFaint}
-              accessibilityLabel={t.feedback.message}
-              multiline
-              maxLength={FEEDBACK_MESSAGE_MAX}
-              // Android centres multiline text vertically without this.
-              textAlignVertical="top"
-              style={styles.input}
-            />
-            <HelperText>
-              {t.feedback.messageHint
-                .replace("{n}", String(trimmed.length))
-                .replace("{max}", String(FEEDBACK_MESSAGE_MAX))}
-            </HelperText>
+          <FieldLabel>{t.feedback.message}</FieldLabel>
+          <SheetTextArea
+            value={message}
+            onChangeText={setMessage}
+            placeholder={t.feedback.messagePlaceholder}
+            accessibilityLabel={t.feedback.message}
+            maxLength={FEEDBACK_MESSAGE_MAX}
+          />
+          <HelperText>
+            {t.feedback.messageHint
+              .replace("{n}", String(trimmed.length))
+              .replace("{max}", String(FEEDBACK_MESSAGE_MAX))}
+          </HelperText>
 
-            {error ? <ErrorNotice message={error} /> : null}
-
-            {/* Kept in the scroll flow (not pinned): the sheet renders in a
-                Modal, which doesn't resize for the keyboard — a pinned footer
-                would sit behind it while the message field is focused. */}
-            <Button
-              title={t.feedback.submit}
-              onPress={handleSubmit}
-              loading={submitFeedback.isPending}
-              disabled={!canSubmit}
-              size="lg"
-              icon="paper-plane-outline"
-              style={styles.submitButton}
-            />
-
-            <ThemedText variant="caption" style={styles.privacyNote}>
-              {t.feedback.privacyNote}
-            </ThemedText>
-          </ScrollView>
-        </KeyboardAvoidingView>
+          <ThemedText variant="caption" style={styles.privacyNote}>
+            {t.feedback.privacyNote}
+          </ThemedText>
+        </SheetForm>
       )}
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  form: { paddingBottom: theme.spacing.lg },
   successPane: { flex: 1, justifyContent: "center" },
   categories: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm, marginTop: theme.spacing.xs },
-  input: {
-    minHeight: 132,
-    backgroundColor: theme.colors.surfaceSunken,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm + 4,
-    color: theme.colors.text,
-    fontFamily: theme.font.regular,
-    fontSize: 15,
-    lineHeight: 21,
-  },
   submitButton: { marginTop: theme.spacing.lg, alignSelf: "stretch" },
+  actionButton: { alignSelf: "stretch" },
   privacyNote: { color: theme.colors.textFaint, marginTop: theme.spacing.md, textAlign: "center" },
 });

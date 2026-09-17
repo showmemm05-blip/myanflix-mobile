@@ -28,7 +28,10 @@ export function FavoritesScreen({ navigation }: Props) {
   // No "get movies/series by ids" endpoint — fetch a large page and filter
   // client-side, same pattern as the web app's client-side-only filters.
   const moviesQuery = useMovies({ limit: 100 });
-  const seriesQuery = useSeriesList({ limit: 100 });
+  // Only the visible tab asks — this screen opens on "movies", and every
+  // reader of seriesQuery below is inside a `tab === "series"` branch. The key
+  // is shared with Search and CategoryDetail, so it is often already cached.
+  const seriesQuery = useSeriesList({ limit: 100 }, { enabled: tab === "series" });
   // Presentation-only spinner state for pull-to-refresh.
   const [refreshing, setRefreshing] = useState(false);
 
@@ -52,11 +55,16 @@ export function FavoritesScreen({ navigation }: Props) {
     ]);
   };
 
+  // Push onto the LIBRARY stack, not the Home tab's: the detail screens are
+  // registered in every stack that can open one (LibraryStackNavigator), so a
+  // favourite opens inside this tab and back returns to this grid. The old
+  // hop through the parent tab navigator into the Home tab is what used to
+  // move the user off Library and onto Home.
   const goToMovieDetails = (movie: Movie) => {
-    navigation.getParent()?.navigate("HomeTab", { screen: "MovieDetails", params: { movieId: movie.id } });
+    navigation.navigate("MovieDetails", { movieId: movie.id });
   };
   const goToSeriesDetails = (series: SeriesListItem) => {
-    navigation.getParent()?.navigate("HomeTab", { screen: "SeriesDetails", params: { seriesId: series.id } });
+    navigation.navigate("SeriesDetails", { seriesId: series.id });
   };
 
   const isLoading = watchlistQuery.isLoading || (tab === "movies" ? moviesQuery.isLoading : seriesQuery.isLoading);

@@ -1,4 +1,5 @@
 import { categoriesApi } from "@/api/categories.api";
+import type { RequestSignalOptions } from "@/types/api";
 import type { Category } from "@/types/category";
 
 export const categoriesService = {
@@ -6,7 +7,7 @@ export const categoriesService = {
     return categoriesApi.getCategories();
   },
 
-  getCategoryById(id: string): Promise<Category> {
-    return categoriesApi.getCategoryById(id);
+  getCategoryById(id: string, options: RequestSignalOptions = {}): Promise<Category> {
+    return categoriesApi.getCategoryById(id, options);
   },
 };

@@ -13,11 +13,11 @@ import { useCategory } from "@/hooks/useCategories";
 import { usePosterGrid } from "@/hooks/usePosterGrid";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
-import type { HomeStackParamList } from "@/navigation/types";
+import type { MediaDetailParamList } from "@/navigation/types";
 import type { Movie } from "@/types/movie";
 import type { SeriesListItem } from "@/types/series";
 
-type Props = NativeStackScreenProps<HomeStackParamList, "CategoryDetail">;
+type Props = NativeStackScreenProps<MediaDetailParamList, "CategoryDetail">;
 type Tab = "movies" | "series";
 
 /** One genre, browsed as a portrait poster grid — same layout brain as Search. */
@@ -28,7 +28,11 @@ export function CategoryDetailScreen({ route, navigation }: Props) {
   const [tab, setTab] = useState<Tab>("movies");
   const categoryQuery = useCategory(categoryId);
   const moviesQuery = useMovies({ categoryId, limit: 50 });
-  const seriesQuery = useSeriesList({ limit: 100 });
+  // Only the visible tab asks. This screen opens on "movies", and every reader
+  // of seriesQuery below is inside a `tab === "series"` branch, so the page was
+  // pure speculation until then. The key is shared with Search, so a user who
+  // arrived from there usually finds it already cached.
+  const seriesQuery = useSeriesList({ limit: 100 }, { enabled: tab === "series" });
 
   const seriesInCategory = useMemo(
     () => (seriesQuery.data?.items ?? []).filter((s) => s.categories.some((c) => c.id === categoryId)),

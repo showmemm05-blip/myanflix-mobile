@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { RefreshControl, SectionList, View, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -11,7 +13,7 @@ import { Skeleton } from "@/components/common/Skeleton";
 import { TopBar } from "@/components/layout/TopBar";
 import { useNotifications, useMarkNotificationRead, useMarkAllNotificationsRead } from "@/hooks/useNotifications";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { theme } from "@/theme";
+import { theme, withAlpha } from "@/theme";
 import type { RootStackParamList } from "@/navigation/types";
 import type { AppNotification, NotificationType } from "@/types/notification";
 
@@ -135,7 +137,12 @@ export function NotificationsScreen({ navigation }: Props) {
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           renderItem={({ item }) => {
-            const tone = TYPE_TONES[item.type];
+            // A type this build has never heard of is normal: the server's
+            // enum outlives an installed binary. Falling back keeps the row
+            // readable, and withAlpha() (never string concatenation) keeps
+            // the value a valid colour.
+            const tone = TYPE_TONES[item.type] ?? theme.colors.textMuted;
+            const icon = TYPE_ICONS[item.type] ?? "notifications-outline";
             return (
               <PressableScale
                 onPress={() => !item.isRead && markRead.mutate(item.id)}
@@ -143,8 +150,13 @@ export function NotificationsScreen({ navigation }: Props) {
               >
                 <Surface radius="xl" tone={item.isRead ? "flat" : "default"} style={styles.row}>
                   {!item.isRead && <View style={styles.unreadBar} />}
-                  <View style={[styles.iconTile, { backgroundColor: tone + "1F", borderColor: tone + "33" }]}>
-                    <Ionicons name={TYPE_ICONS[item.type]} size={18} color={item.isRead ? theme.colors.textMuted : tone} />
+                  <View
+                    style={[
+                      styles.iconTile,
+                      { backgroundColor: withAlpha(tone, 0.12), borderColor: withAlpha(tone, 0.2) },
+                    ]}
+                  >
+                    <Ionicons name={icon} size={18} color={item.isRead ? theme.colors.textMuted : tone} />
                   </View>
                   <View style={styles.info}>
                     <View style={styles.titleRow}>

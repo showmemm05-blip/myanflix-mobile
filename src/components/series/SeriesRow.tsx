@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { FlatList, View, StyleSheet } from "react-native";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { MediaCard, useRailCardWidth } from "@/components/common/MediaCard";
@@ -15,10 +16,36 @@ interface Props {
 
 const ITEM_GAP = 12;
 
+// Module scope, same shape as MediaRail: an inline separator ARROW is a new
+// component TYPE every render, so React unmounts and rebuilds every separator
+// view in the rail rather than updating them.
+const keyExtractor = (item: SeriesListItem) => item.id;
+const Separator = () => <View style={styles.separator} />;
+
 /** Horizontal series rail built from the app's portrait MediaCard — mirrors MediaRail's numbers. */
 export function SeriesRow({ title, series, onPressSeries, onSeeAll }: Props) {
   const { t } = useLanguage();
   const cardWidth = useRailCardWidth();
+
+  const renderItem = useCallback(
+    ({ item }: { item: SeriesListItem }) => (
+      <MediaCard
+        {...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount)))}
+        width={cardWidth}
+        onPress={() => onPressSeries(item)}
+      />
+    ),
+    [t, cardWidth, onPressSeries],
+  );
+
+  const getItemLayout = useCallback(
+    (_: ArrayLike<SeriesListItem> | null | undefined, index: number) => ({
+      length: cardWidth,
+      offset: theme.layout.screenPadding + (cardWidth + ITEM_GAP) * index,
+      index,
+    }),
+    [cardWidth],
+  );
 
   if (series.length === 0) return null;
 
@@ -28,25 +55,15 @@ export function SeriesRow({ title, series, onPressSeries, onSeeAll }: Props) {
       <FlatList
         horizontal
         data={series}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyExtractor}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <View style={{ width: ITEM_GAP }} />}
+        ItemSeparatorComponent={Separator}
         snapToInterval={cardWidth + ITEM_GAP}
         decelerationRate="fast"
         snapToAlignment="start"
-        renderItem={({ item }) => (
-          <MediaCard
-            {...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount)))}
-            width={cardWidth}
-            onPress={() => onPressSeries(item)}
-          />
-        )}
-        getItemLayout={(_, index) => ({
-          length: cardWidth,
-          offset: theme.layout.screenPadding + (cardWidth + ITEM_GAP) * index,
-          index,
-        })}
+        renderItem={renderItem}
+        getItemLayout={getItemLayout}
       />
     </View>
   );
@@ -55,4 +72,5 @@ export function SeriesRow({ title, series, onPressSeries, onSeeAll }: Props) {
 const styles = StyleSheet.create({
   container: { gap: theme.spacing.xs },
   listContent: { paddingHorizontal: theme.layout.screenPadding },
+  separator: { width: ITEM_GAP },
 });

@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import { Pressable, View, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { theme } from "@/theme";
+import { theme, withAlpha } from "@/theme";
 
 interface Props {
   title: string;
@@ -54,7 +56,12 @@ export function SectionHeader({
     <View style={[styles.container, inset && styles.inset, style]}>
       <View style={styles.left}>
         {icon ? (
-          <View style={[styles.iconTile, { backgroundColor: accent + "1F", borderColor: accent + "33" }]}>
+          <View
+            style={[
+              styles.iconTile,
+              { backgroundColor: withAlpha(accent, 0.12), borderColor: withAlpha(accent, 0.2) },
+            ]}
+          >
             <Ionicons name={icon} size={16} color={accent} />
           </View>
         ) : (

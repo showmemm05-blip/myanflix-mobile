@@ -1,16 +1,14 @@
 import { useEffect } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { BlurView } from "expo-blur";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
-
-export const TAB_BAR_HEIGHT = theme.layout.tabBarHeight;
-/** Bottom padding a scrollable root screen needs so content clears the bar. */
-export const TAB_BAR_CLEARANCE = theme.layout.tabBarClearance;
 
 const ICONS: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
   HomeTab: { active: "home", inactive: "home-outline" },
@@ -123,7 +121,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: theme.spacing.md,
     right: theme.spacing.md,
-    height: TAB_BAR_HEIGHT,
+    // Read the token directly — the tab-bar height has one home, the theme.
+    height: theme.layout.tabBarHeight,
   },
   container: {
     flex: 1,
@@ -144,7 +143,7 @@ const styles = StyleSheet.create({
   row: { flex: 1, flexDirection: "row", alignItems: "stretch", paddingHorizontal: theme.spacing.xs },
   item: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3 },
   pill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     top: 8,
     bottom: 8,
     left: 6,

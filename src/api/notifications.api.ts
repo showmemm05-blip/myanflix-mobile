@@ -1,14 +1,17 @@
 import { apiClient } from "@/api/client";
-import type { PaginatedResponse, PaginationParams } from "@/types/api";
+import type { PaginatedResponse, PaginationParams, RequestSignalOptions } from "@/types/api";
 import type { AppNotification } from "@/types/notification";
 
 export const notificationsApi = {
-  getNotifications(pagination: PaginationParams = {}) {
-    return apiClient.get<PaginatedResponse<AppNotification>>("/notifications", { params: pagination });
+  getNotifications(pagination: PaginationParams = {}, options: RequestSignalOptions = {}) {
+    return apiClient.get<PaginatedResponse<AppNotification>>("/notifications", {
+      params: pagination,
+      ...options,
+    });
   },
 
-  getUnreadCount() {
-    return apiClient.get<{ unreadCount: number }>("/notifications/unread-count");
+  getUnreadCount(options: RequestSignalOptions = {}) {
+    return apiClient.get<{ unreadCount: number }>("/notifications/unread-count", options);
   },
 
   markAsRead(id: string) {

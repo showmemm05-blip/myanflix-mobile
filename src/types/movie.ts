@@ -45,17 +45,17 @@ export interface Movie {
   country: string | null;
   ageRating: AgeRating | null;
   categories: MovieCategoryRef[];
+  /**
+   * Highest transcoded rendition the catalogue reports for this title, e.g.
+   * "720p" — the source of the card's quality badge. Null until a video has
+   * finished transcoding, which is most of the catalogue on a fresh install.
+   *
+   * Still optional on the type: an older backend simply omits the key, and a
+   * missing badge is the correct outcome there rather than a crash.
+   */
+  maxQuality?: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface PurchaseEntry {
-  id: string;
-  movieId: string;
-  movieTitle: string;
-  posterUrl: string | null;
-  price: number;
-  purchasedAt: string;
 }
 
 /**

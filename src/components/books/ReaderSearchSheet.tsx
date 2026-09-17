@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { BottomSheet } from "@/components/ui/BottomSheet";
+import { BottomSheet, useSheetKeyboardLift } from "@/components/ui/BottomSheet";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { pmPlainBlocks } from "@/components/books/RichText";
 import { composeChapterDoc } from "@/utils/chapterSections";
@@ -187,38 +187,60 @@ export function ReaderSearchSheet({ visible, onClose, bookId, editionId, chapter
         </ThemedText>
       ) : null}
 
-      <FlatList
-        data={results}
-        keyExtractor={(item) => item.id}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.rows}
-        renderItem={({ item }) => (
-          <View>
-            {item.firstInChapter && (
-              <ThemedText variant="label" color={theme.colors.textMuted} numberOfLines={1} style={styles.chapterHead}>
-                {item.chapterTitle}
-              </ThemedText>
-            )}
-            <Pressable
-              onPress={() => {
-                onClose();
-                onSelectResult(item);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`${item.pre}${item.match}${item.post}`}
-              style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-            >
-              <ThemedText variant="caption" numberOfLines={2} color={theme.colors.textMuted}>
-                {item.pre}
-                <Text style={styles.match}>{item.match}</Text>
-                {item.post}
-              </ThemedText>
-            </Pressable>
-          </View>
-        )}
+      <ResultList
+        results={results}
+        onSelect={(result) => {
+          onClose();
+          onSelectResult(result);
+        }}
       />
     </BottomSheet>
+  );
+}
+
+/**
+ * The hit list. Its own component so it can read the sheet's keyboard overlap:
+ * the sheet no longer shrinks itself for the keyboard (that moved the field you
+ * were typing in), so the list pads its own content instead and the last hit
+ * can still be scrolled out from behind it.
+ */
+function ResultList({
+  results,
+  onSelect,
+}: {
+  results: ReaderSearchResult[];
+  onSelect: (result: ReaderSearchResult) => void;
+}) {
+  const keyboardLift = useSheetKeyboardLift();
+  return (
+    <FlatList
+      data={results}
+      keyExtractor={(item) => item.id}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={[styles.rows, { paddingBottom: theme.spacing.md + keyboardLift }]}
+      renderItem={({ item }) => (
+        <View>
+          {item.firstInChapter && (
+            <ThemedText variant="label" color={theme.colors.textMuted} numberOfLines={1} style={styles.chapterHead}>
+              {item.chapterTitle}
+            </ThemedText>
+          )}
+          <Pressable
+            onPress={() => onSelect(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.pre}${item.match}${item.post}`}
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+          >
+            <ThemedText variant="caption" numberOfLines={2} color={theme.colors.textMuted}>
+              {item.pre}
+              <Text style={styles.match}>{item.match}</Text>
+              {item.post}
+            </ThemedText>
+          </Pressable>
+        </View>
+      )}
+    />
   );
 }
 

@@ -1,6 +1,8 @@
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { onSolid, theme } from "@/theme";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { onSolid, theme, withAlpha } from "@/theme";
 
 export type IconButtonVariant = "outline" | "ghost" | "soft" | "solid";
 export type IconButtonSize = "sm" | "md" | "lg";
@@ -51,9 +53,13 @@ export function IconButton({
         styles.base,
         { width: dims.box, height: dims.box, borderRadius: dims.radius },
         variant === "outline" && styles.outline,
-        variant === "outline" && color && { borderColor: color + "66" },
+        variant === "outline" && color && { borderColor: withAlpha(color, 0.4) },
         variant === "ghost" && styles.ghost,
-        variant === "soft" && { backgroundColor: accent + "1F", borderWidth: 1, borderColor: accent + "33" },
+        variant === "soft" && {
+          backgroundColor: withAlpha(accent, 0.12),
+          borderWidth: 1,
+          borderColor: withAlpha(accent, 0.2),
+        },
         variant === "solid" && { backgroundColor: accent },
         disabled && styles.disabled,
         pressed && !disabled && styles.pressed,

@@ -1,4 +1,7 @@
 import type { TextStyle } from "react-native";
+// utils/format has no imports of its own, so the theme can depend on it
+// without a cycle — checked when `clamp` was given one home.
+import { clamp } from "@/utils/format";
 
 /**
  * Single source of truth for the app's dark theme — every screen/component
@@ -29,9 +32,7 @@ export const theme = {
     /* ---- actions ---- */
     /** ELECTRIC VIOLET — actions only: buttons, active tab, focus, scrubber, selection. */
     primary: "#9A7CF7",
-    primaryDim: "#7C5CE0",
     primarySoft: "rgba(154,124,247,0.16)",
-    primaryGlow: "rgba(154,124,247,0.34)",
     /** Foreground on solid violet — near-black, never white. */
     onPrimary: "#141024",
 
@@ -194,7 +195,7 @@ export function onSolid(accent: string): string {
  * hairline token never makes it more opaque than it started.
  */
 export function withAlpha(color: string, value: number): string {
-  const target = Math.max(0, Math.min(1, value));
+  const target = clamp(value, 0, 1);
 
   if (color.startsWith("#")) {
     const hex = color.slice(1);
@@ -212,6 +213,4 @@ export function withAlpha(color: string, value: number): string {
   return `rgba(${parts[0]},${parts[1]},${parts[2]},${Number((target * base).toFixed(4))})`;
 }
 
-export type Theme = typeof theme;
-export type ThemeColor = keyof typeof theme.colors;
 export type TypeVariant = keyof typeof theme.type;

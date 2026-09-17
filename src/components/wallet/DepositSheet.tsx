@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Clipboard from "expo-clipboard";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +13,7 @@ import {
   HelperText,
   MethodGrid,
   QuickAmounts,
+  SheetForm,
   SheetInput,
   SheetSuccess,
 } from "@/components/wallet/SheetForm";
@@ -84,12 +87,23 @@ export function DepositSheet({ visible, onClose }: Props) {
   };
 
   const handleCopyAccountNumber = async (id: string, accountNumber: string) => {
-    await Clipboard.setStringAsync(accountNumber);
+    // Same guard as BlockActionsSheet.copyParagraph: a clipboard failure is a
+    // quiet no-op, never an unhandled rejection out of an onPress.
+    try {
+      await Clipboard.setStringAsync(accountNumber);
+    } catch {
+      return;
+    }
     setCopiedAccountId(id);
     setTimeout(() => setCopiedAccountId((prev) => (prev === id ? null : prev)), 1500);
   };
 
   const handleClose = () => {
+    // Same refusal as ChangePasswordSheet/EditProfileSheet: closing mid-flight
+    // hides the only confirmation this deposit ever gets, and an unconfirmed
+    // deposit gets submitted twice. This guards the header X and Android's
+    // hardware back; `dismissible` below stops the scrim and the drag.
+    if (createDeposit.isPending) return;
     onClose();
     // Wait for the sheet's own close animation before resetting, so the
     // form doesn't visibly snap back to defaults while still sliding away.
@@ -143,6 +157,7 @@ export function DepositSheet({ visible, onClose }: Props) {
       snapHeight={660}
       title={succeeded ? t.wallet.depositSuccessTitle : t.wallet.depositTitle}
       showClose
+      dismissible={!createDeposit.isPending}
     >
       {succeeded ? (
         <View style={styles.successPane}>
@@ -150,167 +165,165 @@ export function DepositSheet({ visible, onClose }: Props) {
           <Button title={t.common.close} onPress={handleClose} size="lg" style={styles.submitButton} />
         </View>
       ) : (
-        // The sheet lives in a Modal, which never resizes for the keyboard — without
-        // this the reference field (the last one) is typed into blind behind it.
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        <SheetForm
+          /* Pinned outside the scroll so the submit is never something you have
+             to scroll to find, and floated above the keyboard by SheetForm so
+             it stays reachable while a field is focused. The error rides with
+             the button rather than sitting at the end of the form: a bad
+             reference number or amount has to be readable from wherever the
+             form happens to be scrolled. */
+          action={
+            <>
+              {error ? <ErrorNotice message={error} /> : null}
+              <Button
+                title={t.wallet.depositSubmit}
+                onPress={handleSubmit}
+                loading={createDeposit.isPending}
+                disabled={!selectedAccount}
+                size="lg"
+                icon="arrow-down-circle-outline"
+                style={styles.actionButton}
+              />
+            </>
+          }
         >
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-            <FieldLabel>{t.wallet.depositAmount}</FieldLabel>
-            <SheetInput
-              value={amount}
-              onChangeText={(value) => setAmount(value.replace(/\D/g, ""))}
-              keyboardType="number-pad"
-              placeholder={DEFAULT_AMOUNT}
-              numeric
-              accessibilityLabel={t.wallet.depositAmount}
-            />
-            <QuickAmounts values={QUICK_AMOUNTS} amount={amount} onSelect={(value) => setAmount(String(value))} />
-            {financeSettings ? (
-              <HelperText>
-                {t.wallet.amountRangeHint
-                  .replace("{min}", formatKyat(financeSettings.minDepositAmount))
-                  .replace("{max}", formatKyat(financeSettings.maxDepositAmount))}
-              </HelperText>
-            ) : null}
+          <FieldLabel>{t.wallet.depositAmount}</FieldLabel>
+          <SheetInput
+            value={amount}
+            onChangeText={(value) => setAmount(value.replace(/\D/g, ""))}
+            keyboardType="number-pad"
+            placeholder={DEFAULT_AMOUNT}
+            numeric
+            accessibilityLabel={t.wallet.depositAmount}
+          />
+          <QuickAmounts values={QUICK_AMOUNTS} amount={amount} onSelect={(value) => setAmount(String(value))} />
+          {financeSettings ? (
+            <HelperText>
+              {t.wallet.amountRangeHint
+                .replace("{min}", formatKyat(financeSettings.minDepositAmount))
+                .replace("{max}", formatKyat(financeSettings.maxDepositAmount))}
+            </HelperText>
+          ) : null}
 
-            <FieldLabel>{t.wallet.depositMethod}</FieldLabel>
-            {accountsLoading ? (
-              <ActivityIndicator color={theme.colors.primary} style={styles.methodsLoading} />
-            ) : methodTypes.length === 0 ? (
-              <HelperText>{t.wallet.depositNoMethods}</HelperText>
-            ) : (
-              <>
-                <MethodGrid
-                  options={methodTypes.map((m) => ({ key: m.type, label: m.label, logoUrl: m.logoUrl }))}
-                  selectedKey={effectiveType}
-                  onSelect={(key) => {
-                    setSelectedType(key);
-                    setAccountId(null);
-                  }}
-                />
+          <FieldLabel>{t.wallet.depositMethod}</FieldLabel>
+          {accountsLoading ? (
+            <ActivityIndicator color={theme.colors.primary} style={styles.methodsLoading} />
+          ) : methodTypes.length === 0 ? (
+            <HelperText>{t.wallet.depositNoMethods}</HelperText>
+          ) : (
+            <>
+              <MethodGrid
+                options={methodTypes.map((m) => ({ key: m.type, label: m.label, logoUrl: m.logoUrl }))}
+                selectedKey={effectiveType}
+                onSelect={(key) => {
+                  setSelectedType(key);
+                  setAccountId(null);
+                }}
+              />
 
-                {accountsForType.length > 0 ? (
-                  <>
-                    <FieldLabel>
-                      {accountsForType.length > 1 ? t.wallet.depositChooseAccount : t.wallet.depositSendTo}
-                    </FieldLabel>
-                    <View style={styles.accountList}>
-                      {accountsForType.map((account) => {
-                        const active = selectedAccount?.id === account.id;
-                        const copied = copiedAccountId === account.id;
-                        return (
-                          <Pressable
-                            key={account.id}
-                            onPress={() => setAccountId(account.id)}
-                            style={({ pressed }) => [
-                              styles.sendToBox,
-                              active && styles.sendToBoxActive,
-                              pressed && styles.pressed,
-                            ]}
-                            accessibilityRole="button"
-                            accessibilityState={{ selected: active }}
-                            accessibilityLabel={account.accountName}
-                          >
-                            <View style={styles.sendToHeader}>
-                              <ThemedText variant="body" weight="semibold" numberOfLines={1} style={styles.sendToTitle}>
-                                {account.accountName}
+              {accountsForType.length > 0 ? (
+                <>
+                  <FieldLabel>
+                    {accountsForType.length > 1 ? t.wallet.depositChooseAccount : t.wallet.depositSendTo}
+                  </FieldLabel>
+                  <View style={styles.accountList}>
+                    {accountsForType.map((account) => {
+                      const active = selectedAccount?.id === account.id;
+                      const copied = copiedAccountId === account.id;
+                      return (
+                        <Pressable
+                          key={account.id}
+                          onPress={() => setAccountId(account.id)}
+                          style={({ pressed }) => [
+                            styles.sendToBox,
+                            active && styles.sendToBoxActive,
+                            pressed && styles.pressed,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
+                          accessibilityLabel={account.accountName}
+                        >
+                          <View style={styles.sendToHeader}>
+                            <ThemedText variant="body" weight="semibold" numberOfLines={1} style={styles.sendToTitle}>
+                              {account.accountName}
+                            </ThemedText>
+                            {active ? (
+                              <Ionicons name="checkmark-circle" size={18} color={theme.colors.primary} />
+                            ) : null}
+                          </View>
+
+                          <View style={styles.sendToRow}>
+                            <ThemedText variant="caption" style={styles.sendToLabel}>
+                              {t.wallet.depositAccountNumber}
+                            </ThemedText>
+                            <View style={styles.sendToValueRow}>
+                              <ThemedText variant="body" weight="semibold" tabular numberOfLines={1} style={styles.sendToValue}>
+                                {account.accountNumber}
                               </ThemedText>
-                              {active ? (
-                                <Ionicons name="checkmark-circle" size={18} color={theme.colors.primary} />
-                              ) : null}
+                              <Pressable
+                                onPress={() => handleCopyAccountNumber(account.id, account.accountNumber)}
+                                hitSlop={10}
+                                style={({ pressed }) => [styles.copyButton, pressed && styles.pressed]}
+                                accessibilityRole="button"
+                                accessibilityLabel={t.wallet.depositAccountNumber}
+                              >
+                                <Ionicons
+                                  name={copied ? "checkmark" : "copy-outline"}
+                                  size={16}
+                                  color={copied ? theme.colors.finance : theme.colors.textMuted}
+                                />
+                              </Pressable>
                             </View>
+                          </View>
 
+                          {account.bankName ? (
                             <View style={styles.sendToRow}>
                               <ThemedText variant="caption" style={styles.sendToLabel}>
-                                {t.wallet.depositAccountNumber}
+                                {t.wallet.depositBankName}
                               </ThemedText>
-                              <View style={styles.sendToValueRow}>
-                                <ThemedText variant="body" weight="semibold" tabular numberOfLines={1} style={styles.sendToValue}>
-                                  {account.accountNumber}
-                                </ThemedText>
-                                <Pressable
-                                  onPress={() => handleCopyAccountNumber(account.id, account.accountNumber)}
-                                  hitSlop={10}
-                                  style={({ pressed }) => [styles.copyButton, pressed && styles.pressed]}
-                                  accessibilityRole="button"
-                                  accessibilityLabel={t.wallet.depositAccountNumber}
-                                >
-                                  <Ionicons
-                                    name={copied ? "checkmark" : "copy-outline"}
-                                    size={16}
-                                    color={copied ? theme.colors.finance : theme.colors.textMuted}
-                                  />
-                                </Pressable>
-                              </View>
+                              <ThemedText variant="caption" weight="semibold" numberOfLines={1} style={styles.sendToValue}>
+                                {account.bankName}
+                              </ThemedText>
                             </View>
+                          ) : null}
 
-                            {account.bankName ? (
-                              <View style={styles.sendToRow}>
-                                <ThemedText variant="caption" style={styles.sendToLabel}>
-                                  {t.wallet.depositBankName}
-                                </ThemedText>
-                                <ThemedText variant="caption" weight="semibold" numberOfLines={1} style={styles.sendToValue}>
-                                  {account.bankName}
-                                </ThemedText>
-                              </View>
-                            ) : null}
+                          {account.note ? (
+                            <ThemedText variant="caption" style={styles.sendToNote}>
+                              {account.note}
+                            </ThemedText>
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              ) : null}
+            </>
+          )}
 
-                            {account.note ? (
-                              <ThemedText variant="caption" style={styles.sendToNote}>
-                                {account.note}
-                              </ThemedText>
-                            ) : null}
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  </>
-                ) : null}
-              </>
-            )}
-
-            <FieldLabel>{t.wallet.depositReferenceLabel}</FieldLabel>
-            <SheetInput
-              value={reference}
-              onChangeText={(value) => setReference(value.replace(/\D/g, "").slice(0, 6))}
-              keyboardType="number-pad"
-              maxLength={6}
-              placeholder="000123"
-              numeric
-              accessibilityLabel={t.wallet.depositReferenceLabel}
-            />
-            <HelperText>
-              {t.wallet.depositReferenceHelp.replace("{method}", selectedAccount ? methodLabel(selectedAccount) : "")}
-            </HelperText>
-
-            {error ? <ErrorNotice message={error} /> : null}
-
-            {/* Kept in the scroll flow (not pinned): the sheet renders in a
-                Modal, which doesn't resize for the keyboard — a pinned footer
-                would sit behind it while an input is focused. */}
-            <Button
-              title={t.wallet.depositSubmit}
-              onPress={handleSubmit}
-              loading={createDeposit.isPending}
-              disabled={!selectedAccount}
-              size="lg"
-              icon="arrow-down-circle-outline"
-              style={styles.submitButton}
-            />
-          </ScrollView>
-        </KeyboardAvoidingView>
+          <FieldLabel>{t.wallet.depositReferenceLabel}</FieldLabel>
+          <SheetInput
+            value={reference}
+            onChangeText={(value) => setReference(value.replace(/\D/g, "").slice(0, 6))}
+            keyboardType="number-pad"
+            maxLength={6}
+            placeholder="000123"
+            numeric
+            accessibilityLabel={t.wallet.depositReferenceLabel}
+          />
+          <HelperText>
+            {t.wallet.depositReferenceHelp.replace("{method}", selectedAccount ? methodLabel(selectedAccount) : "")}
+          </HelperText>
+        </SheetForm>
       )}
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  form: { paddingBottom: theme.spacing.lg },
   successPane: { flex: 1, justifyContent: "center" },
   submitButton: { marginTop: theme.spacing.lg, alignSelf: "stretch" },
+  actionButton: { alignSelf: "stretch" },
   methodsLoading: { marginTop: theme.spacing.sm, alignSelf: "flex-start" },
   accountList: { gap: theme.spacing.sm },
   /**

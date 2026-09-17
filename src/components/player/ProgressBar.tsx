@@ -3,6 +3,7 @@ import { PanResponder, View, StyleSheet, type LayoutChangeEvent } from "react-na
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { theme } from "@/theme";
+import { clamp, formatTime } from "@/utils/format";
 
 interface Props {
   durationSeconds: number;
@@ -15,16 +16,6 @@ const TRACK_HEIGHT = 5;
 const THUMB_SIZE = 16;
 /** Vertical slack around the 5pt track so the bar is a comfortable drag target. */
 const TOUCH_PADDING = 16;
-
-function formatTime(totalSeconds: number): string {
-  const seconds = Math.max(0, Math.round(totalSeconds));
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
-  const ss = String(s).padStart(2, "0");
-  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
 
 /**
  * Played / buffered / unplayed scrub bar. Buffered comes straight from
@@ -72,7 +63,7 @@ export function ProgressBar({ durationSeconds, positionSeconds, bufferedSeconds,
   };
 
   const positionFromTouchX = (x: number) => {
-    const clampedX = Math.min(Math.max(x, 0), trackWidthRef.current);
+    const clampedX = clamp(x, 0, trackWidthRef.current);
     const ratio = trackWidthRef.current > 0 ? clampedX / trackWidthRef.current : 0;
     return ratio * durationRef.current;
   };

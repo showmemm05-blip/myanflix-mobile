@@ -17,7 +17,10 @@ function commentsKey(target: CommentTarget) {
 export function useComments(target: CommentTarget) {
   return useQuery({
     queryKey: commentsKey(target),
-    queryFn: () => commentsService.getComments(target),
+    // The thread is unpaginated (see commentsApi.getComments), so this is the
+    // other response worth cancelling: opening a title and going straight back
+    // used to leave the whole comment list downloading.
+    queryFn: ({ signal }) => commentsService.getComments(target, { signal }),
   });
 }
 

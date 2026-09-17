@@ -1,5 +1,7 @@
 import { ScrollView, View, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { PressableScale } from "@/components/ui/PressableScale";
@@ -7,7 +9,7 @@ import { Surface } from "@/components/ui/Surface";
 import { AuroraBackdrop } from "@/components/common/AuroraBackdrop";
 import { AppTopBar } from "@/components/layout/AppTopBar";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { theme } from "@/theme";
+import { theme, withAlpha } from "@/theme";
 import type { LibraryStackParamList } from "@/navigation/types";
 
 type Props = NativeStackScreenProps<LibraryStackParamList, "LibraryOverview">;
@@ -49,13 +51,20 @@ export function LibraryOverviewScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <AuroraBackdrop tone="violet" height={380} intensity={0.65} />
-      <AppTopBar title={t.nav.library} />
+      {/* See Wallet: the tab bar names the tab, so the heading was one row of
+          screen spent repeating it. No title also drops AppBar to compact. */}
+      <AppTopBar />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {rows.map((row) => (
           <PressableScale key={row.label} onPress={row.onPress} accessibilityLabel={row.label}>
             <Surface radius="xl" style={styles.row}>
-              <View style={[styles.iconTile, { backgroundColor: row.tone + "1F", borderColor: row.tone + "33" }]}>
+              <View
+                style={[
+                  styles.iconTile,
+                  { backgroundColor: withAlpha(row.tone, 0.12), borderColor: withAlpha(row.tone, 0.2) },
+                ]}
+              >
                 <Ionicons name={row.icon} size={20} color={row.tone} />
               </View>
               <ThemedText

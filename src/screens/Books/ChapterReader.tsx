@@ -41,6 +41,7 @@ import {
   useReaderPrefsStore,
 } from "@/store/readerPrefsStore";
 import { composeChapterDoc, sectionIdAtDepth } from "@/utils/chapterSections";
+import { clamp } from "@/utils/format";
 import { estimateReadingMinutesForBlocks } from "@/utils/readingTime";
 import { theme, withAlpha } from "@/theme";
 import type { BookChapterSummary, BookDetail, BookEdition, BookSectionSummary } from "@/types/book";
@@ -189,13 +190,10 @@ export function ChapterReader({ book, edition, chapters, initialChapterId, initi
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
       // Never measure the skeleton — only real content taller than half a screen counts.
       if (!chapterQuery.isSuccess || contentSize.height < layoutMeasurement.height * 0.5) return;
-      const depth = Math.max(
-        0,
-        Math.min(1, (contentOffset.y + layoutMeasurement.height) / contentSize.height),
-      );
+      const depth = clamp((contentOffset.y + layoutMeasurement.height) / contentSize.height, 0, 1);
       depthRef.current = depth;
       setChapterPercent(Math.round(depth * 100));
-      const progress = Math.max(0, Math.min(100, ((chapterIndex + depth) / chapters.length) * 100));
+      const progress = clamp(((chapterIndex + depth) / chapters.length) * 100, 0, 100);
       // The key is OMITTED (not null) when unknown, so section-less books PATCH the identical body.
       const sectionId = sectionIdAtDepth(composed.anchors, depth, blockTexts.length);
       const position: ReadingPosition = { chapterId, progress, ...(sectionId ? { sectionId } : {}) };

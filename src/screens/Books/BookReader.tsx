@@ -11,7 +11,7 @@ import { useBook, useChapters, useReadingProgress } from "@/hooks/useBooks";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { useAuthStore } from "@/store/authStore";
 import { useReaderAnnotationsStore } from "@/store/readerAnnotationsStore";
-import { hydrateReaderPrefs, useReaderPrefsStore } from "@/store/readerPrefsStore";
+import { useReaderPrefsStore } from "@/store/readerPrefsStore";
 import { pickEdition } from "@/utils/bookLanguages";
 import { theme } from "@/theme";
 import type { RootStackParamList } from "@/navigation/types";
@@ -31,11 +31,9 @@ export function BookReaderScreen({ route, navigation }: Props) {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const loadAnnotations = useReaderAnnotationsStore((s) => s.loadAnnotations);
 
-  // Per-user prefs — the reader is the only consumer surface, so hydration
-  // lives here, not App.tsx (languageStore keeps owning the app language).
-  useEffect(() => {
-    void hydrateReaderPrefs(userId);
-  }, [userId]);
+  // Per-user prefs are already hydrated for the current user before any book
+  // screen can mount — RootNavigator owns that now, because BookDetails reads
+  // and writes readingLanguage too and this screen was arming storage too late.
 
   // The open book's client-side bookmarks/highlights (AsyncStorage-backed).
   useEffect(() => {

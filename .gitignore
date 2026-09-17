@@ -31,7 +31,12 @@ yarn-error.*
 *.pem
 
 # local env files
+# .env itself holds only EXPO_PUBLIC_API_BASE_URL today, but it is the file
+# anyone reaches for when a real secret is needed — so ignore it by default and
+# keep .env.example as the tracked template.
+.env
 .env*.local
+!.env.example
 
 # typescript
 *.tsbuildinfo

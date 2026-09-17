@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Button } from "@/components/ui/Button";
 import { ThemedText } from "@/components/ui/ThemedText";
+import { SheetForm, SheetTextArea } from "@/components/wallet/SheetForm";
 import { HIGHLIGHT_COLORS } from "@/components/books/readerThemes";
 import { useLanguage } from "@/localization/LanguageProvider";
 import {
@@ -131,83 +134,75 @@ export function BlockActionsSheet({ visible, onClose, editionId, chapterId, bloc
 
   return (
     <BottomSheet visible={visible} onClose={onClose} title={r.paragraph} showClose snapHeight={480}>
-      {/* The sheet lives in a Modal, which never resizes for the keyboard. */}
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.body}
-          keyboardShouldPersistTaps="handled"
-        >
-          <ThemedText variant="caption" color={theme.colors.textMuted} numberOfLines={3}>
-            {blockText}
-          </ThemedText>
+      {/* No pinned action: the buttons here are alternatives, not one submit,
+          so they stay in the scroll flow. SheetForm still keeps the note field
+          clear of the keyboard — a Modal never resizes for one. */}
+      <SheetForm contentStyle={styles.body}>
+        <ThemedText variant="caption" color={theme.colors.textMuted} numberOfLines={3}>
+          {blockText}
+        </ThemedText>
 
-          {/* -------- highlight colours -------- */}
-          <ThemedText variant="label" color={theme.colors.text}>
-            {r.highlight}
-          </ThemedText>
-          <View style={styles.colorRow}>
-            {COLOR_ORDER.map((color) => {
-              const active = highlight?.color === color;
-              return (
-                <Pressable
-                  key={color}
-                  onPress={() => pickColor(color)}
-                  accessibilityRole="button"
-                  accessibilityLabel={colorLabels[color]}
-                  accessibilityState={{ selected: active }}
-                  style={({ pressed }) => [styles.colorHit, pressed && styles.pressed]}
+        {/* -------- highlight colours -------- */}
+        <ThemedText variant="label" color={theme.colors.text}>
+          {r.highlight}
+        </ThemedText>
+        <View style={styles.colorRow}>
+          {COLOR_ORDER.map((color) => {
+            const active = highlight?.color === color;
+            return (
+              <Pressable
+                key={color}
+                onPress={() => pickColor(color)}
+                accessibilityRole="button"
+                accessibilityLabel={colorLabels[color]}
+                accessibilityState={{ selected: active }}
+                style={({ pressed }) => [styles.colorHit, pressed && styles.pressed]}
+              >
+                <View
+                  style={[
+                    styles.colorDot,
+                    { backgroundColor: withAlpha(HIGHLIGHT_COLORS[color], 0.9) },
+                    active && styles.colorDotActive,
+                  ]}
                 >
-                  <View
-                    style={[
-                      styles.colorDot,
-                      { backgroundColor: withAlpha(HIGHLIGHT_COLORS[color], 0.9) },
-                      active && styles.colorDotActive,
-                    ]}
-                  >
-                    {active && <Ionicons name="checkmark" size={16} color="#ffffff" />}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
+                  {active && <Ionicons name="checkmark" size={16} color="#ffffff" />}
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
 
-          {/* -------- note (a highlight with words) -------- */}
-          <ThemedText variant="label" color={theme.colors.text}>
-            {highlight?.note ? r.editNote : r.addNote}
-          </ThemedText>
-          <TextInput
-            value={noteDraft}
-            onChangeText={setNoteDraft}
-            placeholder={r.notePlaceholder}
-            placeholderTextColor={theme.colors.textFaint}
-            accessibilityLabel={r.note}
-            multiline
-            maxLength={NOTE_MAX}
-            textAlignVertical="top"
-            style={styles.input}
-          />
-          {noteDirty && <Button title={r.saveNote} onPress={saveNote} size="md" />}
+        {/* -------- note (a highlight with words) -------- */}
+        <ThemedText variant="label" color={theme.colors.text}>
+          {highlight?.note ? r.editNote : r.addNote}
+        </ThemedText>
+        <SheetTextArea
+          value={noteDraft}
+          onChangeText={setNoteDraft}
+          placeholder={r.notePlaceholder}
+          accessibilityLabel={r.note}
+          maxLength={NOTE_MAX}
+          style={styles.note}
+        />
+        {noteDirty && <Button title={r.saveNote} onPress={saveNote} size="md" />}
 
-          {/* -------- copy / remove -------- */}
-          <Button
-            title={copied ? r.copied : r.copyParagraph}
-            icon={copied ? "checkmark" : "copy-outline"}
-            variant="outline"
-            onPress={copyParagraph}
-          />
-          {highlight && (
-            <Button title={r.removeHighlight} icon="trash-outline" variant="ghost" onPress={remove} />
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        {/* -------- copy / remove -------- */}
+        <Button
+          title={copied ? r.copied : r.copyParagraph}
+          icon={copied ? "checkmark" : "copy-outline"}
+          variant="outline"
+          onPress={copyParagraph}
+        />
+        {highlight && (
+          <Button title={r.removeHighlight} icon="trash-outline" variant="ghost" onPress={remove} />
+        )}
+      </SheetForm>
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  body: { gap: theme.spacing.md, paddingBottom: theme.spacing.lg },
+  body: { gap: theme.spacing.md },
   colorRow: { flexDirection: "row", gap: theme.spacing.sm },
   colorHit: {
     width: theme.layout.minTouch,
@@ -227,16 +222,6 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.text,
   },
   pressed: { opacity: 0.75 },
-  input: {
-    minHeight: 96,
-    backgroundColor: theme.colors.surfaceSunken,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm + 4,
-    color: theme.colors.text,
-    fontFamily: theme.font.regular,
-    fontSize: 15,
-  },
+  /** A note is a sentence, not a paragraph — shorter than the feedback box. */
+  note: { minHeight: 96 },
 });

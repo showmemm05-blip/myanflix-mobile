@@ -11,8 +11,9 @@ module.exports = function (api) {
           extensions: [".tsx", ".ts", ".jsx", ".js", ".json"],
         },
       ],
-      // Must be last.
-      "react-native-reanimated/plugin",
+      // The worklets plugin (formerly "react-native-reanimated/plugin") is not
+      // listed here: babel-preset-expo adds it itself whenever the package is
+      // installed, and it has to run last.
     ],
   };
 };

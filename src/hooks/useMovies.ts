@@ -1,8 +1,7 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { moviesService } from "@/services/movies.service";
-import { SEARCH_STALE_TIME_MS } from "@/hooks/useSearchTerm";
+import { SEARCH_MIN_LENGTH, SEARCH_STALE_TIME_MS, SUGGEST_LIMIT } from "@/hooks/useSearchTerm";
 import type { MovieQuery } from "@/types/movie";
-import type { PaginationParams } from "@/types/api";
 
 /** THE infinite movies key — spelled here and nowhere else (see booksInfiniteKey). */
 export const moviesInfiniteKey = (query: MovieQuery) => ["movies", "infinite", query] as const;
@@ -18,7 +17,7 @@ export const moviesInfiniteKey = (query: MovieQuery) => ["movies", "infinite", q
  * braces; there is deliberately no hand-rolled request-id guard on top,
  * because there would be nothing left for it to catch.
  */
-export function useMovies(query: MovieQuery = {}) {
+export function useMovies(query: MovieQuery = {}, options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["movies", query],
     // React Query gives each fetch its own AbortSignal and aborts it when the
@@ -31,6 +30,10 @@ export function useMovies(query: MovieQuery = {}) {
     // Retyping a term searched in the last 30s is served from cache rather
     // than re-requested.
     staleTime: SEARCH_STALE_TIME_MS,
+    // Same option shape as useBooksList/useSeriesList: a caller states when it
+    // may ask at all. MovieDetails uses it to wait for the movie's category
+    // instead of spending a request on a key it has already decided to discard.
+    enabled: options.enabled ?? true,
   });
 }
 
@@ -54,13 +57,47 @@ export function useMoviesInfinite(query: MovieQuery = {}) {
 }
 
 /**
+ * The search field's suggestion rows — a DIFFERENT question from the grid's.
+ *
+ * The grid answers "what matched?" over the full filter set, thirty posters at
+ * a time, on a term the user has COMMITTED — it does not follow the typing at
+ * all. This answers "which of these is the one I mean?": eight text rows,
+ * relevance order, search + limit + sort and nothing else, on the panel's own
+ * 150ms debounce. Between commits the panel is the only live half of the
+ * search screen, which is exactly why it exists. Its key is
+ * `["movies", "suggest", term]` — provably none of `moviesInfiniteKey`'s, so
+ * React Query caches, dedupes and aborts the two independently and the grid's
+ * timing is not touched by anything typed into the panel.
+ *
+ * `enabled` is the panel's visibility: a closed panel must not keep a request
+ * on the wire for a field nobody is looking at. A late response can never land
+ * on the wrong term for the same two reasons useMovies documents above — the
+ * term is in the key, and the forwarded `signal` aborts the superseded request.
+ */
+export function useMovieSuggestions(term: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["movies", "suggest", term],
+    queryFn: ({ signal }) =>
+      moviesService.getMovies({ search: term, limit: SUGGEST_LIMIT, sort: "relevance" }, { signal }),
+    enabled: enabled && term.length >= SEARCH_MIN_LENGTH,
+    // Holds the previous term's rows while the next term loads, so the list
+    // morphs instead of flashing back to skeletons on every keystroke.
+    placeholderData: keepPreviousData,
+    staleTime: SEARCH_STALE_TIME_MS,
+  });
+}
+
+/**
  * The filter vocabulary. 5-minute staleTime on top of the server's own 60s
  * cache — facet values change only when the admin edits metadata.
  */
 export function useMovieFacets() {
   return useQuery({
     queryKey: ["movies", "facets"],
-    queryFn: () => moviesService.getFacets(),
+    // The same abort handle the two catalogue queries above already forward —
+    // leaving a screen mid-flight cancels the request instead of letting it run
+    // to completion on the radio.
+    queryFn: ({ signal }) => moviesService.getFacets({ signal }),
     staleTime: 5 * 60_000,
   });
 }
@@ -68,7 +105,7 @@ export function useMovieFacets() {
 export function useMovie(id: string | undefined) {
   return useQuery({
     queryKey: ["movie", id],
-    queryFn: () => moviesService.getMovieById(id as string),
+    queryFn: ({ signal }) => moviesService.getMovieById(id as string, { signal }),
     enabled: !!id,
   });
 }
@@ -76,13 +113,6 @@ export function useMovie(id: string | undefined) {
 export function useMostPurchased() {
   return useQuery({
     queryKey: ["movies", "most-purchased"],
-    queryFn: () => moviesService.getMostPurchased(),
-  });
-}
-
-export function useMyPurchases(pagination: PaginationParams = {}) {
-  return useQuery({
-    queryKey: ["purchases", "me", pagination],
-    queryFn: () => moviesService.getMyPurchases(pagination),
+    queryFn: ({ signal }) => moviesService.getMostPurchased({ signal }),
   });
 }

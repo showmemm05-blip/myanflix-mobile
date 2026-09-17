@@ -10,7 +10,9 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useIsFocused } from "@react-navigation/native";
 import { useReducedMotion } from "react-native-reanimated";
 import { GamePlate } from "@/components/common/GamePlate";
@@ -22,6 +24,7 @@ import { SlugText } from "@/components/arcade/SlugText";
 import { heroGames } from "@/data/arcade";
 import { PLATE_PALETTES, formatCompactCount, type Game } from "@/data/games";
 import { useLanguage } from "@/localization/LanguageProvider";
+import { clamp } from "@/utils/format";
 import { theme, withAlpha } from "@/theme";
 
 interface Props {
@@ -95,7 +98,7 @@ export function StoreHero({ onExplore, onAllGames }: Props) {
   const onMomentumScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const next = Math.round(event.nativeEvent.contentOffset.x / width);
-      const clamped = Math.max(0, Math.min(heroGames.length - 1, next));
+      const clamped = clamp(next, 0, heroGames.length - 1);
       if (clamped !== indexRef.current) setIndex(clamped);
     },
     [width],
@@ -188,6 +191,15 @@ export function StoreHero({ onExplore, onAllGames }: Props) {
         showsHorizontalScrollIndicator={false}
         bounces={false}
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+        // One slide at first paint instead of RN's default of ten — this is the
+        // first block on the first screen of a cold start, and each slide is a
+        // full-screen SVG plate. windowSize 3 keeps the neighbour ready so a
+        // swipe never lands on a blank stage, and the exact getItemLayout above
+        // is what lets scrollToIndex (including the 5→0 wrap) hit an unrendered
+        // index without a measurement pass.
+        initialNumToRender={1}
+        maxToRenderPerBatch={2}
+        windowSize={3}
         onMomentumScrollEnd={onMomentumScrollEnd}
         onTouchStart={() => setTouching(true)}
         onTouchEnd={() => setTouching(false)}
@@ -230,7 +242,7 @@ export function StoreHero({ onExplore, onAllGames }: Props) {
 
 const styles = StyleSheet.create({
   slideContent: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: "flex-end",
     padding: theme.layout.screenPadding,
     paddingBottom: theme.spacing.lg,

@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Share, StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { CompositeScreenProps } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
@@ -23,11 +25,11 @@ import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { hasAccess } from "@/utils/access";
 import { theme } from "@/theme";
-import type { HomeStackParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
+import type { MediaDetailParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
 import type { Movie } from "@/types/movie";
 
 type Props = CompositeScreenProps<
-  NativeStackScreenProps<HomeStackParamList, "SeriesDetails">,
+  NativeStackScreenProps<MediaDetailParamList, "SeriesDetails">,
   CompositeScreenProps<BottomTabScreenProps<MainTabParamList>, NativeStackScreenProps<RootStackParamList>>
 >;
 
@@ -91,8 +93,14 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
   const handleWatch = () => {
     if (firstEpisode) navigation.getParent()?.navigate("Player", { movieId: firstEpisode.id });
   };
-  const handleSubscribe = () => navigation.navigate("Subscribe");
-  const handleEpisodePress = (episodeId: string) => navigation.getParent()?.navigate("Player", { movieId: episodeId });
+  // Stable, because a whole season of `EpisodeRow`s is rendered in flow below
+  // and those rows are memoized: a fresh handler here would defeat the memo on
+  // every row for a screen render that changed one thing.
+  const handleSubscribe = useCallback(() => navigation.navigate("Subscribe"), [navigation]);
+  const handleEpisodePress = useCallback(
+    (episodeId: string) => navigation.getParent()?.navigate("Player", { movieId: episodeId }),
+    [navigation],
+  );
   const handleShare = () => {
     if (series) Share.share({ message: series.title }).catch(() => {});
   };

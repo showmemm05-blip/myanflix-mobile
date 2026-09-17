@@ -20,15 +20,32 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "plugins": [
       "expo-secure-store",
-      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "backgroundColor": "#0A0A0A",
+          "imageWidth": 200
+        }
+      ],
       "expo-localization",
       "expo-font",
-      "expo-video"
-    ]
+      "expo-video",
+      "expo-image",
+      "expo-status-bar",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "MyanFlix needs access to your photos so you can choose a profile picture.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
+    ],
+    "locales": {
+      "my": "./assets/locales/my.json"
+    }
   }
 }

@@ -1,13 +1,22 @@
 export type UserRole = "SUPER_ADMIN" | "ADMIN" | "USER";
 export type UserStatus = "ACTIVE" | "SUSPENDED" | "BANNED";
 
-/** "mm" everywhere — the web app inconsistently used "my" in one type and "mm" in its actual i18n system; don't repeat that. */
-export type AppLanguage = "en" | "mm";
-
 /** Shape returned by GET /users/me. */
 export interface AppUser {
   id: string;
   username: string;
+  /**
+   * The editable, human-facing name. Null until the account owner sets one —
+   * `displayNameOf()` in utils/format.ts is what turns it into something to
+   * render, falling back to the username.
+   */
+  displayName: string | null;
+  /**
+   * The login identity for end users (staff sign in with `username` instead),
+   * which is why neither is editable from the profile sheet. Always present in
+   * the response, null on an account that has none.
+   */
+  phone: string | null;
   avatarUrl: string | null;
   role: UserRole;
   status: UserStatus;

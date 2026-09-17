@@ -1,13 +1,15 @@
 import { View, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Surface } from "@/components/ui/Surface";
 import { formatKyat } from "@/utils/currency";
-import { theme } from "@/theme";
-import type { BackendTransaction } from "@/api/wallet.api";
+import { theme, withAlpha } from "@/theme";
+import type { TransactionType } from "@/types/wallet";
 
 const POSITIVE_TYPES = new Set(["DEPOSIT", "REFUND", "ADJUSTMENT_CREDIT"]);
-const ICONS: Record<BackendTransaction["type"], keyof typeof Ionicons.glyphMap> = {
+const ICONS: Record<TransactionType, keyof typeof Ionicons.glyphMap> = {
   DEPOSIT: "arrow-down-circle",
   REFUND: "return-up-back",
   PURCHASE: "cart",
@@ -22,7 +24,7 @@ const ICONS: Record<BackendTransaction["type"], keyof typeof Ionicons.glyphMap> 
  * = an ordinary content purchase. Violet is the app's ACTION colour and never
  * carries data, so no row is ever tinted with it.
  */
-const TONES: Record<BackendTransaction["type"], string> = {
+const TONES: Record<TransactionType, string> = {
   DEPOSIT: theme.colors.finance,
   REFUND: theme.colors.finance,
   ADJUSTMENT_CREDIT: theme.colors.finance,
@@ -36,17 +38,25 @@ interface Props {
   label: string;
   date: string;
   amount: number;
-  type: BackendTransaction["type"];
+  type: TransactionType;
 }
 
 export function TransactionRow({ label, date, amount, type }: Props) {
   const isPositive = POSITIVE_TYPES.has(type);
-  const tone = TONES[type];
+  // The server's enum can grow past an installed binary; an unknown type
+  // stays a readable, neutral row instead of an "undefined1F" colour.
+  const tone = TONES[type] ?? theme.colors.textMuted;
+  const icon = ICONS[type] ?? "swap-horizontal";
 
   return (
     <Surface radius="xl" style={styles.row}>
-      <View style={[styles.iconTile, { backgroundColor: tone + "1F", borderColor: tone + "33" }]}>
-        <Ionicons name={ICONS[type]} size={18} color={tone} />
+      <View
+        style={[
+          styles.iconTile,
+          { backgroundColor: withAlpha(tone, 0.12), borderColor: withAlpha(tone, 0.2) },
+        ]}
+      >
+        <Ionicons name={icon} size={18} color={tone} />
       </View>
       <View style={styles.info}>
         <ThemedText variant="body" weight="semibold" numberOfLines={1}>

@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { FlatList, Pressable, StyleSheet, View, type ListRenderItemInfo } from "react-native";
 import { Image } from "expo-image";
 import { ThemedText } from "@/components/ui/ThemedText";
+import { useSheetKeyboardLift } from "@/components/ui/BottomSheet";
 import { theme, withAlpha } from "@/theme";
 import type { BookPage } from "@/types/book";
 
@@ -25,6 +26,16 @@ interface Props {
  * the primary ring and the grid opens scrolled to its row.
  */
 export function PageThumbGrid({ pages, currentIndex, onSelect }: Props) {
+  /**
+   * The jump sheet pins its "Jump to page" button in the sheet's footer, which
+   * rises by this much to clear the keyboard summoned by the page-number field
+   * above the grid — and it rises OVER this list, because a footer is lifted by
+   * a transform so it never reflows the body. Without the matching reserve the
+   * last row of thumbs cannot be scrolled out from behind the button. Zero in
+   * the contents sheet, which has no field to raise a keyboard with.
+   */
+  const keyboardLift = useSheetKeyboardLift();
+
   const renderItem = useCallback(
     ({ item, index }: ListRenderItemInfo<BookPage>) => {
       const current = index === currentIndex;
@@ -43,6 +54,9 @@ export function PageThumbGrid({ pages, currentIndex, onSelect }: Props) {
               contentFit="cover"
               transition={120}
               recyclingKey={item.url}
+              // Page thumbs scroll out of the window and back constantly; the
+              // disk-only default re-decodes each time. See MediaCard.
+              cachePolicy="memory-disk"
             />
           </View>
           <ThemedText
@@ -77,7 +91,7 @@ export function PageThumbGrid({ pages, currentIndex, onSelect }: Props) {
       getItemLayout={getItemLayout}
       initialScrollIndex={pages.length > 0 ? Math.min(currentIndex, pages.length - 1) : undefined}
       columnWrapperStyle={styles.rowWrap}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, keyboardLift > 0 && { paddingBottom: theme.spacing.lg + keyboardLift }]}
       initialNumToRender={12}
       windowSize={5}
       maxToRenderPerBatch={9}

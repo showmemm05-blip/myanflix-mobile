@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { PressableScale } from "@/components/ui/PressableScale";
@@ -29,7 +31,9 @@ export function SettingsScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <AuroraBackdrop tone="violet" height={360} intensity={0.6} />
-      <AppTopBar title={t.profile.settings} />
+      {/* See Wallet: the tab bar names the tab, so the heading was one row of
+          screen spent repeating it. No title also drops AppBar to compact. */}
+      <AppTopBar />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.group}>

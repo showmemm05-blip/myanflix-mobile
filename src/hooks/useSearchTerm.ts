@@ -3,9 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 /**
  * How long the field must sit still before a search request is allowed out.
  *
- * The single knob for search debouncing in this app — the web client uses the
- * same value so both surfaces feel identical. Raise it and every search
- * surface waits longer; nothing else needs touching.
+ * The knob for every surface that still debounces — today that is the books
+ * catalogue and the web client, which share this value so they feel identical.
+ *
+ * The main search screen deliberately does NOT use this hook any more: its grid
+ * re-queries only on a committed term, because the owner asked for the movies
+ * already on screen to stay there while they type, and a debounce still swaps
+ * them out — just 400ms later. Do not wire this back into that screen.
  */
 export const SEARCH_DEBOUNCE_MS = 400;
 
@@ -24,6 +28,17 @@ export const SEARCH_MIN_LENGTH = 2;
  * keys, that is what keeps duplicate requests for the same term off the wire.
  */
 export const SEARCH_STALE_TIME_MS = 30_000;
+
+/**
+ * How many rows a suggestion panel asks for. Eight is a list you can read at a
+ * glance, not a second results grid — the grid below already holds the rest.
+ *
+ * It lives here, with the other search knobs, because all three panels (movies,
+ * series, books) have to ask for the SAME number: a books panel showing six
+ * rows where the movies panel shows eight would read as a bug in the books
+ * search rather than as a shorter catalogue.
+ */
+export const SUGGEST_LIMIT = 8;
 
 export interface SearchTerm {
   /** Raw field value, updated on every keystroke so the input never lags. */

@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
   stack: { gap: theme.spacing.lg },
   newReleasePlate: { aspectRatio: 4 / 3 },
   bannerContent: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: "flex-end",
     padding: theme.spacing.md,
     gap: theme.spacing.sm,

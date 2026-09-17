@@ -20,8 +20,11 @@ export function WatchHistoryScreen({ navigation }: Props) {
   // Presentation-only spinner state for pull-to-refresh.
   const [refreshing, setRefreshing] = useState(false);
 
+  // Pushes onto the LIBRARY stack — MovieDetails is registered here too
+  // (LibraryStackNavigator) — so back returns to this list. It used to jump to
+  // the Home tab, which is why back dropped the user on Home.
   const goToDetails = (movieId: string) => {
-    navigation.getParent()?.navigate("HomeTab", { screen: "MovieDetails", params: { movieId } });
+    navigation.navigate("MovieDetails", { movieId });
   };
 
   const handleRefresh = async () => {

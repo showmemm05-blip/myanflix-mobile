@@ -1,6 +1,8 @@
 import { useCallback } from "react";
 import { FlatList, StyleSheet, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { GamePlate } from "@/components/common/GamePlate";
 import { Pill } from "@/components/ui/Pill";
 import { PressableScale } from "@/components/ui/PressableScale";
@@ -31,6 +33,16 @@ const ITEMS: DiscoverItem[] = [
   ...discoverGames.map((game): DiscoverItem => ({ kind: "game", game })),
   ...ANNOUNCED_LANES.map((lane): DiscoverItem => ({ kind: "lane", lane })),
 ];
+
+const keyExtractor = (item: DiscoverItem) =>
+  item.kind === "game" ? item.game.id : `lane-${item.lane.id}`;
+
+/** Fixed 180pt cells on a 12pt gap, inset by the screen padding — exact offsets. */
+const getItemLayout = (_: ArrayLike<DiscoverItem> | null | undefined, index: number) => ({
+  length: CARD_WIDTH,
+  offset: theme.layout.screenPadding + (CARD_WIDTH + GAP) * index,
+  index,
+});
 
 /**
  * The whole shelf, newest first, as a snapping horizontal rail — followed by
@@ -91,13 +103,20 @@ export function StoreDiscover({ onPressGame }: Props) {
       <SectionHeader eyebrow={t.arcade.discover.kicker} title={t.arcade.discover.title} />
       <FlatList
         data={ITEMS}
-        keyExtractor={(item) => (item.kind === "game" ? item.game.id : `lane-${item.lane.id}`)}
+        keyExtractor={keyExtractor}
+        getItemLayout={getItemLayout}
         renderItem={renderItem}
         horizontal
         showsHorizontalScrollIndicator={false}
         snapToInterval={CARD_WIDTH + GAP}
         decelerationRate="fast"
         contentContainerStyle={styles.rail}
+        // This rail sits below the fold inside Home's ScrollView, so without
+        // batching all 15 SVG plates mount at first paint. The exact offsets
+        // above mean the rest arrive on a flick with no measurement pass.
+        initialNumToRender={3}
+        maxToRenderPerBatch={4}
+        windowSize={5}
       />
     </SectionRule>
   );
@@ -130,7 +149,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   teaserContent: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     gap: theme.spacing.xs,

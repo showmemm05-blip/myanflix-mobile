@@ -1,4 +1,5 @@
 import { apiClient } from "@/api/client";
+import type { RequestSignalOptions } from "@/types/api";
 import type { Category } from "@/types/category";
 
 export const categoriesApi = {
@@ -6,7 +7,7 @@ export const categoriesApi = {
     return apiClient.get<Category[]>("/categories");
   },
 
-  getCategoryById(id: string) {
-    return apiClient.get<Category>(`/categories/${id}`);
+  getCategoryById(id: string, options: RequestSignalOptions = {}) {
+    return apiClient.get<Category>(`/categories/${id}`, options);
   },
 };

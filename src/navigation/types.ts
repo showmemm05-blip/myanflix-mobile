@@ -2,25 +2,44 @@ import type { NavigatorScreenParams } from "@react-navigation/native";
 
 export type AuthStackParamList = {
   Login: undefined;
-  Register: undefined;
   ForgotPassword: undefined;
 };
 
-export type HomeStackParamList = {
-  Home: undefined;
+/**
+ * The media detail screens, registered in EVERY tab stack that can open one —
+ * HomeStackNavigator, SearchStackNavigator and LibraryStackNavigator each
+ * register these same four routes (the comment in HomeStackNavigator carries
+ * the full rationale; keep the three copies in sync).
+ *
+ * WHY the duplication is deliberate: a detail page belongs to the tab that
+ * opened it. When these lived only in HomeStackParamList, Search/Favorites/
+ * Watch history had to jump to the Home tab to show a movie, so `goBack()`
+ * popped the HOME stack and the user landed on Home instead of the grid they
+ * came from. That was the back-button bug. Registering the group per stack is
+ * what keeps a journey — and therefore back — inside one tab.
+ *
+ * Subscribe travels with them because MovieDetails/SeriesDetails push it from
+ * wherever they are hosted. Registration is free at runtime: native-stack only
+ * mounts routes that actually appear in a stack's state.
+ */
+export type MediaDetailParamList = {
   MovieDetails: { movieId: string };
   SeriesDetails: { seriesId: string };
   CategoryDetail: { categoryId: string };
   Subscribe: undefined;
 };
 
-export type SearchStackParamList = {
+export type HomeStackParamList = MediaDetailParamList & {
+  Home: undefined;
+};
+
+export type SearchStackParamList = MediaDetailParamList & {
   Search: { initialTab?: "movies" | "series" | "books" | "music" } | undefined;
   BooksCatalog: undefined;
   BookDetails: { bookId: string };
 };
 
-export type LibraryStackParamList = {
+export type LibraryStackParamList = MediaDetailParamList & {
   LibraryOverview: undefined;
   WatchHistory: undefined;
   Favorites: undefined;

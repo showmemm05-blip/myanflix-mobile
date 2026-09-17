@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { CompositeScreenProps } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
@@ -17,7 +20,10 @@ import { PressableScale } from "@/components/ui/PressableScale";
 import { AuroraBackdrop } from "@/components/common/AuroraBackdrop";
 import { StatCard } from "@/components/wallet/StatCard";
 import { TopBar } from "@/components/layout/TopBar";
+import { EditProfileSheet } from "@/components/profile/EditProfileSheet";
+import { ChangePasswordSheet } from "@/components/profile/ChangePasswordSheet";
 import { formatKyat } from "@/utils/currency";
+import { displayNameOf, initials } from "@/utils/format";
 import { theme } from "@/theme";
 import type { MainTabParamList, RootStackParamList } from "@/navigation/types";
 
@@ -26,16 +32,16 @@ type Props = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList>
 >;
 
-function initials(name: string | undefined): string {
-  if (!name) return "?";
-  return name.slice(0, 2).toUpperCase();
-}
-
 export function ProfileOverviewScreen({ navigation }: Props) {
   const { user, logout } = useAuth();
   const { t } = useLanguage();
   const walletQuery = useWallet();
   const subscriptionQuery = useSubscriptionStatus();
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  /** Display name if they set one, else the username they sign in with. */
+  const shownName = displayNameOf(user);
 
   const isSubscribed = subscriptionQuery.data?.isActive ?? false;
   const memberSince = user?.createdAt
@@ -65,8 +71,9 @@ export function ProfileOverviewScreen({ navigation }: Props) {
                 <Image source={{ uri: user.avatarUrl }} style={[styles.avatar, { borderColor: statusColor }]} contentFit="cover" />
               ) : (
                 <View style={[styles.avatar, styles.avatarFallback, { borderColor: statusColor }]}>
+                  {/* The letters have to agree with the name under them. */}
                   <ThemedText variant="display" weight="bold">
-                    {initials(user?.username)}
+                    {initials(shownName)}
                   </ThemedText>
                 </View>
               )}
@@ -78,7 +85,7 @@ export function ProfileOverviewScreen({ navigation }: Props) {
             </View>
 
             <ThemedText variant="title" numberOfLines={1} style={styles.username}>
-              {user?.username}
+              {shownName}
             </ThemedText>
 
             <View style={[styles.statusChip, { backgroundColor: statusColor + "1F", borderColor: statusColor + "40" }]}>
@@ -97,7 +104,22 @@ export function ProfileOverviewScreen({ navigation }: Props) {
         </GlassCard>
 
         <PressableScale
-          onPress={() => navigation.navigate("Main", { screen: "WalletTab", params: { screen: "Wallet" } })}
+          /**
+           * `popTo`, NOT `navigate`. Profile is a ROOT stack screen sitting
+           * ABOVE the tab shell, so `navigate("Main", …)` does not return to
+           * the app underneath — in react-navigation 7 it PUSHES a second
+           * whole MainTabNavigator (a second tab bar, a second set of five
+           * stacks), and the user needed three back presses to recover.
+           * `popTo` pops the root stack back to the Main already below and
+           * hands it the nested params. The inner `pop: true` stops a deep
+           * Wallet stack from getting a duplicate Wallet pushed on top.
+           */
+          onPress={() =>
+            navigation.popTo("Main", {
+              screen: "WalletTab",
+              params: { screen: "Wallet", pop: true },
+            })
+          }
           accessibilityLabel={t.wallet.balance}
         >
           <Surface radius="2xl" padded style={styles.walletCard}>
@@ -130,10 +152,45 @@ export function ProfileOverviewScreen({ navigation }: Props) {
           />
         </View>
 
+        {/* Your name and your password are account attributes, so they live
+            here rather than in Settings — Settings is the list of things you
+            do with the APP, this screen is who you are. */}
+        <View style={styles.group}>
+          <SectionHeader title={t.profile.account} inset={false} icon="person-circle-outline" />
+          <PressableScale onPress={() => setEditingProfile(true)} accessibilityLabel={t.profile.editProfile}>
+            <Surface radius="xl" style={styles.row}>
+              <View style={styles.rowIconTile}>
+                <Ionicons name="person-outline" size={20} color={theme.colors.primary} />
+              </View>
+              <ThemedText variant="body" weight="semibold" style={styles.rowLabel}>
+                {t.profile.editProfile}
+              </ThemedText>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textFaint} />
+            </Surface>
+          </PressableScale>
+          <PressableScale onPress={() => setChangingPassword(true)} accessibilityLabel={t.profile.changePassword}>
+            <Surface radius="xl" style={styles.row}>
+              <View style={styles.rowIconTile}>
+                <Ionicons name="lock-closed-outline" size={20} color={theme.colors.primary} />
+              </View>
+              <ThemedText variant="body" weight="semibold" style={styles.rowLabel}>
+                {t.profile.changePassword}
+              </ThemedText>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textFaint} />
+            </Surface>
+          </PressableScale>
+        </View>
+
         <View style={styles.group}>
           <SectionHeader title={t.settings.preferences} inset={false} icon="options-outline" />
           <PressableScale
-            onPress={() => navigation.navigate("Main", { screen: "SettingsTab", params: { screen: "Settings" } })}
+            /** `popTo` for the same reason as the wallet card above — `navigate` would push a second tab shell. */
+            onPress={() =>
+              navigation.popTo("Main", {
+                screen: "SettingsTab",
+                params: { screen: "Settings", pop: true },
+              })
+            }
             accessibilityLabel={t.profile.settings}
           >
             <Surface radius="xl" style={styles.row}>
@@ -150,7 +207,13 @@ export function ProfileOverviewScreen({ navigation }: Props) {
 
         <Button
           title={t.common.logOut}
-          onPress={() => logout()}
+          // `void`, not a floating promise: logout() now clears local state in
+          // a finally, so the only thing that can still reject here is the
+          // SecureStore write — and an unhandled rejection at this call site
+          // would be the only trace of it.
+          onPress={() => {
+            void logout();
+          }}
           variant="soft"
           size="lg"
           icon="log-out-outline"
@@ -159,6 +222,16 @@ export function ProfileOverviewScreen({ navigation }: Props) {
           style={styles.logout}
         />
       </ScrollView>
+
+      {/* Both stay mounted while closed so they keep their close animation; the
+          edit sheet needs a user to seed its field from, and this screen is
+          only reachable while signed in. */}
+      {user ? (
+        <>
+          <EditProfileSheet user={user} visible={editingProfile} onClose={() => setEditingProfile(false)} />
+          <ChangePasswordSheet visible={changingPassword} onClose={() => setChangingPassword(false)} />
+        </>
+      ) : null}
     </View>
   );
 }

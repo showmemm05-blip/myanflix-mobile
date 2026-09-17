@@ -1,6 +1,9 @@
+import { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Pill } from "@/components/ui/Pill";
 import { PressableScale } from "@/components/ui/PressableScale";
@@ -51,8 +54,14 @@ interface Props {
  * list on SeriesDetails and the list under / beside the player), so the same
  * content never wears two looks. States it carries: locked (pressable into
  * Subscribe when the screen wires it), current, watched, part-watched.
+ *
+ * Memoized for SeriesDetails, which renders a whole season of these in flow
+ * (no virtualization there) — a favourite toggle or a settling query must not
+ * re-render rows whose data did not change. Every prop is a primitive bar the
+ * two handlers, which that screen keeps stable. In the player's FlatList the
+ * memo is inert, and that is fine: cells there re-render either way.
  */
-export function EpisodeRow({
+export const EpisodeRow = memo(function EpisodeRow({
   episodeId,
   title,
   episodeNumber,
@@ -88,7 +97,15 @@ export function EpisodeRow({
       <View style={[styles.row, description ? styles.rowGrows : styles.rowFixed, isCurrent && styles.rowCurrent]}>
         <View style={[styles.thumb, isCurrent && styles.thumbCurrent]}>
           {thumbnailUrl ? (
-            <Image source={{ uri: thumbnailUrl }} style={StyleSheet.absoluteFill} contentFit="cover" transition={160} />
+            <Image
+              source={{ uri: thumbnailUrl }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              transition={160}
+              // 112x63 still, unmounted and remounted as the episode list
+              // scrolls; the disk-only default re-decodes each time.
+              cachePolicy="memory-disk"
+            />
           ) : (
             <View style={styles.thumbFallback}>
               <Ionicons name="film-outline" size={18} color={theme.colors.textFaint} />
@@ -170,7 +187,7 @@ export function EpisodeRow({
       </View>
     </PressableScale>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: { width: "100%" },
@@ -200,9 +217,9 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.ring,
   },
   thumbCurrent: { borderColor: theme.colors.primary },
-  thumbFallback: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  thumbFallback: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
   nowPlayingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: theme.colors.scrimSoft,
@@ -218,7 +235,7 @@ const styles = StyleSheet.create({
   },
   nowPlayingText: { color: theme.colors.onPrimary },
   lockScrim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: theme.colors.scrimSoft,

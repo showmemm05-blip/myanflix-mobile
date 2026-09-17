@@ -8,7 +8,7 @@ const SOCKET_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
 /**
  * Singleton Socket.IO client shared across the app, mirroring the web app's
  * lib/socket.ts — connected/disconnected reactively by useRealtimeWallet
- * based on auth state; components just call getSocket() and attach/detach
+ * based on auth state; components attach/detach
  * their own listeners.
  */
 let socket: Socket | null = null;
@@ -29,9 +29,6 @@ export function connectSocket(token: string): Socket {
   return socket;
 }
 
-export function getSocket(): Socket | null {
-  return socket;
-}
 
 export function disconnectSocket(): void {
   socket?.disconnect();

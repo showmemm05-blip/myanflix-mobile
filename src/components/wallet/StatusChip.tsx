@@ -1,6 +1,6 @@
 import { StyleSheet, View } from "react-native";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { theme } from "@/theme";
+import { theme, withAlpha } from "@/theme";
 
 export type LedgerStatus = "PENDING" | "APPROVED" | "REJECTED";
 
@@ -24,7 +24,7 @@ export function StatusChip({ status, label }: Props) {
   const color = STATUS_COLOR[status];
 
   return (
-    <View style={[styles.chip, { backgroundColor: color + "1F", borderColor: color + "40" }]}>
+    <View style={[styles.chip, { backgroundColor: withAlpha(color, 0.12), borderColor: withAlpha(color, 0.25) }]}>
       <View style={[styles.dot, { backgroundColor: color }]} />
       <ThemedText variant="caption" weight="semibold" style={{ color }}>
         {label}

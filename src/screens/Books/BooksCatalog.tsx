@@ -8,7 +8,9 @@ import {
   View,
   type ListRenderItemInfo,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PressableScale } from "@/components/ui/PressableScale";
@@ -58,6 +60,7 @@ export function BooksCatalogScreen({ navigation }: Props) {
         title={item.title}
         author={item.author}
         coverUrl={item.coverUrl}
+        category={item.categories[0]?.name}
         width={cellWidth}
         onPress={() => goToBook(item)}
       />

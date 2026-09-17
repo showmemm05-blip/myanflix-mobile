@@ -1,4 +1,5 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { clamp } from "@/utils/format";
 import { theme } from "@/theme";
 
 interface Props {
@@ -12,7 +13,7 @@ interface Props {
 
 /** Thin non-interactive progress line (continue-watching, upload, plan usage). */
 export function ProgressTrack({ progress, height = 3, color = theme.colors.primary, trackColor, style }: Props) {
-  const clamped = Math.max(0, Math.min(1, Number.isFinite(progress) ? progress : 0));
+  const clamped = clamp(Number.isFinite(progress) ? progress : 0, 0, 1);
 
   return (
     <View

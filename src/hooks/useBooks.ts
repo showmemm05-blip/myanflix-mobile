@@ -6,6 +6,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { booksService } from "@/services/books.service";
+import { SEARCH_MIN_LENGTH, SEARCH_STALE_TIME_MS, SUGGEST_LIMIT } from "@/hooks/useSearchTerm";
 import type { BookQuery, BookReadingProgress } from "@/types/book";
 
 /**
@@ -15,6 +16,13 @@ import type { BookQuery, BookReadingProgress } from "@/types/book";
  */
 export const booksKey = (query: BookQuery) => ["books", query] as const;
 export const booksInfiniteKey = (query: BookQuery) => ["books", "infinite", query] as const;
+/**
+ * The books tab's suggestion-panel key. Distinct from every key above:
+ * `["books", query]` is length 2 and `["books", "infinite", query]` differs at
+ * index 1, so the panel and the grid never share a cache entry — while a
+ * prefix invalidation on `["books"]` still sweeps both, which is correct.
+ */
+export const booksSuggestKey = (term: string) => ["books", "suggest", term] as const;
 export const bookKey = (id: string | undefined) => ["book", id] as const;
 export const chaptersKey = (bookId: string, editionId: string | undefined) =>
   ["book", bookId, "chapters", editionId] as const;
@@ -29,21 +37,37 @@ export const readingProgressKey = (bookId: string, editionId: string | undefined
 
 const MINUTE_MS = 60_000;
 
-/** The catalog list — the search field drives this; the signal aborts a superseded term. */
-export function useBooks(query: BookQuery = {}) {
+/**
+ * ONE page of the library — what a shelf (rather than a grid) asks for.
+ *
+ * Deliberately no `sort`: BookQuery carries none, because /books already
+ * answers newest-first (createdAt desc), which is exactly what the "New on the
+ * shelf" rail wants. `options.enabled` is how a caller states that the viewer
+ * may ask at all — /books is members-only, so the Search screen passes its
+ * auth flag here and a guest never fires a request that would 401.
+ */
+export function useBooksList(query: BookQuery = {}, options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: booksKey(query),
     queryFn: ({ signal }) => booksService.getBooks(query, { signal }),
-    placeholderData: keepPreviousData,
+    enabled: options.enabled ?? true,
     staleTime: MINUTE_MS,
   });
 }
 
-/** The catalog grid's endless scroll. */
-export function useBooksInfinite(query: BookQuery = {}) {
+/**
+ * The catalog grid's endless scroll.
+ *
+ * `options.enabled` means the same thing it does on `useBooksList` above, and
+ * exists for the same reason: /books is members-only, so a screen that can be
+ * reached signed out (the Search screen's Books segment) states the session
+ * here rather than firing a request that 401s and reads as a network failure.
+ */
+export function useBooksInfinite(query: BookQuery = {}, options: { enabled?: boolean } = {}) {
   return useInfiniteQuery({
     queryKey: booksInfiniteKey(query),
     queryFn: ({ pageParam, signal }) => booksService.getBooks({ ...query, page: pageParam }, { signal }),
+    enabled: options.enabled ?? true,
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) => {
       const loaded = allPages.reduce((count, page) => count + page.items.length, 0);
@@ -54,11 +78,35 @@ export function useBooksInfinite(query: BookQuery = {}) {
   });
 }
 
+/**
+ * The books tab's suggestion rows — the books twin of useMovieSuggestions.
+ *
+ * Same eight rows, same `enabled`, same keepPreviousData, and deliberately the
+ * shared SEARCH_STALE_TIME_MS rather than this file's own MINUTE_MS: the three
+ * panels are one feature and must feel identically live.
+ *
+ * ONE HONEST DIFFERENCE. BookQuery carries no `sort` — /books has no relevance
+ * ordering to ask for — so this sends search + limit and nothing else, and the
+ * backend answers newest-first. These eight rows are therefore the eight most
+ * recently added matches, not the eight best; BookSuggestions re-ranks title
+ * matches to the top of what comes back, but nothing on the client can widen
+ * that window. Fixing it properly means a `sort` on the /books endpoint.
+ */
+export function useBookSuggestions(term: string, enabled: boolean) {
+  return useQuery({
+    queryKey: booksSuggestKey(term),
+    queryFn: ({ signal }) => booksService.getBooks({ search: term, limit: SUGGEST_LIMIT }, { signal }),
+    enabled: enabled && term.length >= SEARCH_MIN_LENGTH,
+    placeholderData: keepPreviousData,
+    staleTime: SEARCH_STALE_TIME_MS,
+  });
+}
+
 /** Resolves to null on a 404 — BookDetails' not-found state, distinct from isError. */
 export function useBook(id: string | undefined) {
   return useQuery({
     queryKey: bookKey(id),
-    queryFn: () => booksService.getBookById(id as string),
+    queryFn: ({ signal }) => booksService.getBookById(id as string, { signal }),
     enabled: !!id,
   });
 }
@@ -115,7 +163,7 @@ export function useChapterPages(
 export function useReadingProgress(bookId: string, editionId: string | undefined) {
   return useQuery({
     queryKey: readingProgressKey(bookId, editionId),
-    queryFn: () => booksService.getReadingProgress(bookId, editionId as string),
+    queryFn: ({ signal }) => booksService.getReadingProgress(bookId, editionId as string, { signal }),
     enabled: !!editionId,
     staleTime: Infinity,
   });

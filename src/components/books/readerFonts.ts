@@ -1,11 +1,7 @@
 import { useFonts } from "expo-font";
-import {
-  Literata_400Regular,
-  Literata_400Regular_Italic,
-  Literata_700Bold,
-  Literata_700Bold_Italic,
-} from "@expo-google-fonts/literata";
-import { NotoSerifMyanmar_400Regular, NotoSerifMyanmar_700Bold } from "@expo-google-fonts/noto-serif-myanmar";
+// atkinson-hyperlegible keeps its ROOT import on purpose: it ships exactly the
+// four faces loaded below, so its barrel wastes nothing. The other two packages
+// are deep-required by file instead — see the block under the imports.
 import {
   AtkinsonHyperlegible_400Regular,
   AtkinsonHyperlegible_400Regular_Italic,
@@ -14,6 +10,24 @@ import {
 } from "@expo-google-fonts/atkinson-hyperlegible";
 import { theme } from "@/theme";
 import type { ReaderFontFamily } from "@/store/readerPrefsStore";
+
+/**
+ * Literata and Noto Serif Myanmar are required by FILE, not imported from
+ * "@expo-google-fonts/literata" / "…/noto-serif-myanmar". Each package's
+ * generated index.js `require()`s EVERY weight it ships and Metro does no tree
+ * shaking, so touching either root bundles 16 + 9 TTFs (6.3 MB) to load the six
+ * faces below. Neither package declares an `exports` map, so these per-weight
+ * subpaths are legal and keep resolving across patch upgrades.
+ *
+ * If you add a face to the `useFonts` map in `useReaderFonts`, add its require
+ * here too — nothing else pulls these files into the bundle any more.
+ */
+const Literata_400Regular = require("@expo-google-fonts/literata/400Regular/Literata_400Regular.ttf");
+const Literata_400Regular_Italic = require("@expo-google-fonts/literata/400Regular_Italic/Literata_400Regular_Italic.ttf");
+const Literata_700Bold = require("@expo-google-fonts/literata/700Bold/Literata_700Bold.ttf");
+const Literata_700Bold_Italic = require("@expo-google-fonts/literata/700Bold_Italic/Literata_700Bold_Italic.ttf");
+const NotoSerifMyanmar_400Regular = require("@expo-google-fonts/noto-serif-myanmar/400Regular/NotoSerifMyanmar_400Regular.ttf");
+const NotoSerifMyanmar_700Bold = require("@expo-google-fonts/noto-serif-myanmar/700Bold/NotoSerifMyanmar_700Bold.ttf");
 
 /**
  * The text reader's typeface map. Faces are chosen PER TEXT NODE by script
