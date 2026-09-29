@@ -1,12 +1,25 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse, isAxiosError, isCancel } from "axios";
 import { tokenStore, notifyUnauthorized } from "@/services/token-store";
 import { ApiError } from "@/utils/errors";
+import { classifyRefreshBody, classifyRefreshFailure, type RefreshOutcome } from "@/api/refreshOutcome";
 
 /**
  * "localhost" resolves differently per target — see mobile/.env.example for
  * the iOS Simulator / Android Emulator / physical-device distinction.
+ *
+ * The localhost fallback is for DEVELOPMENT only (Expo Go / Metro). A release
+ * build gets its address from its eas.json profile; one built without it
+ * would silently talk to "localhost" on the user's own phone and every call
+ * would fail, so it refuses to start instead (audit H-13). Keep the
+ * `process.env.EXPO_PUBLIC_…` spelling exactly: Expo inlines only that form.
  */
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:3001/api";
+const CONFIGURED_API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+if (!CONFIGURED_API_BASE_URL && !__DEV__) {
+  throw new Error(
+    "EXPO_PUBLIC_API_BASE_URL is not set for this build. Set it in the build profile in mobile/eas.json.",
+  );
+}
+export const API_BASE_URL = CONFIGURED_API_BASE_URL ?? "http://localhost:3001/api";
 
 /**
  * Which client this is, in the backend's `ClientPlatform` vocabulary
@@ -75,12 +88,35 @@ interface Envelope<T> {
 // the web — refresh tokens are single-use with rotation server-side, so two
 // concurrent refresh attempts would race to consume the same soon-to-be-
 // revoked token and one would always fail.
-let refreshPromise: Promise<string | null> | null = null;
+let refreshPromise: Promise<RefreshOutcome> | null = null;
 
-async function refreshAccessToken(): Promise<string | null> {
+/**
+ * The one way into /auth/refresh, shared by the 401 path in `request` below
+ * and by services/socket.ts when the gateway closes the socket — so a closed
+ * socket and a 401'd request racing each other still spend the refresh token
+ * once. A "refreshed" outcome has already been written to tokenStore.
+ */
+export function refreshSession(): Promise<RefreshOutcome> {
+  refreshPromise ??= refreshAccessToken().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
+/** The one message for "the request could not get an answer" — see `request`. */
+const UNREACHABLE_MESSAGE = "Unable to reach the server. Check your connection.";
+
+/**
+ * Tells "the server refused the refresh token" apart from "the refresh could
+ * not get an answer" (see api/refreshOutcome.ts). Only the first may end the
+ * session; the second keeps both tokens so the next attempt can still succeed.
+ */
+async function refreshAccessToken(): Promise<RefreshOutcome> {
   const refreshToken = await tokenStore.getRefreshToken();
-  if (!refreshToken) return null;
+  // Nothing to refresh with: the session is gone, not unreachable.
+  if (!refreshToken) return { kind: "rejected" };
 
+  let outcome: RefreshOutcome;
   try {
     const response = await axios.post<Envelope<{ accessToken: string; refreshToken: string }>>(
       `${API_BASE_URL}/auth/refresh`,
@@ -94,19 +130,23 @@ async function refreshAccessToken(): Promise<string | null> {
       // end, just one call further along.
       { headers: platformHeaders, timeout: REQUEST_TIMEOUT_MS },
     );
-    if (!response.data.success || !response.data.data) return null;
+    outcome = classifyRefreshBody(response.data);
+  } catch (err) {
+    // Bare axios throws on every non-2xx: `err.response` is there when the
+    // server answered (400/401/403 = rejected, 5xx/429 = keep trying), absent
+    // when nothing came back at all (timeout, no network, DNS).
+    outcome = classifyRefreshFailure(isAxiosError(err) ? (err.response?.status ?? null) : null);
+  }
 
-    const { accessToken, refreshToken: nextRefreshToken } = response.data.data;
-    if (!accessToken || !nextRefreshToken) return null;
-
+  if (outcome.kind === "refreshed") {
     // Always persist the pair together — the old refresh token is revoked
     // the instant this call succeeds, so never store the new access token
-    // without also storing the new refresh token that replaces it.
-    await tokenStore.setTokens(accessToken, nextRefreshToken);
-    return accessToken;
-  } catch {
-    return null;
+    // without also storing the new refresh token that replaces it. A failed
+    // keystore write still leaves the new access token in memory
+    // (token-store caches it first), so this run keeps working.
+    await tokenStore.setTokens(outcome.accessToken, outcome.refreshToken).catch(() => {});
   }
+  return outcome;
 }
 
 async function performRequest<T>(
@@ -137,13 +177,15 @@ async function request<T>(
     let response = await performRequest<T>(path, options, token);
 
     if (response.status === 401 && !options.skipAuth) {
-      refreshPromise ??= refreshAccessToken().finally(() => {
-        refreshPromise = null;
-      });
-      const newToken = await refreshPromise;
+      const outcome = await refreshSession();
 
-      if (newToken) {
-        response = await performRequest<T>(path, options, newToken);
+      if (outcome.kind === "refreshed") {
+        response = await performRequest<T>(path, options, outcome.accessToken);
+      } else if (outcome.kind === "unreachable") {
+        // H-20: a refresh that got no answer (or a 5xx) says nothing about the
+        // session. Keep the tokens, fail THIS request as offline (status 0,
+        // which React Query retries), and let a later request refresh again.
+        throw new ApiError(UNREACHABLE_MESSAGE, 0);
       } else {
         await tokenStore.clear();
         notifyUnauthorized();
@@ -171,7 +213,7 @@ async function request<T>(
     // Rethrown as-is so `axios.isCancel` still recognises it upstream.
     if (isCancel(err)) throw err;
     if (isAxiosError(err) && !err.response) {
-      throw new ApiError("Unable to reach the server. Check your connection.", 0);
+      throw new ApiError(UNREACHABLE_MESSAGE, 0);
     }
     throw err;
   }

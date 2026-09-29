@@ -92,7 +92,8 @@ export function OtpChannelPicker({ unavailable = NONE }: Props) {
             // UI ONLY — this choice never leaves the device, and must not start.
             //
             // POST /auth/otp/request accepts exactly ONE property. Verified:
-            // backend/src/auth/dto/request-otp.dto.ts declares only `phone`, and
+            // backend/src/auth/dto/request-otp.dto.ts declares only `phone` and
+            // an optional `purpose` (sign-in vs password reset), and
             // backend/src/app.module.ts registers the global ValidationPipe with
             // `whitelist: true` AND `forbidNonWhitelisted: true`. With
             // `forbidNonWhitelisted`, an unknown property is not stripped — it is
@@ -100,9 +101,9 @@ export function OtpChannelPicker({ unavailable = NONE }: Props) {
             // 400, and OTP sign-in stops working for every user, on every
             // request, immediately.
             //
-            // src/api/auth.api.ts must keep sending exactly `{ phone }`, and
-            // `requestOtp` must keep a BARE STRING parameter in both auth.api.ts
-            // and useAuth — an options object leaves a comfortable slot for
+            // src/api/auth.api.ts must keep sending exactly `{ phone, purpose? }`,
+            // and `requestOtp` must keep BARE parameters in both auth.api.ts and
+            // useAuth — an options object leaves a comfortable slot for
             // someone to drop a `channel` into by reflex. A later refactor that
             // "tidies" it into `requestOtp({ phone })` quietly removes that
             // protection.

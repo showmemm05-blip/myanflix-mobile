@@ -10,7 +10,10 @@ import type {
 } from "@/types/series";
 
 export const seriesApi = {
-  /** `options.signal` is the search's abort handle — see RequestSignalOptions. */
+  /**
+   * `options.signal` is the search's abort handle — see RequestSignalOptions.
+   * Every array facet (genres, languages, actorIds) travels as CSV via csvParams.
+   */
   getSeries(query: SeriesQuery = {}, options: RequestSignalOptions = {}) {
     return apiClient.get<PaginatedResponse<SeriesListItem>>("/series", { params: csvParams(query), ...options });
   },

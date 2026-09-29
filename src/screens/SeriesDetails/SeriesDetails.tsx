@@ -18,7 +18,9 @@ import { StorylineCard } from "@/components/series/StorylineCard";
 import { SeriesFacts } from "@/components/series/SeriesFacts";
 import { EpisodeRow } from "@/components/series/EpisodeRow";
 import { SeriesRow } from "@/components/series/SeriesRow";
+import { PeopleRail } from "@/components/search/PeopleRail";
 import { CommentsSection } from "@/components/comments/CommentsSection";
+import { KeyboardLiftScrollView } from "@/components/common/KeyboardLiftScrollView";
 import { useSeries, useEpisodes, useSeriesList } from "@/hooks/useSeries";
 import { useSubscriptionStatus } from "@/hooks/useSubscription";
 import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
@@ -26,7 +28,7 @@ import { useLanguage } from "@/localization/LanguageProvider";
 import { hasAccess } from "@/utils/access";
 import { theme } from "@/theme";
 import type { MediaDetailParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
-import type { Movie } from "@/types/movie";
+import type { Movie, MovieActorRef } from "@/types/movie";
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<MediaDetailParamList, "SeriesDetails">,
@@ -105,6 +107,12 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
     if (series) Share.share({ message: series.title }).catch(() => {});
   };
   const goToSeriesDetails = (s: { id: string }) => navigation.push("SeriesDetails", { seriesId: s.id });
+  // Memoized: it is the cast rail's onPress, which is a FlatList cell prop — a
+  // fresh identity every render would rebuild every cell (same as MovieDetails).
+  const goToActorDetails = useCallback(
+    (actor: MovieActorRef) => navigation.navigate("ActorDetails", { actorId: actor.id }),
+    [navigation],
+  );
 
   if (seriesQuery.isLoading) {
     return (
@@ -137,7 +145,7 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
           without this. Android resizes the window itself (adjustResize in the
           manifest), so it takes no behavior, same as AuthScreenShell. */}
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView
+        <KeyboardLiftScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           // Without this the first tap on "Post" only dismisses the keyboard.
@@ -149,6 +157,7 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
             accessType={series.accessType}
             releaseYear={series.releaseYear}
             language={series.language}
+            rating={series.rating}
             seasonSummary={seasonSummary}
           />
 
@@ -207,6 +216,18 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
               <View style={styles.statRow}>
                 <StatTile label={t.series.seasonsStat} value={String(seasons.length)} icon="layers-outline" style={styles.statTile} />
                 <StatTile label={t.series.episodesStat} value={String(episodeCount)} icon="albums-outline" style={styles.statTile} />
+              </View>
+            )}
+
+            {/* The movie page's cast row, verbatim: nothing at all when the
+                show carries no cast — no empty section, no lone header. The
+                wrapper cancels the spine's padding so the faces run off the
+                screen edge like the Similar series row below; the rail puts
+                that padding back on its own header and first cell, so the
+                heading still lines up with its neighbours. */}
+            {!!series.actors?.length && (
+              <View style={styles.castBlock}>
+                <PeopleRail actors={series.actors} onPress={goToActorDetails} title={t.movie.cast} icon={null} />
               </View>
             )}
 
@@ -295,7 +316,7 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
           <View style={styles.comments}>
             <CommentsSection seriesId={seriesId} />
           </View>
-        </ScrollView>
+        </KeyboardLiftScrollView>
       </KeyboardAvoidingView>
 
       <TopBar transparent onBack={() => navigation.goBack()} backAccessibilityLabel={t.common.back} />
@@ -320,6 +341,7 @@ const styles = StyleSheet.create({
   unlockedNote: { textAlign: "center" },
   statRow: { flexDirection: "row", gap: theme.spacing.sm },
   statTile: { flex: 1 },
+  castBlock: { marginHorizontal: -theme.layout.screenPadding },
   episodesSection: { gap: theme.spacing.md },
   seasonChips: { flexDirection: "row", gap: theme.spacing.sm, paddingVertical: 2 },
   episodeList: { gap: theme.spacing.sm },

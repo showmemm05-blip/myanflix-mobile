@@ -22,7 +22,7 @@ import { MoviePortraitDetails } from "@/components/player/MoviePortraitDetails";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Button } from "@/components/ui/Button";
 import { TopBar } from "@/components/layout/TopBar";
-import { useStreamInfo } from "@/hooks/useVideo";
+import { useResumePosition, useStreamInfo } from "@/hooks/useVideo";
 import { useMovie, useMovies } from "@/hooks/useMovies";
 import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
 import { useSubscriptionStatus } from "@/hooks/useSubscription";
@@ -96,6 +96,8 @@ export function PlayerScreen({ route, navigation }: Props) {
 
   const movieQuery = useMovie(movieId);
   const streamQuery = useStreamInfo(movieId);
+  /** Where this title was left off — applied once per title, see "RESUME" below. */
+  const resumeQuery = useResumePosition(movieId);
   const preferredSpeed = usePlayerPrefsStore((s) => s.preferredSpeed);
   const setPreferredSpeed = usePlayerPrefsStore((s) => s.setPreferredSpeed);
   const preferredSubtitleLanguage = usePlayerPrefsStore((s) => s.preferredSubtitleLanguage);
@@ -517,6 +519,38 @@ export function PlayerScreen({ route, navigation }: Props) {
   }, [duration, position, clearResumeWait]);
 
   /**
+   * RESUME (audit H-27): a title opens at the second the viewer left it, not at
+   * 0:00 — "Continue watching" and the history grid used to restart every film
+   * although the position had been saved all along.
+   *
+   * The lookup runs beside the stream request, and until it answers the video
+   * is not mounted (`sourceUrl` below waits for it), so the picture never
+   * starts at the top and then jumps. The answer rides into the player on the
+   * same pending-resume the quality switch uses: `onLoad` seeks to it, the
+   * progress gate holds the 0:00 ticks until then, and RESUME_LOAD_TIMEOUT_MS
+   * gives up quietly if the source never opens. A failed lookup, a finished
+   * title (95%+) or one barely started all mean 0:00.
+   *
+   * Applied ONCE per title: an episode swap re-keys the lookup and gets its own
+   * resume, while a refetch landing mid-film changes nothing.
+   */
+  const resumeSettled = !resumeQuery.isLoading;
+  const savedPosition = resumeQuery.data ?? null;
+  const resumeAppliedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!resumeSettled || resumeAppliedForRef.current === movieId) return;
+    resumeAppliedForRef.current = movieId;
+    if (savedPosition === null) return;
+    clearResumeWait();
+    pendingResumeRef.current = savedPosition;
+    resumeTimeoutRef.current = setTimeout(clearResumeWait, RESUME_LOAD_TIMEOUT_MS);
+    // The reporter sends from its own ref, which still says 0 here: a flush
+    // before the seek lands (back, pause, backgrounding) would otherwise write
+    // 0:00 over the very position being restored.
+    updatePosition(savedPosition);
+  }, [resumeSettled, movieId, savedPosition, clearResumeWait, updatePosition]);
+
+  /**
    * The playlist URL carries a signed token that expires (the cache server
    * answers 410 past it), so a fresh link is worth one try before the error
    * reaches the viewer. A link this episode has ALREADY failed on coming back
@@ -827,8 +861,9 @@ export function PlayerScreen({ route, navigation }: Props) {
     cueRecoveryUrlRef.current = null;
     // A resume left pending by a quality switch belongs to the episode going
     // off — honouring it would seek the NEW episode to the OLD one's second.
-    // The new episode starts at 0:00 by design; the remembered quality still
-    // applies to it, through the pin effect above.
+    // The new episode resumes from ITS OWN saved position instead (see
+    // "RESUME" above — the lookup is keyed on the episode), or starts at 0:00;
+    // the remembered quality still applies to it, through the pin effect above.
     clearResumeWait();
     qualityFallbackTriedRef.current = false;
     // Links are per-episode (the movie id is in the path), so nothing here
@@ -1054,8 +1089,11 @@ export function PlayerScreen({ route, navigation }: Props) {
    * going away. The old episode's player is gone by then — nothing plays under
    * the spinner.
    */
-  const sourceUrl =
-    pinnedPlaylistUrl ?? (streamQuery.data?.status === "ready" ? streamQuery.data.playlistUrl : null);
+  const sourceUrl = !resumeSettled
+    ? // Held back until the resume lookup answers — see "RESUME" above. The
+      // buffering treatment covers the wait, exactly as it covers a swap.
+      null
+    : (pinnedPlaylistUrl ?? (streamQuery.data?.status === "ready" ? streamQuery.data.playlistUrl : null));
   const showBuffering = !playbackError && (isBuffering || !sourceUrl);
   const showEpisodesRail = !!seriesId && !isFullscreen;
   const episodeLabel =

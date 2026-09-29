@@ -92,6 +92,26 @@ export function BookReaderScreen({ route, navigation }: Props) {
     return chapter?.sections?.some((section) => section.id === sectionId) ? sectionId : undefined;
   }, [sectionId, initialChapterId, chapterId, chapters]);
 
+  /**
+   * "Continue reading" lands where the reader stopped INSIDE the chapter, not
+   * at its top (audit H-31). The save stores a whole-book percentage —
+   * (chapter index + depth) / chapter count × 100, the same formula on web and
+   * mobile — so the chapter-local depth is recovered by inverting it. Only when
+   * the bookmark's chapter is the one opening (whether the route named it, as
+   * BookDetails' Continue button does, or the bookmark chose it), and never
+   * over a section link. Near the very top or bottom there is nothing to
+   * restore.
+   */
+  const initialDepth = useMemo(() => {
+    if (!edition || !initialChapterId || initialSectionId) return undefined;
+    const bookmark = progressQuery.data;
+    if (!bookmark || bookmark.editionId !== edition.id || bookmark.chapterId !== initialChapterId) return undefined;
+    const index = chapters.findIndex((chapter) => chapter.id === initialChapterId);
+    if (index < 0 || chapters.length === 0) return undefined;
+    const depth = Math.min(1, Math.max(0, (bookmark.progress / 100) * chapters.length - index));
+    return depth > 0.01 && depth < 0.99 ? depth : undefined;
+  }, [edition, initialChapterId, initialSectionId, progressQuery.data, chapters]);
+
   const close = () => navigation.goBack();
 
   if (bookQuery.isError || chaptersQuery.isError) {
@@ -147,6 +167,7 @@ export function BookReaderScreen({ route, navigation }: Props) {
       chapters={chapters}
       initialChapterId={initialChapterId}
       initialSectionId={initialSectionId}
+      initialDepth={initialDepth}
       onClose={close}
     />
   ) : (

@@ -54,6 +54,12 @@ interface Props {
   initialChapterId: string;
   /** A section of the initial chapter to land on (validated by BookReader). */
   initialSectionId?: string;
+  /**
+   * Chapter-local scroll depth (0–1) to restore in the initial chapter — the
+   * saved reading position, recovered by BookReader. Ignored when a section
+   * hint is given.
+   */
+  initialDepth?: number;
   onClose: () => void;
 }
 
@@ -69,7 +75,15 @@ const FLASH_MS = 2000;
  * reader's chosen page colour. Chapter switching is local state; the route
  * never re-pushes.
  */
-export function ChapterReader({ book, edition, chapters, initialChapterId, initialSectionId, onClose }: Props) {
+export function ChapterReader({
+  book,
+  edition,
+  chapters,
+  initialChapterId,
+  initialSectionId,
+  initialDepth,
+  onClose,
+}: Props) {
   const { t } = useLanguage();
   const r = t.books.reader;
   const { height: viewportHeight } = useWindowDimensions();
@@ -190,6 +204,11 @@ export function ChapterReader({ book, edition, chapters, initialChapterId, initi
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
       // Never measure the skeleton — only real content taller than half a screen counts.
       if (!chapterQuery.isSuccess || contentSize.height < layoutMeasurement.height * 0.5) return;
+      // Not while the saved position is still being restored: a scroll event
+      // from the top of the page would otherwise be SAVED, overwriting the
+      // position this reader (or the other device) is about to land on (H-31).
+      const pending = pendingJumpRef.current;
+      if (pending?.restore && pending.chapterId === chapterId) return;
       const depth = clamp((contentOffset.y + layoutMeasurement.height) / contentSize.height, 0, 1);
       depthRef.current = depth;
       setChapterPercent(Math.round(depth * 100));
@@ -205,6 +224,10 @@ export function ChapterReader({ book, edition, chapters, initialChapterId, initi
 
   const goToChapter = useCallback(
     (nextChapterId: string) => {
+      // A saved position that never got to land belongs to the opening
+      // chapter only; turning away first cancels it, so coming back later
+      // opens that chapter at its top like any other turn.
+      if (pendingJumpRef.current?.restore) pendingJumpRef.current = null;
       saver.forceSave(lastPositionRef.current ?? undefined);
       // The turn itself is a position — see PageReader.goToChapter.
       const nextIndex = chapters.findIndex((c) => c.id === nextChapterId);
@@ -229,7 +252,7 @@ export function ChapterReader({ book, edition, chapters, initialChapterId, initi
 
   /* -------- jumps (bookmarks / notes / search / sections) -------- */
   const performJump = useCallback(
-    (target: { pct?: number; blockIndex?: number; sectionId?: string; flash?: boolean }) => {
+    (target: { pct?: number; blockIndex?: number; sectionId?: string; flash?: boolean; restore?: boolean }) => {
       const contentHeight = contentHeightRef.current;
       if (contentHeight <= 0) return;
       // A section jump resolves to its heading's block index AT JUMP TIME, so a
@@ -248,7 +271,9 @@ export function ChapterReader({ book, edition, chapters, initialChapterId, initi
         // Inverse of the depth formula: depth = (offset + viewport) / contentHeight.
         y = target.pct * contentHeight - viewportHeight;
       }
-      scrollRef.current?.scrollTo({ y: Math.max(0, y), animated: !reduceMotion });
+      // A restore lands instantly: it is where the reader already was, and an
+      // animated scroll would report (and save) every point along the way.
+      scrollRef.current?.scrollTo({ y: Math.max(0, y), animated: !reduceMotion && !target.restore });
       if (target.flash && blockIndex != null) flashBlockAt(blockIndex);
     },
     [blockTexts.length, composed.anchors, viewportHeight, reduceMotion, flashBlockAt],
@@ -256,11 +281,20 @@ export function ChapterReader({ book, edition, chapters, initialChapterId, initi
 
   /**
    * A jump into a not-yet-rendered chapter waits for its content to size.
-   * Seeded with the route's section hint so opening a link lands on it.
+   * Seeded with the route's section hint so opening a link lands on it — or,
+   * without one, with the saved depth so "Continue reading" lands where the
+   * reader stopped (`restore`: no saving until it has landed; see handleScroll).
    */
   const pendingJumpRef = useRef<
-    { chapterId: string; pct?: number; blockIndex?: number; sectionId?: string; flash?: boolean } | null
-  >(initialSectionId ? { chapterId: initialChapterId, sectionId: initialSectionId, flash: true } : null);
+    | { chapterId: string; pct?: number; blockIndex?: number; sectionId?: string; flash?: boolean; restore?: boolean }
+    | null
+  >(
+    initialSectionId
+      ? { chapterId: initialChapterId, sectionId: initialSectionId, flash: true }
+      : initialDepth != null
+        ? { chapterId: initialChapterId, pct: initialDepth, restore: true }
+        : null,
+  );
 
   const jumpTo = useCallback(
     (target: { chapterId: string; pct?: number; blockIndex?: number; sectionId?: string; flash?: boolean }) => {

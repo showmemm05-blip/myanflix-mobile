@@ -43,11 +43,16 @@ export function useSeriesList(query: SeriesQuery = {}, options: { enabled?: bool
  * The series search grid's endless scroll — same pattern as useMoviesInfinite;
  * the backend now filters and searches series server-side, so this key changes
  * as the user types and `pages[0].total` is the honest match count.
+ *
+ * `options.enabled` has the shape useSeriesList's does and exists for the same
+ * reason: CategoryDetail opens on its MOVIES tab, and without it the series
+ * pages would be pulled for a tab the user may never select.
  */
-export function useSeriesInfinite(query: SeriesQuery = {}) {
+export function useSeriesInfinite(query: SeriesQuery = {}, options: { enabled?: boolean } = {}) {
   return useInfiniteQuery({
     queryKey: seriesInfiniteKey(query),
     queryFn: ({ pageParam, signal }) => seriesService.getSeries({ ...query, page: pageParam }, { signal }),
+    enabled: options.enabled ?? true,
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) => {
       const loaded = allPages.reduce((count, page) => count + page.items.length, 0);

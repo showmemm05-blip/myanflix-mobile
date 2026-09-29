@@ -58,9 +58,10 @@ interface ResultsGridProps<T> {
 }
 
 /**
- * The one results grid, three callers — movies, series and books. They differ
- * only in their data, their renderer, their key prefix, whether they have
- * pull-to-refresh, and the books grid's documented `clip` exception.
+ * The poster GRID — the books tab's list. Movies and series moved to one-per-
+ * row cards (ResultsList) in the Media redesign; the hardcover shelf stays a
+ * grid because that is the book card the owner matched to the website. The
+ * generic props are kept as they were so a second grid caller needs nothing new.
  */
 export function ResultsGrid<T>({
   id,

@@ -1,11 +1,30 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { withdrawalsService } from "@/services/withdrawals.service";
+import { nextPageParam } from "@/hooks/pagination";
 import type { PaginationParams } from "@/types/api";
 
 export function useWithdrawals(pagination: PaginationParams = {}) {
   return useQuery({
     queryKey: ["withdrawals", "mine", pagination],
     queryFn: ({ signal }) => withdrawalsService.getMyWithdrawals(pagination, { signal }),
+  });
+}
+
+/**
+ * The Transactions screen's Withdrawals ledger, paged. Same `["withdrawals"]`
+ * prefix as above so useCreateWithdrawal's and the wallet socket's prefix
+ * invalidations reach it; `enabled` is the visible ledger tab (see
+ * useTransactionsInfinite).
+ */
+export function useWithdrawalsInfinite(pagination: PaginationParams = {}, options: { enabled?: boolean } = {}) {
+  return useInfiniteQuery({
+    queryKey: ["withdrawals", "mine", "infinite", pagination],
+    queryFn: ({ pageParam, signal }) =>
+      withdrawalsService.getMyWithdrawals({ ...pagination, page: pageParam }, { signal }),
+    enabled: options.enabled ?? true,
+    initialPageParam: 1,
+    getNextPageParam: nextPageParam,
+    placeholderData: keepPreviousData,
   });
 }
 

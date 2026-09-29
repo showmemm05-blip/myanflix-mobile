@@ -1,42 +1,49 @@
-import { View, StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useLanguage } from "@/localization/LanguageProvider";
+import { BottomSheet } from "@/components/ui/BottomSheet";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { PressableScale } from "@/components/ui/PressableScale";
 import { Surface } from "@/components/ui/Surface";
-import { TopBar } from "@/components/layout/TopBar";
+import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
-import type { SettingsStackParamList } from "@/navigation/types";
 import type { Language } from "@/localization/translations";
 
-type Props = NativeStackScreenProps<SettingsStackParamList, "LanguageSettings">;
-
 // Language names are deliberately NOT translated — each shown in its own
-// script always, same reasoning as the web app's switcher.
-const OPTIONS: { code: Language; label: string; flag: string }[] = [
+// script always, same reasoning as the web app's switcher. Exported so the
+// Settings row can show the current one without a second copy of this list.
+export const LANGUAGE_OPTIONS: { code: Language; label: string; flag: string }[] = [
   { code: "mm", label: "မြန်မာ", flag: "🇲🇲" },
   { code: "en", label: "English", flag: "🇬🇧" },
 ];
 
-export function LanguageSettingsScreen({ navigation }: Props) {
+interface Props {
+  visible: boolean;
+  onClose: () => void;
+}
+
+/**
+ * The language switcher as a bottom sheet, replacing the pushed
+ * LanguageSettings screen: Settings' other entries (Account, Support) all open
+ * sheets, and a two-row choice never needed a whole screen. Picking a language
+ * applies it at once and closes the sheet — there is nothing to confirm.
+ */
+export function LanguageSheet({ visible, onClose }: Props) {
   const { t, language, setLanguage } = useLanguage();
 
-  return (
-    <View style={styles.container}>
-      <TopBar
-        title={t.settings.languageScreenTitle}
-        onBack={() => navigation.goBack()}
-        backAccessibilityLabel={t.common.back}
-      />
+  const choose = (code: Language) => {
+    setLanguage(code);
+    onClose();
+  };
 
-      <View style={styles.content}>
-        {OPTIONS.map((option) => {
+  return (
+    <BottomSheet visible={visible} onClose={onClose} snapHeight={300} title={t.settings.languageScreenTitle} showClose>
+      <View style={styles.list}>
+        {LANGUAGE_OPTIONS.map((option) => {
           const active = option.code === language;
           return (
-            <PressableScale key={option.code} onPress={() => setLanguage(option.code)} accessibilityLabel={option.label}>
+            <PressableScale key={option.code} onPress={() => choose(option.code)} accessibilityLabel={option.label}>
               <Surface radius="xl" tone={active ? "accent" : "default"} style={styles.row}>
                 <View style={styles.labelGroup}>
                   <View style={styles.flagTile}>
@@ -54,17 +61,12 @@ export function LanguageSettingsScreen({ navigation }: Props) {
           );
         })}
       </View>
-    </View>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  content: {
-    paddingHorizontal: theme.layout.screenPadding,
-    paddingTop: theme.spacing.md,
-    gap: theme.spacing.sm,
-  },
+  list: { gap: theme.spacing.sm, paddingTop: theme.spacing.xs },
   row: {
     flexDirection: "row",
     alignItems: "center",

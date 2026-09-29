@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Share, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
@@ -16,7 +17,9 @@ import { DetailHero } from "@/components/detail/DetailHero";
 import { Synopsis } from "@/components/detail/Synopsis";
 import { InfoGrid } from "@/components/detail/InfoGrid";
 import { MovieRow } from "@/components/movie/MovieRow";
+import { PeopleRail } from "@/components/search/PeopleRail";
 import { CommentsSection } from "@/components/comments/CommentsSection";
+import { KeyboardLiftScrollView } from "@/components/common/KeyboardLiftScrollView";
 import { useMovie, useMovies } from "@/hooks/useMovies";
 import { useSubscriptionStatus } from "@/hooks/useSubscription";
 import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
@@ -25,7 +28,7 @@ import { formatDuration, UNKNOWN_DURATION } from "@/utils/format";
 import { hasAccess } from "@/utils/access";
 import { theme } from "@/theme";
 import type { MediaDetailParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
-import type { Movie } from "@/types/movie";
+import type { Movie, MovieActorRef } from "@/types/movie";
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<MediaDetailParamList, "MovieDetails">,
@@ -71,6 +74,12 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
     if (movie) Share.share({ message: movie.title }).catch(() => {});
   };
   const goToDetails = (m: Movie) => navigation.push("MovieDetails", { movieId: m.id });
+  // Memoized: it is the rail's onPress, which is a FlatList cell prop — a
+  // fresh identity every render would rebuild every cell.
+  const goToActorDetails = useCallback(
+    (actor: MovieActorRef) => navigation.navigate("ActorDetails", { actorId: actor.id }),
+    [navigation],
+  );
 
   if (movieQuery.isLoading) {
     return (
@@ -95,7 +104,7 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
           without this. Android resizes the window itself (adjustResize in the
           manifest), so it takes no behavior, same as AuthScreenShell. */}
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView
+        <KeyboardLiftScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           // Without this the first tap on "Post" only dismisses the keyboard.
@@ -158,6 +167,23 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
 
             <Synopsis text={movie.description} title={t.movie.synopsis} />
 
+            {/* Nothing at all when the catalogue carries no cast — no empty
+                section, no lone header. The wrapper cancels the spine's
+                padding so the faces run off the screen edge like the Similar
+                movies row below, which is what tells you the row scrolls; the
+                rail then puts that padding back on its own header and first
+                cell, so the heading still lines up with its neighbours. */}
+            {!!movie.actors?.length && (
+              <View style={styles.castBlock}>
+                <PeopleRail
+                  actors={movie.actors}
+                  onPress={goToActorDetails}
+                  title={t.movie.cast}
+                  icon={null}
+                />
+              </View>
+            )}
+
             <View style={styles.infoBlock}>
               <SectionHeader title={t.movie.details} inset={false} />
               <InfoGrid
@@ -179,7 +205,7 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
           <View style={styles.comments}>
             <CommentsSection movieId={movieId} />
           </View>
-        </ScrollView>
+        </KeyboardLiftScrollView>
       </KeyboardAvoidingView>
 
       <TopBar transparent onBack={() => navigation.goBack()} backAccessibilityLabel={t.common.back} />
@@ -209,6 +235,8 @@ const styles = StyleSheet.create({
   lockedText: { color: theme.colors.premium },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
   infoBlock: { gap: theme.spacing.sm },
+  /** Negative inset: a full-bleed rail inside the padded spine (see the call site). */
+  castBlock: { marginHorizontal: -theme.layout.screenPadding },
   similarRow: { marginTop: theme.spacing.xl },
   comments: { marginTop: theme.spacing.xl },
 });

@@ -69,17 +69,19 @@ export function movieCardContent(movie: Movie, options: MovieCardOptions = {}): 
 }
 
 /**
- * Series → card: "year · {n} episodes". `episodesLabel` is passed in already
- * translated (`t.series.episodeCount`) so this stays free of localization
- * imports.
+ * Series → card, the same rule as movies (web meta parity): rated → "year ·
+ * ★x.x", unrated → "year · {n} episodes". `episodesLabel` is passed in
+ * already translated (`t.series.episodeCount`) so this stays free of
+ * localization imports.
  */
 export function seriesCardContent(series: SeriesListItem, episodesLabel: string): MediaCardContent {
+  const rating = series.rating > 0 ? series.rating : null;
   return {
     title: series.title,
     posterUrl: series.posterUrl ?? series.coverUrl,
     coverUrl: series.coverUrl ?? series.posterUrl,
     accessType: series.accessType,
-    rating: null,
-    meta: [series.releaseYear, episodesLabel],
+    rating,
+    meta: rating !== null ? [series.releaseYear] : [series.releaseYear, episodesLabel],
   };
 }

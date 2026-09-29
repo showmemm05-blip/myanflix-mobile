@@ -64,6 +64,13 @@ export function useRealtimeWallet() {
       queryClient.invalidateQueries({ queryKey: ["wallet", "transactions"] });
     };
 
+    // An admin activated, deactivated, edited or removed one of our business
+    // accounts: the deposit picker must show the new list at once. The
+    // event carries nothing — the list is refetched.
+    const handlePaymentAccountsChanged = () => {
+      queryClient.invalidateQueries({ queryKey: ["payment-accounts"] });
+    };
+
     (async () => {
       // SecureStore REJECTS (it does not return null) when a value cannot be
       // decrypted, and this IIFE is floating — nothing downstream would catch
@@ -81,6 +88,7 @@ export function useRealtimeWallet() {
       activeSocket.on("wallet.balanceUpdated", handleBalanceUpdated);
       activeSocket.on("deposit.updated", handleDepositUpdated);
       activeSocket.on("withdrawal.updated", handleWithdrawalUpdated);
+      activeSocket.on("payment-accounts.changed", handlePaymentAccountsChanged);
     })();
 
     return () => {
@@ -88,6 +96,7 @@ export function useRealtimeWallet() {
       activeSocket?.off("wallet.balanceUpdated", handleBalanceUpdated);
       activeSocket?.off("deposit.updated", handleDepositUpdated);
       activeSocket?.off("withdrawal.updated", handleWithdrawalUpdated);
+      activeSocket?.off("payment-accounts.changed", handlePaymentAccountsChanged);
     };
   }, [isAuthenticated, queryClient]);
 }

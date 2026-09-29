@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from "rea
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { theme } from "@/theme";
+import { useScrollIntoView } from "@/hooks/useKeyboardLift";
 
 interface Props extends Omit<TextInputProps, "style" | "placeholderTextColor"> {
   /** Sits above the field — also the fallback a11y label for the reveal toggle. */
@@ -37,6 +38,7 @@ export function AuthField({
 }: Props) {
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const scrollIntoView = useScrollIntoView();
   const showToggle = !!revealable && !!secureTextEntry;
 
   return (
@@ -68,6 +70,10 @@ export function AuthField({
           onFocus={(event) => {
             setFocused(true);
             onFocus?.(event);
+            // Focus moving between fields under an ALREADY open keyboard
+            // fires no keyboard event, so the field asks for itself. A beat
+            // later, so the focus ring and any step layout have settled.
+            setTimeout(scrollIntoView, 80);
           }}
           onBlur={(event) => {
             setFocused(false);

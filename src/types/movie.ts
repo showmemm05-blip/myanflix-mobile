@@ -24,6 +24,13 @@ export type MovieSort =
   | "mostViewed"
   | "mostPurchased";
 
+/** Just {id, name, imageUrl} — the shape a Movie carries inline under `actors`. */
+export interface MovieActorRef {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+}
+
 export interface Movie {
   id: string;
   title: string;
@@ -45,6 +52,13 @@ export interface Movie {
   country: string | null;
   ageRating: AgeRating | null;
   categories: MovieCategoryRef[];
+  /**
+   * The cast, as the catalogue carries it inline — the movie page's face row.
+   *
+   * Optional for the same reason maxQuality is: an older backend simply omits
+   * the key, and no cast row is the correct outcome there rather than a crash.
+   */
+  actors?: MovieActorRef[];
   /**
    * Highest transcoded rendition the catalogue reports for this title, e.g.
    * "720p" — the source of the card's quality badge. Null until a video has

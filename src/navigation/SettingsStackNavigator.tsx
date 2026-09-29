@@ -1,6 +1,5 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SettingsScreen } from "@/screens/Settings/Settings";
-import { LanguageSettingsScreen } from "@/screens/Settings/LanguageSettings";
 import { stackScreenOptions } from "@/navigation/options";
 import type { SettingsStackParamList } from "@/navigation/types";
 
@@ -10,7 +9,6 @@ export function SettingsStackNavigator() {
   return (
     <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen name="Settings" component={SettingsScreen} />
-      <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} />
     </Stack.Navigator>
   );
 }

@@ -1,5 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { videoService } from "@/services/video.service";
+import { nextPageParam } from "@/hooks/pagination";
 import type { PaginationParams } from "@/types/api";
 
 export function useStreamInfo(movieId: string | undefined) {
@@ -19,10 +20,53 @@ export function useStreamInfo(movieId: string | undefined) {
   });
 }
 
+/**
+ * Where to resume one title (seconds), or null to start at 0:00 — see
+ * videoService.getResumePosition. Read FRESH on every open: no staleTime and
+ * no cache kept once the player lets go of it (gcTime 0), because the
+ * position a moment ago is exactly what the last sitting just changed.
+ * Never retried and never refetched on focus: a lookup that fails simply
+ * means "start from the top", and one that lands mid-playback is ignored by
+ * the player anyway (it applies the answer once per title).
+ */
+export function useResumePosition(movieId: string | undefined) {
+  return useQuery({
+    queryKey: ["watch-position", movieId],
+    queryFn: ({ signal }) => videoService.getResumePosition(movieId as string, { signal }),
+    enabled: !!movieId,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useWatchHistory(pagination: PaginationParams = {}) {
   return useQuery({
     queryKey: ["watch-history", "me", pagination],
     queryFn: ({ signal }) => videoService.getMyWatchHistory(pagination, { signal }),
+  });
+}
+
+/**
+ * The Watch-history screen's endless scroll. Same `["watch-history", …]`
+ * prefix as useWatchHistory above, on purpose: Player's on-unmount
+ * `invalidateQueries({ queryKey: ["watch-history"] })` and the reporter's
+ * mark-stale sweep the prefix, so the paged list picks up a new resume point
+ * exactly as the single-page list did. `pageParam` rides in on top of the
+ * caller's `limit`; the key holds the caller's params only, so page 2 lands
+ * in the same entry as page 1.
+ */
+export function useWatchHistoryInfinite(pagination: PaginationParams = {}) {
+  return useInfiniteQuery({
+    queryKey: ["watch-history", "me", "infinite", pagination],
+    queryFn: ({ pageParam, signal }) =>
+      videoService.getMyWatchHistory({ ...pagination, page: pageParam }, { signal }),
+    initialPageParam: 1,
+    getNextPageParam: nextPageParam,
+    // A refetch after the player closes keeps the rows on screen until the
+    // fresh pages land, rather than dropping the grid back to skeletons.
+    placeholderData: keepPreviousData,
   });
 }
 

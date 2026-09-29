@@ -210,6 +210,7 @@ export function WalletScreen({ navigation }: Props) {
                       date={tx.createdAt}
                       amount={tx.amount}
                       type={tx.type}
+                      status={tx.status}
                     />
                   ))
                 ))}

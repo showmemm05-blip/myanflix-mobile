@@ -10,10 +10,16 @@ export function useSubscriptionPlans() {
   });
 }
 
-export function useSubscriptionStatus() {
+export function useSubscriptionStatus(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["subscription", "me"],
     queryFn: ({ signal }) => subscriptionsService.getStatus({ signal }),
+    // Same option shape as useMovies/useBooksList. The Media tab asks from a
+    // root screen a GUEST can see, and this endpoint 401s a guest — which
+    // forces the logout path and empties the whole query cache (see useAuth's
+    // subscribeToUnauthorized), taking the movie list with it. A guest is
+    // simply not subscribed; there is nothing to ask.
+    enabled: options.enabled ?? true,
     // The most-mounted account query in the app — MovieDetails, SeriesDetails
     // and ProfileOverview all ask, and the first two are pushed over and over
     // while browsing. Only `useSubscribe` below can change the answer, and it

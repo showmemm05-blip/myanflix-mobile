@@ -40,4 +40,15 @@ export const usersApi = {
   changePassword(currentPassword: string, newPassword: string) {
     return apiClient.patch<{ changed: boolean }>("/users/me/password", { currentPassword, newPassword });
   },
+
+  /**
+   * Closes the caller's own account (audit H-16). Refused with 409 while the
+   * wallet holds money or a deposit/withdrawal is waiting for review (the
+   * message says which), and with 403 for a staff account. On success the
+   * personal data is anonymised, every session is revoked and the money
+   * records are kept.
+   */
+  deleteMe() {
+    return apiClient.delete<{ deleted: boolean }>("/users/me");
+  },
 };

@@ -8,6 +8,7 @@ import { AuroraBackdrop } from "@/components/common/AuroraBackdrop";
 import { FadeInView } from "@/components/ui/FadeInView";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { useLanguage } from "@/localization/LanguageProvider";
+import { ScrollIntoViewContext, useKeyboardLift } from "@/hooks/useKeyboardLift";
 import { theme, withAlpha } from "@/theme";
 
 interface Props {
@@ -28,6 +29,18 @@ interface Props {
 export function AuthScreenShell({ children }: Props) {
   const insets = useSafeAreaInsets();
 
+  /*
+   * Keeping the focused field above the keyboard. Android's "resize" mode
+   * shrinks the window but does not promise to scroll the focused input into
+   * the part that is left, and on the Samsung it did not: the number pad sat
+   * over the phone field. So the shell measures the focused input against the
+   * content and scrolls it — plus the button under it — clear, both when the
+   * keyboard appears and when focus moves between fields under an open one.
+   * Positions are tracked from layout/scroll events rather than measured
+   * against the scroll view itself, which Fabric does not offset by scroll.
+   */
+  const lift = useKeyboardLift();
+
   return (
     <View style={styles.root}>
       {/*
@@ -43,7 +56,8 @@ export function AuthScreenShell({ children }: Props) {
       <KeyboardAvoidingView
         style={styles.flex}
         /*
-         * Today's model, kept deliberately: do NOT reach for
+         * Today's model, kept deliberately (and shared as useKeyboardLift):
+         * do NOT reach for
          * `useSheetKeyboardLift` / `useKeyboardOverlap` from wallet/SheetForm.
          * Those exist because a BottomSheet has a fixed height and a bottom
          * edge anchored inside a Modal, where neither platform scrolls a
@@ -57,20 +71,31 @@ export function AuthScreenShell({ children }: Props) {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
+          ref={lift.scrollRef}
           style={styles.flex}
           contentContainerStyle={[
             styles.scrollContent,
             {
               paddingTop: insets.top + theme.spacing.lg,
-              paddingBottom: insets.bottom + theme.spacing.xl,
+              paddingBottom: insets.bottom + theme.spacing.xl + lift.keyboardPad,
             },
           ]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
+          onLayout={lift.onViewportLayout}
+          onScroll={lift.onScroll}
+          scrollEventThrottle={32}
         >
-          <Wordmark />
-          <View>{children}</View>
+          {/* One measurable block: the wordmark and the ticket together, so a
+              field's position is read against something whose own offset
+              (centred while short, top-aligned once tall) onLayout reports. */}
+          <View ref={lift.contentRef} onLayout={lift.onContentLayout}>
+            <Wordmark />
+            <ScrollIntoViewContext.Provider value={lift.scrollFocusedIntoView}>
+              <View>{children}</View>
+            </ScrollIntoViewContext.Provider>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

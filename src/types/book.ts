@@ -16,6 +16,17 @@ export interface BookCategoryRef {
 }
 
 /**
+ * The author row behind a book's denormalised `author` string — enough to
+ * label a card and to open that author's page without a second lookup.
+ * `imageUrl` re-hosts per request, so it is not safe to cache long-term.
+ */
+export interface BookAuthorRef {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+}
+
+/**
  * One language of a book, and the unit that actually holds content. A book
  * is the work; an edition is the work in a language, with its own chapters
  * or pages and its own publish state — so a title can be live in Burmese
@@ -41,7 +52,17 @@ export interface BookEdition {
 export interface Book {
   id: string;
   title: string;
+  /** The display name, denormalised onto the book — always present. */
   author: string;
+  /**
+   * The author ROW's id, and the row itself. Optional for the same reason
+   * `Movie.actors` is: an older backend simply omits them, and every screen
+   * that shows a book must keep working when it does. The backend resolves or
+   * creates a BookAuthor on create and update, so a live book always carries
+   * both and is reachable from exactly one author page.
+   */
+  authorId?: string | null;
+  authorRef?: BookAuthorRef | null;
   description: string;
   coverUrl: string | null;
   type: BookType;
@@ -169,6 +190,17 @@ export interface BookQuery {
   limit?: number;
   type?: BookType;
   categoryId?: string;
+  /**
+   * One author's books — an exact match on the book's own `authorId` column,
+   * ANDed with every other filter here (the author page sends nothing else).
+   * An id that matches nobody is not an error: the endpoint answers 200 with
+   * an empty page, which is the author page's "no books yet" state.
+   *
+   * The viewer visibility rule still applies on top, so a USER can legitimately
+   * receive fewer books than the author row's `bookCount` claims — that count
+   * includes unpublished ones. Trust this response's own `total`.
+   */
+  authorId?: string;
   language?: string;
   search?: string;
 }

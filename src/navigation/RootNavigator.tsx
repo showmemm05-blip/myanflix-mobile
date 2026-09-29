@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { AuthNavigator } from "@/navigation/AuthNavigator";
+import { SessionOfflineScreen } from "@/screens/Auth/SessionOffline";
 import { MainTabNavigator } from "@/navigation/MainTabNavigator";
 import { PlayerScreen } from "@/screens/Player/Player";
 import { BookReaderScreen } from "@/screens/Books/BookReader";
@@ -19,6 +20,7 @@ export function RootNavigator() {
   // to `user`, so every rename and avatar upload re-rendered the navigator.
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const sessionUnreachable = useAuthStore((s) => s.sessionUnreachable);
   useRealtimeWallet();
 
   /**
@@ -67,6 +69,10 @@ export function RootNavigator() {
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
           <Stack.Screen name="Profile" component={ProfileOverviewScreen} />
         </>
+      ) : sessionUnreachable ? (
+        // A saved session the server could not be asked about yet — kept,
+        // with a retry, rather than thrown away for the sign-in screen (H-20).
+        <Stack.Screen name="SessionOffline" component={SessionOfflineScreen} />
       ) : (
         <Stack.Screen name="Auth" component={AuthNavigator} />
       )}

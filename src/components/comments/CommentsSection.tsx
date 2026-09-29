@@ -15,6 +15,7 @@ import { useComments, usePostComment } from "@/hooks/useComments";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { displayNameOf, formatRelativeTime } from "@/utils/format";
 import { ApiError } from "@/utils/errors";
+import { useScrollIntoView } from "@/hooks/useKeyboardLift";
 import { theme } from "@/theme";
 import { COMMENT_MAX_LENGTH, type Comment, type CommentTarget } from "@/types/comment";
 
@@ -441,6 +442,11 @@ function CommentInput({
   accessibilityLabel: string;
   minHeight?: number;
 }) {
+  // The composer opens under an ALREADY visible keyboard when a reply is
+  // started mid-typing; that focus change fires no keyboard event, so the
+  // field asks the screen for itself — a beat later, once the box has laid
+  // out. The first open is covered by keyboardDidShow in useKeyboardLift.
+  const scrollIntoView = useScrollIntoView();
   return (
     <TextInput
       value={value}
@@ -450,6 +456,7 @@ function CommentInput({
       accessibilityLabel={accessibilityLabel}
       multiline
       autoFocus
+      onFocus={() => setTimeout(scrollIntoView, 80)}
       // The server rejects anything longer; stopping at the bound is kinder
       // than letting someone write past it and lose the overflow to a 400.
       maxLength={COMMENT_MAX_LENGTH}

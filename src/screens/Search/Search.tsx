@@ -10,68 +10,85 @@ import {
   type ListRenderItemInfo,
   type TextInput,
 } from "react-native";
-// Deep import, not the "@expo/vector-icons" root: that barrel statically
-// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
-import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { CompositeScreenProps } from "@react-navigation/native";
+import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PressableScale } from "@/components/ui/PressableScale";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import { AppTopBar } from "@/components/layout/AppTopBar";
+import { SectionHeader } from "@/components/ui/SectionHeader";
 import { Chip } from "@/components/common/Chip";
-import { MediaCard } from "@/components/common/MediaCard";
-import { MovieRow } from "@/components/movie/MovieRow";
-import { MediaRail } from "@/components/movie/MediaRail";
-import { movieCardContent, seriesCardContent } from "@/components/movie/mediaItems";
 import {
   DEFAULT_MOVIE_SORT,
   DEFAULT_SERIES_SORT,
-  SearchFilterSheet,
   countMovieFilters,
   countSeriesFilters,
-  createMovieFilters,
-  createSeriesFilters,
   movieFiltersToQuery,
   seriesFiltersToQuery,
-  type MovieFilters,
-  type SeriesFilters,
-} from "@/components/search/SearchFilterSheet";
-import { buildFilterPills } from "@/components/search/filterPills";
+  summarizeMovieFilters,
+  summarizeSeriesFilters,
+} from "@/components/search/filters";
+import { FilterSummary } from "@/components/search/FilterBar";
+import { ListCardSkeleton } from "@/components/search/ListCard";
+import { MovieListCard } from "@/components/search/MovieListCard";
+import { SeriesListCard } from "@/components/search/SeriesListCard";
+import { PeopleRail } from "@/components/search/PeopleRail";
+import { AppTopBar } from "@/components/layout/AppTopBar";
 import { SearchField } from "@/components/search/SearchField";
 import { SearchResultsHeader } from "@/components/search/SearchResultsHeader";
 import { SearchSuggestions, type SuggestKind } from "@/components/search/SearchSuggestions";
+import { SearchTabs } from "@/components/search/SearchTabs";
 import { ResultsGrid } from "@/components/search/ResultsGrid";
+import { ResultsList } from "@/components/search/ResultsList";
 import { ResultsRegion } from "@/components/search/ResultsRegion";
-import { ResultsSkeleton } from "@/components/search/ResultsSkeleton";
-import { useMovies, useMostPurchased, useMoviesInfinite } from "@/hooks/useMovies";
+import { ResultsListSkeleton, ResultsSkeleton } from "@/components/search/ResultsSkeleton";
+import { useMovies, useMoviesInfinite } from "@/hooks/useMovies";
 import { useSeriesList, useSeriesInfinite } from "@/hooks/useSeries";
+import { useActorSearch } from "@/hooks/useActors";
 import { usePosterGrid } from "@/hooks/usePosterGrid";
 import { useBooksInfinite, useBooksList } from "@/hooks/useBooks";
+import { useSubscriptionStatus } from "@/hooks/useSubscription";
 import { BookCard } from "@/components/books/BookCard";
 import { BookRail } from "@/components/books/BookRail";
 import { useAuthStore } from "@/store/authStore";
+import { useSearchFiltersStore } from "@/store/searchFiltersStore";
 import type { Book } from "@/types/book";
 import { SEARCH_MIN_LENGTH } from "@/hooks/useSearchTerm";
 import { useLanguage } from "@/localization/LanguageProvider";
+import { hasAccess } from "@/utils/access";
 import { theme } from "@/theme";
-import type { SearchStackParamList } from "@/navigation/types";
+import type { MainTabParamList, RootStackParamList, SearchStackParamList } from "@/navigation/types";
+import type { ActorListItem } from "@/api/actors.api";
 import type { Movie } from "@/types/movie";
 import type { SeriesListItem } from "@/types/series";
 
-type Props = NativeStackScreenProps<SearchStackParamList, "Search">;
+/**
+ * Composite, like MovieDetails: "Watch Now" on a list card plays directly, and
+ * Player lives on the ROOT stack above the tabs — `getParent()?.navigate` only
+ * type-checks once the tab and root param lists are in the picture.
+ */
+type Props = CompositeScreenProps<
+  NativeStackScreenProps<SearchStackParamList, "Search">,
+  CompositeScreenProps<BottomTabScreenProps<MainTabParamList>, NativeStackScreenProps<RootStackParamList>>
+>;
 
 type Tab = "all" | "movies" | "series" | "books" | "music";
 
 /** How many past queries the in-memory recent list keeps. */
 const RECENT_LIMIT = 6;
-/** Shared empty list so the loading rails don't get a fresh array each render. */
-const NO_MOVIES: Movie[] = [];
 /** Both frontends page the filtered catalog with this (backend caps at 100). */
 const PAGE_SIZE = 30;
-/** How many books the All tab's shelf holds — the web's AllMediaView asks for the same 14. */
-const BOOK_SHELF_LIMIT = 14;
-
+/**
+ * How much of each medium the All tab shows before "See all" — three, the
+ * owner's number: the sections are a taste, and each tab is the full list.
+ * The books shelf asks the server for exactly that many rather than slicing
+ * a bigger page.
+ */
+const ALL_MOVIE_COUNT = 3;
+const ALL_SERIES_COUNT = 3;
+const BOOK_SHELF_LIMIT = 3;
+/** Loading rows under the All tab's first section while the rails are still on the wire. */
+const ALL_SKELETON_ROWS = 3;
 /**
  * Module scope on purpose. It is handed to FlatList, whose cells are
  * PureComponents — an inline `(item) => item.id` extractor would be a fresh
@@ -82,11 +99,38 @@ const BOOK_SHELF_LIMIT = 14;
  */
 const keyExtractor = (item: { id: string }) => item.id;
 
+/*
+ * WHAT RENDERS WHERE — the screen's map, so a reviewer can check it:
+ *
+ *   AppTopBar   search field (every tab but Music) + hints, then the tab strip.
+ *   Under tabs  Movies/Series only: the filter summary line + "Clear", while
+ *               any filter is active. Nothing on All, Books, Music.
+ *   All         People rail (term matches actors) → Movies section (3) →
+ *               Series section (3) → books shelf; each "See all" is the tab.
+ *   Movies      list header = [People rail | recents] + count row with the
+ *               ONE Filter button → infinite list of MovieListCards. No
+ *               movies but matching people → the header alone, in a scroll.
+ *   Series      list header = [recents] + count row with the Filter button →
+ *               infinite list of SeriesListCards.
+ *   Books       count row WITHOUT a filter button → the cover grid (members).
+ *   Music       coming-soon state.
+ *
+ * The count row on Movies, Series and Books also carries a names button, and
+ * it is CONTEXTUAL: People → ActorsList on Movies and Series, Authors →
+ * AuthorsList on Books, because a book has an author rather than a cast. Both
+ * lists are their own page now, not a sixth tab (six overflowed the strip).
+ * All lays itself out with no count row, so the button is not on that tab;
+ * the owner accepted that.
+ *
+ * Every filter lives in searchFiltersStore (the SearchFilters page writes it,
+ * this screen sends it) — nothing here holds filter state of its own.
+ */
 export function SearchScreen({ navigation, route }: Props) {
   const { t } = useLanguage();
+  // The BOOKS grid only now — movies and series are one-per-row list cards.
   // Results are READ, not scanned: the spacious density gives a phone two
-  // columns instead of three, which roughly doubles a poster's area and leaves
-  // room for the title, meta and genre lines under it.
+  // columns instead of three, which roughly doubles a cover's area and leaves
+  // room for the title and author under it.
   const grid = usePosterGrid("spacious");
   const [tab, setTab] = useState<Tab>(route.params?.initialTab ?? "all");
   /* ---- the two terms -------------------------------------------------------
@@ -111,13 +155,17 @@ export function SearchScreen({ navigation, route }: Props) {
   /** Typed, but still too short to search — a hint, not an error. */
   const trimmedText = searchText.trim();
   const isTooShort = trimmedText.length > 0 && trimmedText.length < SEARCH_MIN_LENGTH;
-  /** Long enough to search, but not what the grid is showing — see the hint. */
+  /** Long enough to search, but not what the list is showing — see the hint. */
   const isPendingSearch = trimmedText.length >= SEARCH_MIN_LENGTH && trimmedText !== committedTerm;
-  // THE canonical filter state — one object per tab, nothing else re-derives
-  // or re-implements any of it. The server does all filtering and sorting.
-  const [filters, setFilters] = useState<MovieFilters>(createMovieFilters);
-  const [seriesFilters, setSeriesFilters] = useState<SeriesFilters>(createSeriesFilters);
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  // THE canonical filter state — the shared store, one object per tab. The
+  // SearchFilters page writes it; this screen only reads it (and resets it),
+  // and the server does all filtering and sorting.
+  const movieFilters = useSearchFiltersStore((state) => state.movieFilters);
+  const seriesFilters = useSearchFiltersStore((state) => state.seriesFilters);
+  const setMovieFilters = useSearchFiltersStore((state) => state.setMovieFilters);
+  const setSeriesFilters = useSearchFiltersStore((state) => state.setSeriesFilters);
+  const resetMovieFilters = useSearchFiltersStore((state) => state.resetMovieFilters);
+  const resetSeriesFilters = useSearchFiltersStore((state) => state.resetSeriesFilters);
   // Purely local (in-memory) — nothing is persisted or sent anywhere.
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
@@ -146,21 +194,19 @@ export function SearchScreen({ navigation, route }: Props) {
 
   // Relevance is only honest while a term is actually in the query — the server
   // would fall back to recentlyAdded anyway, so the state follows the COMMITTED
-  // term (what the query holds), not the box, to keep the sheet and the chips
-  // row truthful.
+  // term (what the query holds), not the box, to keep the filters page and the
+  // summary line truthful. Written to the store, the same place the page does.
   useEffect(() => {
     if (committedTerm) return;
-    setFilters((f) => (f.sort === "relevance" ? { ...f, sort: DEFAULT_MOVIE_SORT } : f));
+    setMovieFilters((f) => (f.sort === "relevance" ? { ...f, sort: DEFAULT_MOVIE_SORT } : f));
     setSeriesFilters((f) => (f.sort === "relevance" ? { ...f, sort: DEFAULT_SERIES_SORT } : f));
-  }, [committedTerm]);
+  }, [committedTerm, setMovieFilters, setSeriesFilters]);
 
   // The browse rails on the "all" tab — deliberately unfiltered.
-  // Two rails, two server sorts — client-sorting one 50-row page was only
-  // honest while the catalog fit in 50 rows.
-  const railsQuery = useMovies({ limit: 12, sort: "rating" });
-  const latestRailQuery = useMovies({ limit: 12, sort: "recentlyAdded" });
-  const seriesRailQuery = useSeriesList({ limit: 100 });
-  const popularQuery = useMostPurchased();
+  // Top-rated first: the three the Movies section shows are the best-rated
+  // three, which is the taste "See all" then widens.
+  const railsQuery = useMovies({ limit: ALL_MOVIE_COUNT, sort: "rating" });
+  const seriesRailQuery = useSeriesList({ limit: ALL_SERIES_COUNT });
 
   /**
    * The books shelf on the same tab. Newest-first is simply what /books
@@ -177,12 +223,21 @@ export function SearchScreen({ navigation, route }: Props) {
   const bookShelfQuery = useBooksList({ limit: BOOK_SHELF_LIMIT }, { enabled: isAuthenticated });
   const shelfBooks = useMemo(() => bookShelfQuery.data?.items ?? [], [bookShelfQuery.data]);
 
+  /**
+   * What "Watch Now" on a list card may do — the same `hasAccess` rule
+   * MovieDetails applies to its own CTA, read once here for every card.
+   * Gated on the session for the reason the hook documents: the endpoint 401s
+   * a guest, and a guest is simply not subscribed.
+   */
+  const subscriptionQuery = useSubscriptionStatus({ enabled: isAuthenticated });
+  const isSubscribed = subscriptionQuery.data?.isActive ?? false;
+
   // The filtered catalog queries. Every filter travels to the backend — there
   // is ZERO client-side catalog filtering or sorting on this screen anymore.
   // `committedTerm`, never `searchText`: a keystroke must not change the key.
   const moviesQuery = useMoviesInfinite({
     search: committedTerm || undefined,
-    ...movieFiltersToQuery(filters),
+    ...movieFiltersToQuery(movieFilters),
     limit: PAGE_SIZE,
   });
   const seriesQuery = useSeriesInfinite({
@@ -192,6 +247,26 @@ export function SearchScreen({ navigation, route }: Props) {
   });
   const movies = useMemo(() => moviesQuery.data?.pages.flatMap((page) => page.items) ?? [], [moviesQuery.data]);
   const series = useMemo(() => seriesQuery.data?.pages.flatMap((page) => page.items) ?? [], [seriesQuery.data]);
+
+  /**
+   * The people the term matches — the rail of faces above the results. The
+   * hook fires from one character (names are short), so the screen applies
+   * the catalogue's own minimum here: below it the query is disabled AND the
+   * list is forced empty, because keepPreviousData would otherwise hold the
+   * last term's faces over an empty field. Committed term only, like the
+   * lists — typing must not move the rail either.
+   */
+  // Gated on the tab as well as the term: the rail renders ONLY on All and
+  // Movies, so asking /actors from Series or Books was a request whose answer
+  // nothing could display.
+  const railVisible = tab === "all" || tab === "movies";
+  const peopleTerm =
+    railVisible && committedTerm.length >= SEARCH_MIN_LENGTH ? committedTerm : "";
+  const actorsQuery = useActorSearch(peopleTerm);
+  const actors = useMemo(
+    () => (peopleTerm ? (actorsQuery.data?.items ?? []) : []),
+    [peopleTerm, actorsQuery.data],
+  );
 
   // Books live inline on this tab exactly like movies and series do — the
   // segment used to be a "go to the catalog" door, which read as broken
@@ -234,24 +309,32 @@ export function SearchScreen({ navigation, route }: Props) {
   );
   const bookKeyExtractor = useCallback((item: Book) => item.id, []);
 
-  const recommendedMovies = useMemo(
-    () => (railsQuery.data?.items ?? []),
+  /**
+   * The All tab's Movies section — the top-rated rail's first few, as list
+   * cards. Sliced in the memo so the array identity holds across keystrokes.
+   */
+  const allTabMovies = useMemo(
+    () => (railsQuery.data?.items ?? []).slice(0, ALL_MOVIE_COUNT),
     [railsQuery.data],
   );
-  const latestMovies = useMemo(
-    () => (latestRailQuery.data?.items ?? []),
-    [latestRailQuery.data],
-  );
-  const popularMovies = useMemo(() => popularQuery.data ?? [], [popularQuery.data]);
-  const activeFilterCount = tab === "series" ? countSeriesFilters(seriesFilters) : countMovieFilters(filters);
+  /** The visible tab's badge number — books and the others have no filters, so 0 there. */
+  const activeFilterCount =
+    tab === "series" ? countSeriesFilters(seriesFilters) : tab === "movies" ? countMovieFilters(movieFilters) : 0;
+  /** The line under the tabs — null (no row at all) when nothing is active. */
+  const filterSummary =
+    tab === "series"
+      ? summarizeSeriesFilters(t, seriesFilters)
+      : tab === "movies"
+        ? summarizeMovieFilters(t, movieFilters)
+        : null;
 
   // Stable identities so the browse rails' memoized cards survive a keystroke
   // in the search field or a filter change.
   //
-  // These push onto THIS stack (MovieDetails/SeriesDetails are registered in
-  // every stack that can open one — see SearchStackNavigator). They
-  // used to hop to the Home tab, which is why back landed on Home instead of
-  // the results. `navigate` is correct here and pushes, because the target
+  // These push onto THIS stack (MovieDetails/SeriesDetails/ActorDetails are
+  // registered in every stack that can open one — see SearchStackNavigator).
+  // They used to hop to the Home tab, which is why back landed on Home instead
+  // of the results. `navigate` is correct here and pushes, because the target
   // name is never the focused route (Search is): in react-navigation 7 a
   // NAVIGATE only reuses a route when its name matches the CURRENT one.
   const goToMovieDetails = useCallback(
@@ -262,21 +345,69 @@ export function SearchScreen({ navigation, route }: Props) {
     (series: SeriesListItem) => navigation.navigate("SeriesDetails", { seriesId: series.id }),
     [navigation],
   );
+  const goToActorDetails = useCallback(
+    (actor: ActorListItem) => navigation.navigate("ActorDetails", { actorId: actor.id }),
+    [navigation],
+  );
   /**
-   * The shelf's "See all" — the books CATEGORY PAGE on mobile is the Books
-   * segment of this same screen, so this switches the tab rather than pushing
-   * BooksCatalog, which would stack a near-duplicate grid on the navigator.
+   * The ONE filter control's destination: the full-page editor, told which
+   * tab's filters to edit and the committed term (its result count runs the
+   * same query as the list, and "Relevance" is only offered with a term). It
+   * reads and writes the store directly — nothing comes back through params.
    */
+  const openFilters = useCallback(
+    () => navigation.navigate("SearchFilters", { tab: tab === "series" ? "series" : "movies", term: committedTerm }),
+    [navigation, tab, committedTerm],
+  );
+  /**
+   * The names button's two destinations — the standalone actors list, where
+   * the faces went when the sixth tab was dropped, and its books twin. Neither
+   * takes params: both screens carry their own search field, and this screen's
+   * term is a question about the catalogue, not about the people behind it, so
+   * handing it over would put a filter on the list nobody asked for.
+   */
+  const openPeople = useCallback(() => navigation.navigate("ActorsList"), [navigation]);
+  const openAuthors = useCallback(() => navigation.navigate("AuthorsList"), [navigation]);
+  /** The summary line's "Clear" and the no-results reset — the VISIBLE tab's filters only. */
+  const clearTabFilters = useCallback(() => {
+    if (tab === "series") resetSeriesFilters();
+    else resetMovieFilters();
+  }, [tab, resetMovieFilters, resetSeriesFilters]);
+  /**
+   * "Watch Now" on a list card. Plays directly when the viewer has access —
+   * Player is on the root stack, above the tabs, which is why this goes
+   * through `getParent()` exactly as MovieDetails' own CTA does — and
+   * otherwise opens MovieDetails, where the subscribe CTA and the locked note
+   * live. The card never learns about subscriptions; this is the one place
+   * the rule is applied on this screen.
+   */
+  const watchMovie = useCallback(
+    (movie: Movie) => {
+      if (hasAccess(movie.accessType, isSubscribed)) {
+        navigation.getParent()?.navigate("Player", { movieId: movie.id });
+      } else {
+        goToMovieDetails(movie);
+      }
+    },
+    [navigation, isSubscribed, goToMovieDetails],
+  );
+  /**
+   * The All tab's "See all" links — every category page on mobile is a
+   * segment of this same screen, so these switch the tab rather than pushing
+   * a near-duplicate list onto the navigator.
+   */
+  const showAllMovies = useCallback(() => setTab("movies"), []);
+  const showAllSeries = useCallback(() => setTab("series"), []);
   const showAllBooks = useCallback(() => setTab("books"), []);
 
-  const seriesRailItems = useMemo(
-    () =>
-      (seriesRailQuery.data?.items ?? []).map((item) => ({
-        key: item.id,
-        ...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount))),
-        onPress: () => goToSeriesDetails(item),
-      })),
-    [seriesRailQuery.data, t, goToSeriesDetails],
+  /**
+   * The All tab's Series section — the first few of the series rail's rows as
+   * list cards. Sliced here rather than at render so the array identity holds
+   * across keystrokes and the memoized cards stay still.
+   */
+  const allTabSeries = useMemo(
+    () => (seriesRailQuery.data?.items ?? []).slice(0, ALL_SERIES_COUNT),
+    [seriesRailQuery.data],
   );
 
   const rememberSearch = useCallback((term: string) => {
@@ -416,6 +547,7 @@ export function SearchScreen({ navigation, route }: Props) {
    * is the only way results ever arrive. Music has no catalogue to list (and no
    * search field either), so it gets no panel at all.
    *
+   *
    * A SIGNED-OUT viewer gets no books panel either, for the same reason the
    * grid and the shelf are gated: its rows come from /books, which 401s a
    * guest. Without this the "sign in to read books" state below would sit under
@@ -501,40 +633,44 @@ export function SearchScreen({ navigation, route }: Props) {
     [dismissAndRemember, navigation],
   );
 
-  const cellWidth = grid.cellWidth;
   // The gap is the grid's, not a constant — the spacious density widens it,
   // and the row wrapper has to agree with the cell width it was measured from.
   const gridRowStyle = useMemo(() => [styles.gridRow, { gap: grid.gap }], [grid.gap]);
-  /** Roughly three rows — fewer columns means fewer cells per screenful. */
+  /** Roughly three rows of the books grid — fewer columns means fewer cells per screenful. */
   const renderBatch = grid.columns * 3;
+  /** A screenful and a bit of ~180pt list rows. */
+  const listBatch = 6;
+
+  /**
+   * Opening a row from the results files the COMMITTED term as a recent (see
+   * `rememberCommittedSearch`); the All tab's cards below use the bare
+   * `goToMovieDetails`, because nothing there was searched. Stable, so the
+   * memoized cards do not re-render on a keystroke.
+   */
+  const openMovieResult = useCallback(
+    (movie: Movie) => {
+      rememberCommittedSearch();
+      goToMovieDetails(movie);
+    },
+    [rememberCommittedSearch, goToMovieDetails],
+  );
+  const openSeriesResult = useCallback(
+    (series: SeriesListItem) => {
+      rememberCommittedSearch();
+      goToSeriesDetails(series);
+    },
+    [rememberCommittedSearch, goToSeriesDetails],
+  );
   const renderMovieItem = useCallback(
     ({ item }: ListRenderItemInfo<Movie>) => (
-      <MediaCard
-        // The genre line is opt-in per surface: only these cells are wide
-        // enough for a third line without crowding the title.
-        {...movieCardContent(item, { showGenre: true })}
-        width={cellWidth}
-        onPress={() => {
-          rememberCommittedSearch();
-          goToMovieDetails(item);
-        }}
-      />
+      <MovieListCard movie={item} onPress={openMovieResult} onWatch={watchMovie} />
     ),
-    [cellWidth, rememberCommittedSearch, goToMovieDetails],
+    [openMovieResult, watchMovie],
   );
 
   const renderSeriesItem = useCallback(
-    ({ item }: ListRenderItemInfo<SeriesListItem>) => (
-      <MediaCard
-        {...seriesCardContent(item, t.series.episodeCount.replace("{n}", String(item.episodeCount)))}
-        width={cellWidth}
-        onPress={() => {
-          rememberCommittedSearch();
-          goToSeriesDetails(item);
-        }}
-      />
-    ),
-    [t, cellWidth, rememberCommittedSearch, goToSeriesDetails],
+    ({ item }: ListRenderItemInfo<SeriesListItem>) => <SeriesListCard series={item} onPress={openSeriesResult} />,
+    [openSeriesResult],
   );
 
   /**
@@ -584,10 +720,10 @@ export function SearchScreen({ navigation, route }: Props) {
   }, [booksQuery.hasNextPage, booksQuery.isFetchingNextPage, booksQuery.fetchNextPage]);
 
   /**
-   * Hoisted for the same reason `listHeader` is: this strip sits ABOVE the
-   * field and none of it can change while the user types, so a keystroke must
-   * not rebuild it. With five options it takes the scrolling-chip branch, so
-   * the rebuild costs a ScrollView plus five Pressables, glyphs and labels.
+   * Hoisted for the same reason `listHeader` is: this strip sits right UNDER
+   * the field and none of it can change while the user types, so a keystroke
+   * must not rebuild it — a rebuild costs a ScrollView plus five Pressables,
+   * glyphs and labels.
    */
   const tabOptions = useMemo(
     () => [
@@ -601,10 +737,12 @@ export function SearchScreen({ navigation, route }: Props) {
   );
   const handleTabChange = useCallback((v: string) => setTab(v as Tab), []);
 
-  /** The tabs whose body IS a result grid — they own the filter sheet. */
+  /** The tabs whose body IS a result list (books: a grid). */
   // Books ride here too: the books grid is filtered by the same search term
   // server-side, so hiding the field on that tab turned a term typed on
   // Movies into an INVISIBLE filter with no way to see or clear it.
+  // It gates the two things that belong to a FILTERED catalogue list — the
+  // recents block and (with resultsFetching) the field's spinner.
   const isSearchTab = tab === "movies" || tab === "series" || tab === "books";
   /**
    * The field, however, belongs to the SCREEN, not to one segment. This tab
@@ -628,10 +766,14 @@ export function SearchScreen({ navigation, route }: Props) {
         ? booksQuery.data?.pages[0]?.total
         : moviesQuery.data?.pages[0]?.total;
   const resultsFetching =
-    tab === "series" ? seriesQuery.isFetching : tab === "books" ? booksQuery.isFetching : moviesQuery.isFetching;
+    tab === "series"
+      ? seriesQuery.isFetching
+      : tab === "books"
+        ? booksQuery.isFetching
+        : moviesQuery.isFetching;
   /**
-   * The grid on screen is the PREVIOUS term's, held over by keepPreviousData.
-   * It stays interactive but fades, so the fresh heading above it is never
+   * The list on screen is the PREVIOUS term's, held over by keepPreviousData.
+   * It stays interactive but fades, so the fresh count row above it is never
    * read as a caption for stale cards.
    */
   const resultsStale =
@@ -661,46 +803,67 @@ export function SearchScreen({ navigation, route }: Props) {
    * included — a pure function of committed state while typing.
    */
   const showRecents = isSearchTab && committedTerm.length === 0 && recentSearches.length > 0;
-  const resetFilters = useCallback(() => {
-    setFilters(createMovieFilters());
-    setSeriesFilters(createSeriesFilters());
-  }, []);
 
   /**
    * The match count, already phrased per tab — or null while the number in hand
    * describes the PREVIOUS query (held-over placeholder pages), because a wrong
    * count is worse than none. It always describes the COMMITTED term, which is
-   * exactly what the heading above it names and the grid below it holds; typing
+   * exactly what the count row names and the list below it holds; typing
    * cannot make it wrong, because typing does not change any of the three.
+   */
+  /*
+   * With a term committed the line NAMES it — "12 results for “inception”".
+   * That is what keeps the screen honest while the user types something
+   * else: the header never claims to be showing a search that has not been
+   * run, and it is the "sign of why" for held results. Idle, it is just the
+   * tab's noun and its total ("12 movies").
    */
   const countLabel = useMemo(() => {
     if (resultTotal === undefined || resultsStale) return null;
     const n = String(resultTotal);
-    if (tab === "series")
-      return resultTotal === 1 ? t.search.resultsFoundSeriesOne : t.search.resultsFoundSeries.replace("{n}", n);
-    if (tab === "books")
-      return resultTotal === 1 ? t.search.resultsFoundBooksOne : t.search.resultsFoundBooks.replace("{n}", n);
-    return resultTotal === 1 ? t.search.resultsFoundMoviesOne : t.search.resultsFoundMovies.replace("{n}", n);
-  }, [resultTotal, resultsStale, tab, t]);
+    if (committedTerm) {
+      const template = resultTotal === 1 ? t.search.resultsForTermCountOne : t.search.resultsForTermCount;
+      return template.replace("{n}", n).replace("{term}", committedTerm);
+    }
+    if (tab === "series") return resultTotal === 1 ? t.search.countSeriesOne : t.search.countSeries.replace("{n}", n);
+    if (tab === "books") return resultTotal === 1 ? t.search.countBooksOne : t.search.countBooks.replace("{n}", n);
+    return resultTotal === 1 ? t.search.countMoviesOne : t.search.countMovies.replace("{n}", n);
+  }, [resultTotal, resultsStale, tab, committedTerm, t]);
 
   /**
-   * What the grid below is answering — the COMMITTED term, or just the tab
-   * while idle. Naming the term is what keeps the screen honest while the user
-   * types something else: the band never claims to be showing a search that has
-   * not been run. This heading IS the "sign of why" for held results.
+   * The header's ONE filter control — on the two tabs that have filters. Books
+   * has none, so no button there: this is the same expression that keeps
+   * `activeFilterCount` at 0 and `filterSummary` null for it. Committed state
+   * only, like everything else in the header.
    */
-  const resultsHeading = committedTerm
-    ? t.search.resultsForTerm.replace("{term}", committedTerm)
-    : tab === "series"
-      ? t.search.series
-      : tab === "books"
-        ? t.search.books
-        : t.search.movies;
+  const filterControl = useMemo(
+    () => (tab === "movies" || tab === "series" ? { count: activeFilterCount, onPress: openFilters } : undefined),
+    [tab, activeFilterCount, openFilters],
+  );
 
   /**
-   * Shared by all three no-results branches so they read as one state. It
-   * quotes the COMMITTED term — the one that was actually searched — never the
-   * text still sitting in the box.
+   * The header's OTHER button, and the one thing about it that is contextual:
+   * Movies and Series are cast, so it says People and opens the actors list;
+   * Books are written, so it says Authors and opens the authors list. Same
+   * pill, same place — only the word, the glyph and the destination move, which
+   * is what makes "who is behind this?" one habit across the three tabs.
+   *
+   * All has no results header at all (its own layout), and Music has no
+   * catalogue, so neither is spelled here: the header simply isn't rendered
+   * there.
+   */
+  const peopleControl = useMemo(
+    () =>
+      tab === "books"
+        ? { label: t.search.authors, icon: "create-outline" as const, onPress: openAuthors }
+        : { label: t.search.people, icon: "people-outline" as const, onPress: openPeople },
+    [tab, t, openAuthors, openPeople],
+  );
+
+  /**
+   * Shared by the no-results branches so they read as one state. It quotes
+   * the COMMITTED term — the one that was actually searched — never the text
+   * still sitting in the box. The reset clears the visible tab's filters.
    */
   const emptyResultProps = useMemo(() => {
     if (committedTerm) {
@@ -708,7 +871,7 @@ export function SearchScreen({ navigation, route }: Props) {
         title: t.search.noResultsTitle,
         message: t.search.noResultsBody.replace("{term}", committedTerm),
         actionLabel: activeFilterCount > 0 ? t.common.reset : undefined,
-        onAction: activeFilterCount > 0 ? resetFilters : undefined,
+        onAction: activeFilterCount > 0 ? clearTabFilters : undefined,
       };
     }
     if (activeFilterCount > 0) {
@@ -716,22 +879,21 @@ export function SearchScreen({ navigation, route }: Props) {
         title: t.search.noResultsTitle,
         message: t.search.noResultsFiltersBody,
         actionLabel: t.common.reset,
-        onAction: resetFilters,
+        onAction: clearTabFilters,
       };
     }
     return { title: t.search.idleTitle, message: t.search.idleBody, actionLabel: undefined, onAction: undefined };
-  }, [committedTerm, activeFilterCount, t, resetFilters]);
+  }, [committedTerm, activeFilterCount, t, clearTabFilters]);
 
   /**
-   * One pill per active value. The builder itself lives next to
-   * SearchFilterSheet, which owns the rest of this vocabulary; here it is
-   * still a pure function of filter state, so the useMemo stays. The two
-   * label helpers went with it and are module-level pure functions now, which
-   * is why they are no longer deps.
+   * The faces row, or nothing. One element, memoized, used in two places: the
+   * All tab's first section and the Movies tab's list header (and that tab's
+   * "people but no movies" fallback). Committed state only, so a keystroke
+   * cannot rebuild it.
    */
-  const filterPills = useMemo(
-    () => buildFilterPills({ tab, filters, seriesFilters, setFilters, setSeriesFilters, t }),
-    [tab, filters, seriesFilters, t],
+  const peopleRail = useMemo(
+    () => (actors.length > 0 ? <PeopleRail actors={actors} onPress={goToActorDetails} /> : null),
+    [actors, goToActorDetails],
   );
 
   /**
@@ -739,10 +901,16 @@ export function SearchScreen({ navigation, route }: Props) {
    * element here would be a fresh identity every render, which re-renders the
    * whole header row for a change that only touched the search box. Every value
    * it reads is committed state, so it genuinely cannot change while typing.
+   *
+   * Order: people (Movies tab, with a term) — recents (no term) — the count
+   * row. The first two are mutually exclusive by construction, so the header
+   * never stacks both.
    */
   const listHeader = useMemo(
     () => (
     <View style={styles.listHeader}>
+      {tab === "movies" ? peopleRail : null}
+
       {showRecents ? (
         <View style={styles.recents}>
           <View style={styles.recentsHeader}>
@@ -761,14 +929,15 @@ export function SearchScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
-      {/* The owner's "Results (125 Movies Found)" band, sitting between the
-          field and the first row of cards. Unconditional now — an unfiltered
-          catalogue has a total too, and hiding it made the grid look like it
-          started mid-list. */}
-      <SearchResultsHeader kicker={t.search.resultsTitle.toUpperCase()} title={resultsHeading} countLabel={countLabel} />
+      {/* The count row between the field and the first card, with the names
+          and Filter buttons on its right. Unconditional — an unfiltered
+          catalogue has a total too, and hiding it made the list look like it
+          started mid-way. Books has no filter control, so the names pill —
+          "Authors" there — is the only button on that tab; it still shows. */}
+      <SearchResultsHeader countLabel={countLabel} filter={filterControl} people={peopleControl} />
     </View>
     ),
-    [showRecents, recentSearches, resultsHeading, countLabel, replayRecent, t],
+    [tab, peopleRail, showRecents, recentSearches, countLabel, filterControl, peopleControl, replayRecent, t],
   );
 
   /** Spinner while the next page streams in under the user's thumb. */
@@ -780,56 +949,43 @@ export function SearchScreen({ navigation, route }: Props) {
 
   return (
     <View ref={containerRef} style={styles.container}>
-      <AppTopBar
-        trailing={
-          isSearchTab ? (
-            <PressableScale
-              style={styles.filterButton}
-              onPress={() => setFiltersOpen(true)}
-              accessibilityLabel={t.search.filters}
-            >
-              <Ionicons name="options-outline" size={20} color={theme.colors.text} />
-              {activeFilterCount > 0 && (
-                <View style={styles.filterBadge}>
-                  <ThemedText variant="caption" weight="bold" tabular style={styles.filterBadgeText}>
-                    {activeFilterCount}
-                  </ThemedText>
-                </View>
-              )}
-            </PressableScale>
-          ) : null
-        }
-      >
+      {/* The wordmark bar stays (the owner wants the nav bar on every tab);
+          under it the field, edge to edge. No title — the field IS this
+          screen's subject and every point above it is a point the results do
+          not get. The filter control moved down into the results header, so
+          nothing shares this row with the field any more. */}
+      <AppTopBar>
         <View style={styles.headerBlock}>
           {showSearchField && (
-            /* Field and hint are one group so the hint hugs the field, and the
-               block's own gap only ever separates the field from the tabs. */
-            <View style={styles.fieldGroup}>
-              <SearchField
-                inputRef={inputRef}
-                anchorRef={fieldRef}
-                onFocus={handleFieldFocus}
-                onBlur={handleFieldBlur}
-                value={searchText}
-                onChangeText={handleChangeSearchText}
-                onSubmit={commitSearch}
-                onClear={clearSearch}
-                loading={isSearching}
-                placeholder={searchPlaceholder}
-                accessibilityLabel={t.search.fieldLabel}
-                clearAccessibilityLabel={t.search.clearField}
-              />
+            <SearchField
+              inputRef={inputRef}
+              anchorRef={fieldRef}
+              onFocus={handleFieldFocus}
+              onBlur={handleFieldBlur}
+              value={searchText}
+              onChangeText={handleChangeSearchText}
+              onSubmit={commitSearch}
+              onClear={clearSearch}
+              loading={isSearching}
+              placeholder={searchPlaceholder}
+              accessibilityLabel={t.search.fieldLabel}
+              clearAccessibilityLabel={t.search.clearField}
+            />
+          )}
+
+          {showSearchField && (
+            <>
               {/* A hint, not an error — the unfiltered view stays on screen. */}
               {isTooShort && (
                 <ThemedText variant="caption" style={styles.hint}>
                   {t.search.minChars.replace("{n}", String(SEARCH_MIN_LENGTH))}
                 </ThemedText>
               )}
-              {/* The other half of the honesty story (the heading is the first):
-                  the box holds a question the grid has not been asked yet, and
+              {/* The other half of the honesty story (the count row is the first):
+                  the box holds a question the list has not been asked yet, and
                   this names the action that asks it. Deliberately NOT gated on
                   the panel being visible — gating it that way would grow the
-                  header block, and so push the grid down, at the moment the
+                  header block, and so push the list down, at the moment the
                   keyboard is dismissed. It shares the min-chars hint's slot and
                   is mutually exclusive with it by construction (that one needs
                   < SEARCH_MIN_LENGTH), so the slot is simply occupied from the
@@ -863,56 +1019,51 @@ export function SearchScreen({ navigation, route }: Props) {
                   </ThemedText>
                 </Pressable>
               )}
-            </View>
+            </>
           )}
-
-          <SegmentedControl
-            options={tabOptions}
-            value={tab}
-            onChange={handleTabChange}
-            // This strip shares the header with the search field; everywhere
-            // else the control owns its own band and keeps the taller rung.
-            compact
-          />
         </View>
+
+        {/* The owner's tab strip — icons and an underline, in place of the
+            pill segments the rest of the app uses. "All" stays: the owner
+            wants movies, series AND books on one tab. */}
+        <SearchTabs options={tabOptions} value={tab} onChange={handleTabChange} />
       </AppTopBar>
 
-      {/* Active filters, spelled out — one removable chip per value. */}
-      {isSearchTab && filterPills.length > 0 && (
-        <View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.pillsRow}
-            keyboardShouldPersistTaps="handled"
-          >
-            {filterPills.map((pill) => (
-              <Chip
-                key={pill.key}
-                label={pill.label}
-                selected
-                trailingIcon="close"
-                onPress={pill.onRemove}
-                accessibilityLabel={t.search.removeFilter.replace("{label}", pill.label)}
-              />
-            ))}
-            <Chip label={t.search.clearAll} icon="trash-outline" onPress={resetFilters} />
-          </ScrollView>
-        </View>
-      )}
+      {/* ONE caption under the tabs while any filter is active on the visible
+          tab — what the filters page applied, and a Clear beside it. Null
+          summary = no row at all, so an unfiltered list starts right under
+          the strip. Only Movies and Series have filters; the others never
+          produce a summary. */}
+      {filterSummary && <FilterSummary text={filterSummary} onClear={clearTabFilters} />}
 
       {tab === "all" ? (
-        railsQuery.isLoading || popularQuery.isLoading ? (
+        railsQuery.isLoading ? (
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.browseContent}
-            // The field lives above these rails now, so even the loading
+            // The field lives above these sections, so even the loading
             // state has to put the keyboard away when it is dragged.
             keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="handled"
           >
-            <MovieRow title={t.search.recommendedRow} movies={NO_MOVIES} onPressMovie={goToMovieDetails} loading />
-            <MovieRow title={t.search.popularRow} movies={NO_MOVIES} onPressMovie={goToMovieDetails} loading />
+            <View style={styles.section}>
+              <SectionHeader title={t.search.movies} icon="film-outline" />
+              <View style={styles.sectionList}>
+                {Array.from({ length: ALL_SKELETON_ROWS }).map((_, index) => (
+                  <ListCardSkeleton key={index} />
+                ))}
+              </View>
+            </View>
+            {/* The Series section's own rows, so the loading screen has the
+                same two blocks the loaded one opens with. */}
+            <View style={styles.section}>
+              <SectionHeader title={t.search.series} icon="tv-outline" />
+              <View style={styles.sectionList}>
+                {Array.from({ length: ALL_SKELETON_ROWS }).map((_, index) => (
+                  <ListCardSkeleton key={index} />
+                ))}
+              </View>
+            </View>
           </ScrollView>
         ) : railsQuery.isError ? (
           <EmptyState message={t.common.somethingWentWrong} icon="cloud-offline-outline" tone={theme.colors.danger} />
@@ -924,22 +1075,10 @@ export function SearchScreen({ navigation, route }: Props) {
             keyboardShouldPersistTaps="handled"
             refreshControl={
               <RefreshControl
-                refreshing={
-                  railsQuery.isRefetching ||
-                  popularQuery.isRefetching ||
-                  seriesRailQuery.isRefetching ||
-                  latestRailQuery.isRefetching ||
-                  bookShelfQuery.isRefetching
-                }
+                refreshing={railsQuery.isRefetching || seriesRailQuery.isRefetching || bookShelfQuery.isRefetching}
                 onRefresh={() => {
                   railsQuery.refetch();
-                  popularQuery.refetch();
                   seriesRailQuery.refetch();
-                  // Was missing: this tab has always rendered a "Latest"
-                  // rail that pull-to-refresh quietly left alone, so the one
-                  // shelf whose whole point is newness was the one shelf that
-                  // never updated.
-                  latestRailQuery.refetch();
                   // The guard is load-bearing, not caution: refetch() ignores
                   // `enabled`, so calling it unconditionally would make a
                   // guest's pull-to-refresh fire the very /books request the
@@ -953,29 +1092,64 @@ export function SearchScreen({ navigation, route }: Props) {
             }
           >
             <View style={styles.rows}>
-              <MovieRow
-                title={t.search.recommendedRow}
-                movies={recommendedMovies}
-                onPressMovie={goToMovieDetails}
-                icon="sparkles-outline"
-              />
-              <MovieRow
-                title={t.search.popularRow}
-                movies={popularMovies}
-                onPressMovie={goToMovieDetails}
-                icon="flame-outline"
-              />
-              <MediaRail title={t.search.seriesRow} icon="tv-outline" items={seriesRailItems} />
-              <MovieRow
-                title={t.search.latestRow}
-                movies={latestMovies}
-                onPressMovie={goToMovieDetails}
-                icon="time-outline"
-              />
-              {/* Books come after every video shelf, which is the web's fixed
-                  one-medium-then-the-next order (movies → books → music) — the
-                  four rails above are all video, so this is the only position
-                  that does not split them in two. */}
+              {/* People first, when the committed term matches any — the
+                  one section on this tab that answers the term (the rails
+                  below are unfiltered recommendations). */}
+              {peopleRail}
+
+              {/* Movies and series as the SAME list cards the tabs show, so
+                  All reads as one screen rather than a different app; each
+                  "See all" is the tab, which is the full list. */}
+              {allTabMovies.length > 0 && (
+                <View style={styles.section}>
+                  <SectionHeader
+                    title={t.search.movies}
+                    icon="film-outline"
+                    onSeeAll={showAllMovies}
+                    seeAllLabel={t.common.seeAll}
+                  />
+                  <View style={styles.sectionList}>
+                    {allTabMovies.map((movie) => (
+                      <MovieListCard key={movie.id} movie={movie} onPress={goToMovieDetails} onWatch={watchMovie} />
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* The series rail is its own request and used to land AFTER the
+                  movie cards — the section simply appeared late, pushing the
+                  rails below it down. Skeleton rows the height of a list card
+                  hold its place until it does; the same count the Movies
+                  section's loading state uses. */}
+              {seriesRailQuery.isLoading ? (
+                <View style={styles.section}>
+                  <SectionHeader title={t.search.series} icon="tv-outline" />
+                  <View style={styles.sectionList}>
+                    {Array.from({ length: ALL_SKELETON_ROWS }).map((_, index) => (
+                      <ListCardSkeleton key={index} />
+                    ))}
+                  </View>
+                </View>
+              ) : allTabSeries.length > 0 && (
+                <View style={styles.section}>
+                  <SectionHeader
+                    title={t.search.series}
+                    icon="tv-outline"
+                    onSeeAll={showAllSeries}
+                    seeAllLabel={t.common.seeAll}
+                  />
+                  <View style={styles.sectionList}>
+                    {allTabSeries.map((series) => (
+                      <SeriesListCard key={series.id} series={series} onPress={goToSeriesDetails} />
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Books last: the web's fixed one-medium-then-the-next order
+                  (movies → series → books). The Popular and Latest poster
+                  rails that used to sit here are gone — three movies is the
+                  owner's cap for this tab, and each tab is the full list. */}
               <BookRail
                 title={t.search.newBooksRow}
                 eyebrow={t.search.books}
@@ -1012,14 +1186,27 @@ export function SearchScreen({ navigation, route }: Props) {
             onAction={() => booksQuery.refetch()}
           />
         ) : books.length === 0 ? (
-          <EmptyState
-            title={committedTerm ? t.search.noResultsTitle : t.search.idleTitle}
-            message={committedTerm ? t.search.noResultsBody.replace("{term}", committedTerm) : t.search.booksReady}
-            icon={committedTerm ? "search-outline" : "book-outline"}
-          />
+          /* The header rides above the empty state rather than being replaced
+             by it. On this tab it carries the ONLY door to the authors list,
+             and a term that matches no book is exactly when you might want to
+             go looking by author instead — dropping the row there left the
+             feature unreachable until the search was cleared. */
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.headerOverEmpty}
+            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled"
+          >
+            {listHeader}
+            <EmptyState
+              title={committedTerm ? t.search.noResultsTitle : t.search.idleTitle}
+              message={committedTerm ? t.search.noResultsBody.replace("{term}", committedTerm) : t.search.booksReady}
+              icon={committedTerm ? "search-outline" : "book-outline"}
+            />
+          </ScrollView>
         ) : (
           <ResultsRegion termKey={`books:${committedTerm}`} stale={resultsStale}>
-            {/* No `clip` here, unlike the movie and series grids below: a book
+            {/* No `clip` here, unlike the movie and series lists below: a book
                 card casts a real drop shadow that falls OUTSIDE its own
                 bounds, and Android's subview clipping shears it off for cells
                 near the recycling boundary mid-fling. The books rail leaves
@@ -1044,7 +1231,7 @@ export function SearchScreen({ navigation, route }: Props) {
         <EmptyState message={t.search.musicComingSoon} icon="musical-notes-outline" />
       ) : tab === "movies" ? (
         moviesQuery.isLoading ? (
-          <ResultsSkeleton grid={grid} />
+          <ResultsListSkeleton />
         ) : moviesQuery.isError ? (
           <EmptyState
             title={t.search.errorTitle}
@@ -1055,27 +1242,40 @@ export function SearchScreen({ navigation, route }: Props) {
             onAction={() => moviesQuery.refetch()}
           />
         ) : movies.length === 0 ? (
-          <EmptyState {...emptyResultProps} icon={committedTerm ? "search-outline" : "film-outline"} />
+          peopleRail ? (
+            /* The term matched people but no titles: the faces ARE the
+               result, so show the same header the list would carry (rail,
+               then the honest "0 results" row with its filter button) in
+               place of the no-results block. */
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.peopleOnly}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+            >
+              {listHeader}
+            </ScrollView>
+          ) : (
+            <EmptyState {...emptyResultProps} icon={committedTerm ? "search-outline" : "film-outline"} />
+          )
         ) : (
           <ResultsRegion termKey={`movies:${committedTerm}`} stale={resultsStale}>
-            <ResultsGrid
+            <ResultsList
               id="movies"
               data={movies}
-              columns={grid.columns}
               keyExtractor={keyExtractor}
               header={listHeader}
               footer={listFooter}
-              rowStyle={gridRowStyle}
               renderItem={renderMovieItem}
               onEndReached={moviesEndReached}
               refreshControl={moviesRefreshControl}
-              batch={renderBatch}
+              batch={listBatch}
               clip
             />
           </ResultsRegion>
         )
       ) : seriesQuery.isLoading ? (
-        <ResultsSkeleton grid={grid} />
+        <ResultsListSkeleton />
       ) : seriesQuery.isError ? (
         <EmptyState
           title={t.search.errorTitle}
@@ -1089,18 +1289,16 @@ export function SearchScreen({ navigation, route }: Props) {
         <EmptyState {...emptyResultProps} icon={committedTerm ? "search-outline" : "tv-outline"} />
       ) : (
         <ResultsRegion termKey={`series:${committedTerm}`} stale={resultsStale}>
-          <ResultsGrid
+          <ResultsList
             id="series"
             data={series}
-            columns={grid.columns}
             keyExtractor={keyExtractor}
             header={listHeader}
             footer={listFooter}
-            rowStyle={gridRowStyle}
             renderItem={renderSeriesItem}
             onEndReached={seriesEndReached}
             refreshControl={seriesRefreshControl}
-            batch={renderBatch}
+            batch={listBatch}
             clip
           />
         </ResultsRegion>
@@ -1121,64 +1319,27 @@ export function SearchScreen({ navigation, route }: Props) {
         onSelectBook={selectBookSuggestion}
         onSeeAll={commitSearch}
       />
-
-      <SearchFilterSheet
-        visible={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        tab={tab === "series" ? "series" : "movies"}
-        filters={filters}
-        onChangeFilters={setFilters}
-        seriesFilters={seriesFilters}
-        onChangeSeriesFilters={setSeriesFilters}
-        total={tab === "series" ? seriesQuery.data?.pages[0]?.total : moviesQuery.data?.pages[0]?.total}
-        isFetching={tab === "series" ? seriesQuery.isFetching : moviesQuery.isFetching}
-        hasSearchTerm={Boolean(committedTerm)}
-      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
+  /**
+   * The field's block, edge to edge: the same padding both sides now that no
+   * filter disc shares the row. The field's focus ring is drawn 3pt outside
+   * its own border, so the block needs that much slack above it or the ring
+   * lands under the status bar.
+   */
   headerBlock: {
     paddingHorizontal: theme.layout.screenPadding,
-    // The field's focus ring is drawn 3pt outside its own border, so the block
-    // needs that much slack above it or the ring lands under the app bar.
     paddingTop: theme.spacing.xs,
-    paddingBottom: theme.spacing.sm,
-    // sm, not md: with the field and the strip both shorter, 16pt between them
-    // read as a gap rather than as one header. The two belong together.
-    gap: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs,
+    gap: theme.spacing.xs,
   },
-  fieldGroup: { gap: theme.spacing.xs },
+  /** The hints sit under the field's own inner text, so they read as its caption. */
   hint: { paddingHorizontal: theme.spacing.md },
-  filterButton: {
-    width: theme.layout.minTouch,
-    height: theme.layout.minTouch,
-    borderRadius: theme.radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterBadge: {
-    position: "absolute",
-    top: 4,
-    right: 2,
-    minWidth: 18,
-    height: 18,
-    paddingHorizontal: 4,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  filterBadgeText: { color: theme.colors.onPrimary },
-  pillsRow: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    paddingHorizontal: theme.layout.screenPadding,
-    paddingVertical: theme.spacing.sm,
-  },
-  /** The results band brings its own padding, so this one only stacks. */
+  /** The results row brings its own padding, so this one only stacks. */
   listHeader: { gap: theme.spacing.md },
   recents: { gap: theme.spacing.sm, paddingHorizontal: theme.layout.screenPadding },
   recentsHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
@@ -1186,6 +1347,13 @@ const styles = StyleSheet.create({
   recentRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
   gridRow: { paddingHorizontal: theme.layout.screenPadding },
   browseContent: { paddingTop: theme.spacing.md, paddingBottom: theme.layout.tabBarClearance },
+  /** The people-only fallback matches the list's own inset, so the header sits where it would in the list. */
+  peopleOnly: { paddingTop: theme.spacing.sm, paddingBottom: theme.layout.tabBarClearance },
+  /** Same inset as peopleOnly: the header sits where the list would put it. */
+  headerOverEmpty: { paddingTop: theme.spacing.sm, paddingBottom: theme.layout.tabBarClearance },
   rows: { gap: theme.spacing.lg },
+  /** An All-tab section: SectionHeader (which insets itself) over a padded stack of list cards. */
+  section: { gap: theme.spacing.xs },
+  sectionList: { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.sm + 2 },
   footerLoading: { paddingVertical: theme.spacing.md, alignItems: "center" },
 });

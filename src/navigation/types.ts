@@ -1,14 +1,16 @@
 import type { NavigatorScreenParams } from "@react-navigation/native";
 
 export type AuthStackParamList = {
-  Login: undefined;
-  ForgotPassword: undefined;
+  /** `phone` pre-fills the number — set when "Forgot password" hands the user back to sign in. */
+  Login: { phone?: string } | undefined;
+  /** `phone` pre-fills the number the user was signing in with. */
+  ForgotPassword: { phone?: string } | undefined;
 };
 
 /**
  * The media detail screens, registered in EVERY tab stack that can open one —
  * HomeStackNavigator, SearchStackNavigator and LibraryStackNavigator each
- * register these same four routes (the comment in HomeStackNavigator carries
+ * register these same five routes (the comment in HomeStackNavigator carries
  * the full rationale; keep the three copies in sync).
  *
  * WHY the duplication is deliberate: a detail page belongs to the tab that
@@ -26,6 +28,8 @@ export type MediaDetailParamList = {
   MovieDetails: { movieId: string };
   SeriesDetails: { seriesId: string };
   CategoryDetail: { categoryId: string };
+  /** A person's page — their photo and everything they are in. Opened from the Search screen's People rail. */
+  ActorDetails: { actorId: string };
   Subscribe: undefined;
 };
 
@@ -35,8 +39,34 @@ export type HomeStackParamList = MediaDetailParamList & {
 
 export type SearchStackParamList = MediaDetailParamList & {
   Search: { initialTab?: "movies" | "series" | "books" | "music" } | undefined;
+  /**
+   * The full-screen filters page. It edits a draft of the shared
+   * searchFiltersStore and commits on "Show results"; the params only say
+   * WHICH tab's filters and what term the count should include — the filter
+   * values themselves never travel through navigation.
+   */
+  SearchFilters: { tab: "movies" | "series"; term: string };
   BooksCatalog: undefined;
   BookDetails: { bookId: string };
+  /**
+   * Everyone in the catalogue — the People button in the results header pushes
+   * it. No params: the screen carries its own search field, so there is no
+   * term to hand over, and nothing deep-links to it.
+   */
+  ActorsList: undefined;
+  /**
+   * The books twin of ActorsList — every author, pushed by the SAME results
+   * header pill, which reads "Authors" on the Books tab. No params, for the
+   * same reason ActorsList takes none.
+   */
+  AuthorsList: undefined;
+  /**
+   * One author's page — their portrait and everything they wrote. It lives on
+   * THIS stack rather than in MediaDetailParamList, deliberately: it opens
+   * BookDetails, and BookDetails is registered only here, so an author page on
+   * another stack would have nowhere to send a tapped book.
+   */
+  AuthorDetails: { authorId: string };
 };
 
 export type LibraryStackParamList = MediaDetailParamList & {
@@ -48,7 +78,6 @@ export type LibraryStackParamList = MediaDetailParamList & {
 
 export type SettingsStackParamList = {
   Settings: undefined;
-  LanguageSettings: undefined;
 };
 
 export type WalletStackParamList = {
@@ -66,6 +95,8 @@ export type MainTabParamList = {
 
 export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
+  /** In place of Auth when a saved session could not be checked (offline) — see RootNavigator. */
+  SessionOffline: undefined;
   Main: NavigatorScreenParams<MainTabParamList>;
   Player: { movieId: string };
   /**

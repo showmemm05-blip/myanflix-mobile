@@ -15,7 +15,8 @@ import Animated, {
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAuth } from "@/hooks/useAuth";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { errorMessage } from "@/utils/errors";
+import type { TranslationShape } from "@/localization/translations";
+import { ApiError, errorMessage } from "@/utils/errors";
 import { AuthTicket } from "@/components/auth/AuthScreenShell";
 import { AuthField } from "@/components/auth/AuthField";
 import { OtpChannelPicker } from "@/components/auth/OtpChannelPicker";
@@ -33,7 +34,34 @@ const STEP_ORDER: readonly Step[] = ["phone", "password", "otp"];
 
 interface PhoneAuthFlowProps {
   subtitle: string;
-  onForgotPassword: () => void;
+  /** Gets the number being signed in with, so the reset screen can pre-fill it. */
+  onForgotPassword: (phone: string) => void;
+  /** Pre-fills the phone step (e.g. after a password reset). */
+  initialPhone?: string;
+}
+
+/**
+ * The server's answer when the proof of the password step is missing, expired
+ * (10 minutes) or voided by a password change — see backend auth.service.ts
+ * STEP_TOKEN_REFUSED. The only cure is the password step again.
+ */
+function isStepTokenRefused(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 401 && /enter your password again/i.test(err.message);
+}
+
+/**
+ * POST /auth/otp/request's own refusals (backend otp.service.ts), in the
+ * user's language instead of the server's English — matched on status +
+ * wording, as the forgot-password screen does: 60 s between two sign-in
+ * codes, and 8 codes per number per hour, reset codes included. Anything else
+ * keeps `errorMessage`'s rule.
+ */
+function describeSendCodeError(err: unknown, t: TranslationShape, fallback: string): string {
+  if (err instanceof ApiError && err.status === 409) {
+    if (/wait before requesting/i.test(err.message)) return t.auth.otp.waitForCode;
+    if (/too many code requests/i.test(err.message)) return t.auth.otp.tooManyCodes;
+  }
+  return errorMessage(err, fallback);
 }
 
 /**
@@ -44,18 +72,26 @@ interface PhoneAuthFlowProps {
  * session. That is why there is only a Login screen: a separate Register
  * screen would be a second door onto this same room.
  */
-export function PhoneAuthFlow({ subtitle, onForgotPassword }: PhoneAuthFlowProps) {
+export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: PhoneAuthFlowProps) {
   const { checkPhoneExists, verifyPassword, requestOtp, verifyOtp } = useAuth();
   const { t } = useLanguage();
 
   const [step, setStep] = useState<Step>("phone");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(initialPhone ?? "");
   const [isNewAccount, setIsNewAccount] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   // Only meaningful for a new account — carried forward to the final OTP
   // verify call, since that's the moment the account actually gets created.
   const [pendingPassword, setPendingPassword] = useState("");
+  /**
+   * Existing accounts only: the server's proof that the password step passed
+   * (audit H-6). Sent with the code, because the server — not this screen —
+   * now enforces "password, then code". Component memory only: never stored,
+   * never logged, gone when the flow unmounts or the number changes. One token
+   * covers every code requested within its 10 minutes, so a resend keeps it.
+   */
+  const [stepToken, setStepToken] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,10 +153,18 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword }: PhoneAuthFlowProps
     setError(null);
     setIsSubmitting(true);
     try {
-      await verifyPassword(phone, password);
+      setStepToken(await verifyPassword(phone, password));
+      // Sent back here from the code step (the step token was refused): the
+      // code already requested is still good while the resend cooldown runs,
+      // and asking for another inside it would only be refused (409) — so go
+      // straight back to it, as the website does.
+      if (cooldown > 0) {
+        setStep("otp");
+        return;
+      }
       await sendCode();
     } catch (err) {
-      setError(errorMessage(err, t.auth.password.genericError));
+      setError(describeSendCodeError(err, t, t.auth.password.genericError));
     } finally {
       setIsSubmitting(false);
     }
@@ -141,7 +185,7 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword }: PhoneAuthFlowProps
     try {
       await sendCode();
     } catch (err) {
-      setError(errorMessage(err, t.auth.otp.genericError));
+      setError(describeSendCodeError(err, t, t.auth.otp.genericError));
     } finally {
       setIsSubmitting(false);
     }
@@ -154,7 +198,7 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword }: PhoneAuthFlowProps
     try {
       await sendCode();
     } catch (err) {
-      setError(errorMessage(err, t.auth.otp.genericError));
+      setError(describeSendCodeError(err, t, t.auth.otp.genericError));
     } finally {
       setIsSubmitting(false);
     }
@@ -168,10 +212,26 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword }: PhoneAuthFlowProps
     setError(null);
     setIsSubmitting(true);
     try {
-      await verifyOtp(phone, code, isNewAccount ? pendingPassword : undefined);
+      await verifyOtp(
+        phone,
+        code,
+        isNewAccount ? { password: pendingPassword } : { stepToken: stepToken ?? undefined },
+      );
       // No navigation call needed — RootNavigator switches to the
       // authenticated stack automatically once the user state is set.
     } catch (err) {
+      if (!isNewAccount && isStepTokenRefused(err)) {
+        // The proof of the password step expired (10 minutes) or the password
+        // changed meanwhile. The server refused BEFORE checking the code, so
+        // nothing was spent — back to the password step, with the reason. The
+        // typed code is kept: inside the cooldown the password step returns
+        // straight to it (see handleSubmitExistingPassword).
+        setStep("password");
+        setPassword("");
+        setStepToken(null);
+        setError(t.auth.password.stepExpired);
+        return;
+      }
       setError(errorMessage(err, t.auth.otp.genericError));
     } finally {
       setIsSubmitting(false);
@@ -184,6 +244,7 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword }: PhoneAuthFlowProps
     setPassword("");
     setConfirmPassword("");
     setPendingPassword("");
+    setStepToken(null);
     setCode("");
     setCooldown(0);
     if (cooldownInterval.current) clearInterval(cooldownInterval.current);
@@ -229,7 +290,7 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword }: PhoneAuthFlowProps
       // tear, and so this link gets a full-width row instead of sharing one.
       <AuthLink
         label={t.auth.password.forgotLink}
-        onPress={onForgotPassword}
+        onPress={() => onForgotPassword(phone)}
         disabled={isSubmitting}
         tone="primary"
       />
@@ -259,7 +320,12 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword }: PhoneAuthFlowProps
        * no numberOfLines so it is free to wrap.
        */}
       <View style={compact ? styles.headerBlockCompact : styles.headerBlock}>
-        <ThemedText variant="title">{step === "otp" ? t.auth.otp.title : subtitle}</ThemedText>
+        {/* A number the system does not know is signing UP, and the title
+            says so from the password step on — the phone step cannot know
+            yet, which is what the stub note under it is for. */}
+        <ThemedText variant="title">
+          {step === "otp" ? t.auth.otp.title : step === "password" && isNewAccount ? t.auth.signup.title : subtitle}
+        </ThemedText>
         {hint && <ThemedText variant="caption">{hint}</ThemedText>}
       </View>
 
@@ -348,7 +414,7 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword }: PhoneAuthFlowProps
               onSubmitEditing={handleCreatePassword}
             />
             <Button
-              title={t.auth.password.submit}
+              title={t.auth.password.createSubmit}
               onPress={handleCreatePassword}
               loading={isSubmitting}
               disabled={isSubmitting}

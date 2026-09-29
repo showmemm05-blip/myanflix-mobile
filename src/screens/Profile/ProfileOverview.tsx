@@ -153,8 +153,9 @@ export function ProfileOverviewScreen({ navigation }: Props) {
         </View>
 
         {/* Your name and your password are account attributes, so they live
-            here rather than in Settings — Settings is the list of things you
-            do with the APP, this screen is who you are. */}
+            here — this screen is who you are. Settings carries the same two
+            rows as a shortcut (owner's request, 2026-09-22); both open the
+            same sheets, so there is one behaviour to maintain. */}
         <View style={styles.group}>
           <SectionHeader title={t.profile.account} inset={false} icon="person-circle-outline" />
           <PressableScale onPress={() => setEditingProfile(true)} accessibilityLabel={t.profile.editProfile}>

@@ -3,8 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 /**
  * How long the field must sit still before a search request is allowed out.
  *
- * The knob for every surface that still debounces — today that is the books
- * catalogue and the web client, which share this value so they feel identical.
+ * The knob for every surface that still debounces — today the books catalogue,
+ * the actors list (ActorsList) and the web client, which share this value so
+ * they feel identical.
  *
  * The main search screen deliberately does NOT use this hook any more: its grid
  * re-queries only on a committed term, because the owner asked for the movies

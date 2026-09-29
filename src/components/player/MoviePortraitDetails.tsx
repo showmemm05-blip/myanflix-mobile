@@ -9,7 +9,8 @@ import { Synopsis } from "@/components/detail/Synopsis";
 import { InfoGrid } from "@/components/detail/InfoGrid";
 import { MovieRow } from "@/components/movie/MovieRow";
 import { CommentsSection } from "@/components/comments/CommentsSection";
-import { AGE_RATING_LABELS } from "@/components/search/SearchFilterSheet";
+import { KeyboardLiftScrollView } from "@/components/common/KeyboardLiftScrollView";
+import { AGE_RATING_LABELS } from "@/utils/ageRating";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { formatDuration } from "@/utils/format";
 import { theme } from "@/theme";
@@ -78,7 +79,7 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
   const facts: { label: string; value: string }[] = [];
   if (movie.director) facts.push({ label: t.movie.director, value: movie.director });
   if (movie.country) facts.push({ label: t.movie.country, value: movie.country });
-  // `?? movie.ageRating` mirrors SearchFilterSheet's own `?? facet.value`: a
+  // `?? movie.ageRating`, the fallback the label map documents: a
   // rating the label map does not know yet shows its raw code rather than an
   // empty value cell.
   if (movie.ageRating)
@@ -95,7 +96,7 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
        softwareKeyboardLayoutMode), so it takes no behavior, same as
        MovieDetails and AuthScreenShell. */
     <KeyboardAvoidingView style={styles.scroll} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView
+      <KeyboardLiftScrollView
         ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingBottom: bottomInset + theme.spacing.xl }]}
@@ -177,7 +178,7 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
         <View style={styles.comments}>
           <CommentsSection key={movie.id} movieId={movie.id} />
         </View>
-      </ScrollView>
+      </KeyboardLiftScrollView>
     </KeyboardAvoidingView>
   );
 });

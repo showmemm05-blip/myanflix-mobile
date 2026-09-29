@@ -6,8 +6,17 @@ export interface ActorListItem {
   id: string;
   name: string;
   imageUrl: string | null;
-  /** Counted from the join server-side, never cached. */
+  /**
+   * STANDALONE movies only (rows with no series), counted server-side — the
+   * same set GET /movies?actorIds= lists, so the caption and the grid agree.
+   * Episode credits used to inflate this; they count under `seriesCount` now.
+   */
   movieCount: number;
+  /**
+   * Distinct series the person appears in, on the show's own cast or on any
+   * episode's — what GET /series?actorIds= lists.
+   */
+  seriesCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -24,7 +33,13 @@ export const actorsApi = {
   searchActors(query: ActorQuery = {}, options: RequestSignalOptions = {}) {
     return apiClient.get<PaginatedResponse<ActorListItem>>("/actors", { params: query, ...options });
   },
-  // No `getActorById`: there is no actor detail screen, and the only actor UI
-  // in the app is the filter sheet's cast picker, which needs search alone.
-  // Restore it (and the service wrapper) when a detail screen lands.
+  /**
+   * GET /actors/:id — the same row shape as one item of the list above. Public
+   * (OptionalAuth), like the list; the actor page's filmography comes from the
+   * public catalogue query (`actorIds`), NOT from GET /actors/:id/movies, which
+   * requires login and has no paging.
+   */
+  getActor(id: string, options: RequestSignalOptions = {}) {
+    return apiClient.get<ActorListItem>(`/actors/${id}`, options);
+  },
 };

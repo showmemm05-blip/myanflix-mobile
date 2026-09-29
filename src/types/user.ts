@@ -1,5 +1,6 @@
 export type UserRole = "SUPER_ADMIN" | "ADMIN" | "USER";
-export type UserStatus = "ACTIVE" | "SUSPENDED" | "BANNED";
+/** CLOSED = the owner deleted the account (DELETE /users/me); it can never sign in again. */
+export type UserStatus = "ACTIVE" | "SUSPENDED" | "BANNED" | "CLOSED";
 
 /** Shape returned by GET /users/me. */
 export interface AppUser {
@@ -34,3 +35,11 @@ export interface AuthUser {
   username: string;
   role: UserRole;
 }
+
+/**
+ * What a one-time code is for — backend/src/auth/dto/request-otp.dto.ts
+ * OTP_REQUEST_PURPOSES. The server binds each code to its purpose: a sign-in
+ * code is refused by POST /auth/password/reset and a reset code by POST
+ * /auth/otp/verify. Omitted means "login".
+ */
+export type OtpPurpose = "login" | "password_reset";

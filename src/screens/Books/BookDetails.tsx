@@ -19,6 +19,7 @@ import { ThemedText } from "@/components/ui/ThemedText";
 import { TopBar } from "@/components/layout/TopBar";
 import { ChapterRow } from "@/components/books/ChapterRow";
 import { CommentsSection } from "@/components/comments/CommentsSection";
+import { KeyboardLiftScrollView } from "@/components/common/KeyboardLiftScrollView";
 import { LanguagePanel } from "@/components/books/LanguagePanel";
 import { containsMyanmar } from "@/components/books/RichText";
 import { ProgressTrack } from "@/components/common/ProgressTrack";
@@ -183,7 +184,12 @@ export function BookDetailsScreen({ route, navigation }: Props) {
   return (
     <View style={styles.container}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <KeyboardLiftScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          // Without this the first tap on "Post" only dismisses the keyboard.
+          keyboardShouldPersistTaps="handled"
+        >
           {/* -------- title band -------- */}
           <View style={styles.band}>
             {book.coverUrl && (
@@ -370,7 +376,7 @@ export function BookDetailsScreen({ route, navigation }: Props) {
               <CommentsSection bookId={bookId} />
             </View>
           </View>
-        </ScrollView>
+        </KeyboardLiftScrollView>
       </KeyboardAvoidingView>
 
       <TopBar transparent onBack={() => navigation.goBack()} backAccessibilityLabel={t.common.back} />

@@ -3,6 +3,7 @@ import { HomeScreen } from "@/screens/Home/Home";
 import { MovieDetailsScreen } from "@/screens/MovieDetails/MovieDetails";
 import { SeriesDetailsScreen } from "@/screens/SeriesDetails/SeriesDetails";
 import { CategoryDetailScreen } from "@/screens/Categories/CategoryDetail";
+import { ActorDetailsScreen } from "@/screens/Actors/ActorDetails";
 import { SubscribeScreen } from "@/screens/Subscribe/Subscribe";
 import { modalScreenOptions, stackScreenOptions } from "@/navigation/options";
 import type { HomeStackParamList } from "@/navigation/types";
@@ -15,7 +16,7 @@ export function HomeStackNavigator() {
       {/* Home stays first, so it is this stack's index 0 and `goBack()` from a
           detail page lands here rather than leaving the tab. */}
       <Stack.Screen name="Home" component={HomeScreen} />
-      {/* THE MEDIA DETAIL GROUP. These same four routes are registered
+      {/* THE MEDIA DETAIL GROUP. These same five routes are registered
           identically in SearchStackNavigator and LibraryStackNavigator, and the
           duplication is deliberate: a detail page belongs to the tab that
           opened it. While they lived only here, Search/Favorites/Watch history
@@ -31,6 +32,7 @@ export function HomeStackNavigator() {
       <Stack.Screen name="MovieDetails" component={MovieDetailsScreen} />
       <Stack.Screen name="SeriesDetails" component={SeriesDetailsScreen} />
       <Stack.Screen name="CategoryDetail" component={CategoryDetailScreen} />
+      <Stack.Screen name="ActorDetails" component={ActorDetailsScreen} />
       <Stack.Screen name="Subscribe" component={SubscribeScreen} options={modalScreenOptions} />
     </Stack.Navigator>
   );

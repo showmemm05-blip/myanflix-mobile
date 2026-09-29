@@ -17,6 +17,8 @@ export const en = {
     all: "All",
     showMore: "Show more",
     showLess: "Show less",
+    /** A request that got no answer (offline, timeout, server down). */
+    networkError: "Can't reach MyanFlix. Check your connection and try again.",
   },
   nav: {
     home: "Home",
@@ -28,6 +30,10 @@ export const en = {
   auth: {
     login: {
       subtitle: "Log in to continue",
+    },
+    signup: {
+      /** Header from the password step on, once the number is known to be new. */
+      title: "Sign up to continue",
     },
     phone: {
       label: "Phone number",
@@ -54,6 +60,8 @@ export const en = {
       placeholder: "Password",
       confirmPlaceholder: "Confirm password",
       submit: "Continue",
+      /** The new-account variant of `submit` — the button names the outcome. */
+      createSubmit: "Sign up",
       forgotLink: "Forgot password?",
       validationError: "Password is required.",
       createValidationError: "Password must be at least 8 characters.",
@@ -68,6 +76,11 @@ export const en = {
       changePhone: "Change phone number",
       /** Ticket stub, new-account branch. Agrees with createValidationError. */
       stubNote: "Use at least 8 characters. You'll need this password next time you sign in.",
+      /**
+       * The code step sent the user back here: the server's proof of the
+       * password step lasts 10 minutes and ends if the password changes.
+       */
+      stepExpired: "Please enter your password again to continue.",
     },
     otp: {
       title: "Enter the code",
@@ -91,6 +104,12 @@ export const en = {
       resendCountdown: "Request again in {n}s",
       validationError: "Please enter the 6-digit code.",
       genericError: "Invalid or expired code. Please try again.",
+      /**
+       * POST /auth/otp/request's own 409s, for sign-in and reset alike: 60 s
+       * between codes of one kind, 8 codes per number per hour of both kinds.
+       */
+      waitForCode: "Please wait a minute before requesting another code.",
+      tooManyCodes: "Too many codes requested for this number. Please try again later.",
     },
     /**
      * The OTP channel picker. UI ONLY — the choice is remembered on the device
@@ -114,12 +133,39 @@ export const en = {
       /** Reserved: no caller yet. Occupies the same slot as `pending`. */
       unavailable: "{channel} isn't available for this number yet — use SMS.",
     },
+    /**
+     * Reset with a one-time code, then sign in with the new password. Same
+     * delivery wording rule as otp.subtitle: a code is "requested", never
+     * "sent" — nothing is delivered on any channel yet.
+     */
     forgotPassword: {
       title: "Forgot your password?",
-      /* Dropped "we send you" for the same reason as otp.subtitle: fixing the
-         delivery claim on the login screen and leaving it on the screen one
-         tap away would just make the app contradict itself. */
-      body: "Sign in with your phone number and a one-time code — no password needed. If you still need help, please contact our support team.",
+      phoneHint:
+        "Enter your account's phone number. A 6-digit code will be requested for it, then you can choose a new password.",
+      requestCode: "Request code",
+      resetTitle: "Choose a new password",
+      newPasswordLabel: "New password",
+      confirmPasswordLabel: "Confirm new password",
+      submit: "Reset password",
+      successTitle: "Password changed",
+      /** A reset signs out every session and opens none. A reset code does not hold up the sign-in code. */
+      successBody: "You've been signed out on every device. Sign in with your new password.",
+      backToSignIn: "Back to sign in",
+      noAccount: "No account uses this phone number.",
+      inactive: "This account is no longer active.",
+      tooManyAttempts: "Too many wrong codes. Request a new code and try again.",
+      rateLimited: "Too many tries. Please wait a moment and try again.",
+      passwordTooLong: "Password must be 72 characters or fewer.",
+      genericError: "Couldn't reset your password. Please try again.",
+    },
+    /**
+     * The boot found a saved session but could not reach the server to check
+     * it. The session is kept — this is not a sign-out (see SessionOffline).
+     */
+    offline: {
+      title: "Can't reach MyanFlix",
+      body: "You're still signed in. Check your internet connection, then try again.",
+      stillOffline: "Still can't connect. Check your connection and try again.",
     },
   },
   /**
@@ -238,6 +284,8 @@ export const en = {
     similarMovies: "Similar Movies",
     synopsis: "Synopsis",
     details: "Details",
+    /** Heading above the round-photo cast row on the movie page. */
+    cast: "Cast",
     /** Nullable metadata rows under the player — only shown once the admin has backfilled them. */
     director: "Director",
     country: "Country",
@@ -554,6 +602,28 @@ export const en = {
      * existing session alone.
      */
     passwordUpdatedBody: "You're still signed in on this device.",
+    /* ---- deleting the account (DELETE /users/me) ---- */
+    deleteAccount: "Delete account",
+    deleteAccountEntrySubtitle: "Close your account and remove your personal details",
+    deleteAccountSubtitle: "This can't be undone.",
+    deleteAccountPointData: "Your name, phone number and photo are removed, and you're signed out on every device.",
+    deleteAccountPointRecords: "Your deposit, withdrawal and purchase records are kept for bookkeeping.",
+    deleteAccountPointMoney:
+      "Your wallet must be empty first, and no deposit or withdrawal can be waiting for review.",
+    deleteAccountPointPhone: "You can sign up again later with the same phone number, as a new account.",
+    deleteAccountButton: "Delete my account",
+    deleteAccountConfirmTitle: "Delete your account?",
+    deleteAccountConfirmBody: "Your account will be closed for good. This can't be undone.",
+    deleteAccountConfirmAction: "Delete",
+    deleteAccountBalanceError: "Your wallet still has money in it. Withdraw or spend it before deleting your account.",
+    deleteAccountPendingDepositError:
+      "You have a deposit waiting for review. Wait until it is approved or rejected, then try again.",
+    deleteAccountPendingWithdrawalError:
+      "You have a withdrawal waiting for review. Wait until it is approved or rejected, then try again.",
+    deleteAccountStaffError: "Staff accounts can't be deleted from the app.",
+    deleteAccountFailed: "Couldn't delete your account. Please try again.",
+    deleteAccountDoneTitle: "Account deleted",
+    deleteAccountDoneBody: "Your account is closed and you've been signed out.",
   },
   search: {
     /**
@@ -565,7 +635,10 @@ export const en = {
     placeholderMovies: "Search movies…",
     placeholderSeries: "Search series…",
     placeholderBooks: "Search books…",
-    noResults: "No results found",
+    /** The actors list searches names, so its field must say so rather than promising movies. */
+    placeholderPeople: "Search people…",
+    /** Its books twin — the authors list searches author names. */
+    placeholderAuthors: "Search authors…",
     filterGenre: "Genre",
     filterLanguage: "Language",
     filterYear: "Year",
@@ -584,14 +657,8 @@ export const en = {
     booksSignedOutTitle: "Sign in to read books",
     booksSignedOutBody: "The library is for members. Sign in or create an account to browse the shelf.",
     filters: "Filters",
-    filterAccess: "Access",
-    accessAll: "All",
-    accessFree: "Free",
-    accessSubscription: "Premium",
-    recommendedRow: "Recommended for You",
-    popularRow: "Popular",
-    seriesRow: "Series",
-    latestRow: "Latest Releases",
+    /* The All tab's poster rails — the Movies and Series sections above them
+       are list cards under the plain tab nouns (`movies` / `series`). */
     /** The books shelf on the All tab — same wording the website's shelf uses. */
     newBooksRow: "New on the shelf",
     recent: "Recent searches",
@@ -603,17 +670,36 @@ export const en = {
         what tells the user their text is a question waiting to be asked. */
     pendingSearch: "Tap to see results for “{term}”",
     resultsCount: "{n} results",
-    /* ---- results band under the search field ---- */
-    /** Kicker above the results heading. */
-    resultsTitle: "Results",
-    resultsForTerm: "Results for “{term}”",
-    /** Match counts — always the BACKEND total, never however many pages loaded. */
-    resultsFoundMovies: "{n} movies found",
-    resultsFoundMoviesOne: "1 movie found",
-    resultsFoundSeries: "{n} series found",
-    resultsFoundSeriesOne: "1 series found",
-    resultsFoundBooks: "{n} books found",
-    resultsFoundBooksOne: "1 book found",
+    /* ---- results header row (count left, filter button right) ----
+       Every count is the BACKEND total, never however many pages loaded. With
+       a term committed the line names it — the list is frozen while the user
+       types, so this is what says which question the rows below answer. */
+    resultsForTermCount: "{n} results for “{term}”",
+    resultsForTermCountOne: "1 result for “{term}”",
+    /** Idle counts — the tab's own noun, so "12 movies" rather than "12 results". */
+    countMovies: "{n} movies",
+    countMoviesOne: "1 movie",
+    countSeries: "{n} series",
+    countSeriesOne: "1 series",
+    countBooks: "{n} books",
+    countBooksOne: "1 book",
+    /* The actors list's count line. It carries its own "for “term”" pair
+       rather than borrowing the generic resultsForTermCount, which says
+       "results" — a person is not a result. */
+    countPeople: "{n} people",
+    countPeopleOne: "1 person",
+    countPeopleForTerm: "{n} people for “{term}”",
+    countPeopleForTermOne: "1 person for “{term}”",
+    /* The authors list's count line — the same four shapes, its own noun. */
+    countAuthors: "{n} authors",
+    countAuthorsOne: "1 author",
+    countAuthorsForTerm: "{n} authors for “{term}”",
+    countAuthorsForTermOne: "1 author for “{term}”",
+    /* ---- list cards ---- */
+    /** The movie row's pill. Plays when the viewer has access, otherwise opens the details page. */
+    watchNow: "Watch Now",
+    /** The series row's pill — an episode has to be picked on the details page first. */
+    view: "View",
     /* ---- states ---- */
     noResultsTitle: "No matches",
     noResultsBody: "Nothing matched “{term}”. Try a different spelling, or remove a filter.",
@@ -621,6 +707,17 @@ export const en = {
     idleTitle: "Find something to watch",
     idleBody: "Search by title, actor or director.",
     errorTitle: "Couldn't load results",
+    /* The actors list's two empties, deliberately different questions: an
+       EMPTY catalogue (no term) versus a term nobody matched. Only the
+       second one offers an action, because only it has something to undo. */
+    peopleEmptyTitle: "No people yet",
+    peopleEmptyBody: "Nobody has been added to the catalogue yet. Cast members show up here as films are added.",
+    noPeopleBody: "No one matched “{term}”. Try a different spelling, or clear the search.",
+    /* The authors list's two empties — the same pair of questions as above,
+       about the shelf instead of the cast. */
+    authorsEmptyTitle: "No authors yet",
+    authorsEmptyBody: "Nobody has been added to the library yet. Authors show up here as books are added.",
+    noAuthorsBody: "No author matched “{term}”. Try a different spelling, or clear the search.",
     /* ---- suggestion panel under the field ----
        One panel per catalogue, so the label and the empty line name the kind
        the rows actually hold. The unsuffixed pair is the MOVIES wording (and
@@ -641,11 +738,11 @@ export const en = {
     /* ---- field ---- */
     fieldLabel: "Search the catalogue",
     clearField: "Clear search",
-    clearAll: "Clear all",
     /** Filter sheet footer — {n} is the backend total for the filtered query. */
     showResults: "Show {n} results",
     showResultsOne: "Show 1 result",
-    removeFilter: "Remove: {label}",
+    /** The footer button before the first count lands, or when it fails. */
+    showResultsUnknown: "Show results",
     filterSort: "Sort by",
     sortRelevance: "Relevance",
     sortRecentlyAdded: "Recently added",
@@ -657,20 +754,54 @@ export const en = {
     /** Honest label for the frozen pre-subscription purchase table — never "Most popular". */
     sortMostPurchased: "Most purchased",
     sortMostPurchasedHint: "Based on purchases from the early-access era",
-    filterActor: "Cast",
-    actorSearchPlaceholder: "Search actors…",
-    filterDirector: "Director",
-    filterCountry: "Country",
-    filterAgeRating: "Age rating",
     filterRating: "Rating",
     filterDuration: "Duration",
     durationShort: "Under 90 min",
     durationMedium: "90–120 min",
     durationLong: "Over 120 min",
-    durationCustom: "Custom",
     yearPresetThis: "This year",
     yearPresetLast5: "Last 5 years",
     yearPresetOlder: "1999 & older",
+    /* ---- the ONE filter control (results header) and the SearchFilters page ---- */
+    /** The results header's button — "Filter · 2" once anything is active. */
+    filterButton: "Filter",
+    /** Three surfaces, one word: the actor rail's heading, the People button
+        in the results header, and the title of the actors list it opens. */
+    people: "People",
+    /** The same button on the BOOKS tab, and the title of the list it opens —
+        a book has an author, not a cast. */
+    authors: "Authors",
+    /** The link beside the filter summary line under the tabs. */
+    clearFilters: "Clear",
+    /** The filters page's secondary footer button — puts the draft back to defaults. */
+    reset: "Reset",
+    /** Rating floor chips: Any / 7+ / 8+ / 9+. */
+    ratingAny: "Any",
+    ratingFloor: "{n}+",
+    /** The first duration chip — no runtime bound. */
+    durationAny: "Any",
+  },
+  actors: {
+    /**
+     * The credits caption under a name — on the actor page and in every
+     * ActorsList cell — assembled by utils/actorCredits.ts from the backend
+     * totals, never the rows loaded: "1 movie · 2 series", a zero part left
+     * out, `noTitles` when both are zero.
+     */
+    moviesCount: "{n} movies",
+    moviesCountOne: "1 movie",
+    seriesCount: "{n} series",
+    seriesCountOne: "1 series",
+    /** Between the two parts of the caption when both are present. */
+    creditsJoiner: " · ",
+    noTitles: "Nothing here yet",
+  },
+  /** The actors block's twin, for the authors list and the author page. */
+  authors: {
+    /** The caption under the name on the author page, and each cell's caption in the list. */
+    booksCount: "{n} books",
+    booksCountOne: "1 book",
+    noBooks: "No books yet",
   },
   settings: {
     preferences: "Preferences",
@@ -679,6 +810,8 @@ export const en = {
     downloads: "Downloads & Cache",
     downloadsComingSoon: "Offline downloads aren't available yet.",
     support: "Support",
+    privacyPolicy: "Privacy policy",
+    privacyPolicySubtitle: "How MyanFlix handles your data",
   },
   feedback: {
     entryTitle: "Send feedback",
@@ -750,12 +883,24 @@ export const en = {
     withdrawSubmit: "Submit Withdrawal",
     withdrawFailure: "Couldn't submit withdrawal. Please try again.",
     withdrawSuccessTitle: "Withdrawal requested",
-    withdrawSuccessBody: "Your withdrawal is pending admin approval — your balance updates only once it's approved.",
+    /** Since the C-4 change the amount leaves the balance at request time and comes back on a reject. */
+    withdrawSuccessBody:
+      "The amount has been set aside from your balance while an admin reviews your request. If it's rejected, the money goes back to your wallet.",
     withdrawEmpty: "No withdrawals yet",
     withdrawStatus: {
       pending: "Pending",
       approved: "Approved",
       rejected: "Rejected",
+    },
+    /**
+     * The ledger row's chip (components/wallet/TransactionRow.tsx). Settled
+     * rows carry none. "refunded" is a withdrawal hold whose request was
+     * rejected: the money came back as the Refund row beside it.
+     */
+    transactionStatus: {
+      pending: "Pending",
+      failed: "Failed",
+      refunded: "Refunded",
     },
     depositTitle: "Deposit Funds",
     depositAmount: "Amount (Ks)",

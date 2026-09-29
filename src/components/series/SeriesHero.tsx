@@ -22,6 +22,8 @@ interface Props {
   accessType?: AccessType | null;
   releaseYear?: number | null;
   language?: string | null;
+  /** 0 or null = not rated, and the star pill is dropped — same rule as DetailHero. */
+  rating?: number | null;
   /**
    * ONE already-translated sentence ("{s} seasons · {e} episodes") — built by
    * the screen from t.series.seasonSummary once BOTH counts are known, null
@@ -40,7 +42,7 @@ function useHeroHeight(): number {
  * full-bleed backdrop dissolving into the page, with the seasons chip, display
  * title and meta line overlapping the dissolve — the web series page's IA.
  */
-export function SeriesHero({ title, backdropUrl, accessType, releaseYear, language, seasonSummary }: Props) {
+export function SeriesHero({ title, backdropUrl, accessType, releaseYear, language, rating, seasonSummary }: Props) {
   const heroHeight = useHeroHeight();
   const metaLine = [releaseYear, language]
     .filter((part) => part !== null && part !== undefined && `${part}`.length > 0)
@@ -81,6 +83,15 @@ export function SeriesHero({ title, backdropUrl, accessType, releaseYear, langua
         </ThemedText>
 
         <View style={styles.metaRow}>
+          {/* The same star pill DetailHero gives a film, so a show reads the same way. */}
+          {typeof rating === "number" && rating > 0 && (
+            <View style={styles.rating}>
+              <Ionicons name="star" size={12} color={theme.colors.premium} />
+              <ThemedText variant="caption" weight="semibold" tabular style={styles.ratingText}>
+                {rating.toFixed(1)}
+              </ThemedText>
+            </View>
+          )}
           {metaLine.length > 0 && (
             <ThemedText variant="caption" numberOfLines={1} tabular style={styles.meta}>
               {metaLine}
@@ -125,5 +136,17 @@ const styles = StyleSheet.create({
   },
   title: { textShadowColor: theme.colors.scrim, textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 12 },
   metaRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, flexWrap: "wrap" },
+  rating: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.colors.premiumSoft,
+    borderWidth: 1,
+    borderColor: theme.colors.premium + "3D",
+  },
+  ratingText: { color: theme.colors.premium },
   meta: { flexShrink: 1 },
 });

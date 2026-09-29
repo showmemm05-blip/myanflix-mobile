@@ -4,9 +4,11 @@ import { View, StyleSheet } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Surface } from "@/components/ui/Surface";
+import { StatusChip, type ChipStatus } from "@/components/wallet/StatusChip";
+import { useLanguage } from "@/localization/LanguageProvider";
 import { formatKyat } from "@/utils/currency";
 import { theme, withAlpha } from "@/theme";
-import type { TransactionType } from "@/types/wallet";
+import type { TransactionStatus, TransactionType } from "@/types/wallet";
 
 const POSITIVE_TYPES = new Set(["DEPOSIT", "REFUND", "ADJUSTMENT_CREDIT"]);
 const ICONS: Record<TransactionType, keyof typeof Ionicons.glyphMap> = {
@@ -34,19 +36,45 @@ const TONES: Record<TransactionType, string> = {
   ADJUSTMENT_DEBIT: theme.colors.warning,
 };
 
+type RowChip = Extract<ChipStatus, "PENDING" | "FAILED" | "REFUNDED">;
+
+/**
+ * The chip a row carries, or null for an ordinary settled (COMPLETED) one.
+ *
+ * A withdrawal holds its money the moment it is requested (a PENDING row);
+ * rejecting it marks that row FAILED and returns the money as a separate
+ * Refund row. Without a chip that pair read as two real movements, so the
+ * held row says what happened to it: Pending while it waits, Refunded once
+ * the money is back. FAILED on any other type is plain Failed, and a status
+ * this build does not know gets no chip rather than a wrong one.
+ */
+function chipFor(type: TransactionType, status: TransactionStatus): RowChip | null {
+  if (status === "PENDING") return "PENDING";
+  if (status === "FAILED") return type === "WITHDRAWAL" ? "REFUNDED" : "FAILED";
+  return null;
+}
+
 interface Props {
   label: string;
   date: string;
   amount: number;
   type: TransactionType;
+  status: TransactionStatus;
 }
 
-export function TransactionRow({ label, date, amount, type }: Props) {
+export function TransactionRow({ label, date, amount, type, status }: Props) {
+  const { t } = useLanguage();
   const isPositive = POSITIVE_TYPES.has(type);
   // The server's enum can grow past an installed binary; an unknown type
   // stays a readable, neutral row instead of an "undefined1F" colour.
   const tone = TONES[type] ?? theme.colors.textMuted;
   const icon = ICONS[type] ?? "swap-horizontal";
+  const chip = chipFor(type, status);
+  const chipLabels: Record<RowChip, string> = {
+    PENDING: t.wallet.transactionStatus.pending,
+    FAILED: t.wallet.transactionStatus.failed,
+    REFUNDED: t.wallet.transactionStatus.refunded,
+  };
 
   return (
     <Surface radius="xl" style={styles.row}>
@@ -66,16 +94,19 @@ export function TransactionRow({ label, date, amount, type }: Props) {
           {new Date(date).toLocaleDateString()}
         </ThemedText>
       </View>
-      <ThemedText
-        variant="body"
-        weight="bold"
-        tabular
-        numberOfLines={1}
-        style={isPositive ? styles.positive : styles.negative}
-      >
-        {isPositive ? "+" : "-"}
-        {formatKyat(amount)}
-      </ThemedText>
+      <View style={styles.right}>
+        <ThemedText
+          variant="body"
+          weight="bold"
+          tabular
+          numberOfLines={1}
+          style={isPositive ? styles.positive : styles.negative}
+        >
+          {isPositive ? "+" : "-"}
+          {formatKyat(amount)}
+        </ThemedText>
+        {chip ? <StatusChip status={chip} label={chipLabels[chip]} /> : null}
+      </View>
     </Surface>
   );
 }
@@ -98,6 +129,7 @@ const styles = StyleSheet.create({
   },
   info: { flex: 1, gap: 2 },
   date: { color: theme.colors.textFaint },
+  right: { alignItems: "flex-end", gap: 6 },
   positive: { color: theme.colors.finance },
   negative: { color: theme.colors.text },
 });

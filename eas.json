@@ -1,0 +1,43 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "distribution": "internal",
+      "android": {
+        "gradleCommand": ":app:assembleDebug"
+      },
+      "ios": {
+        "buildConfiguration": "Debug"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "http://localhost:3001/api",
+        "EXPO_PUBLIC_WEBSITE_URL": "http://localhost:3003"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "MYANFLIX_RELEASE_BUILD": "1",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.REPLACE-WITH-MYANFLIX-DOMAIN.invalid/api",
+        "EXPO_PUBLIC_WEBSITE_URL": "https://REPLACE-WITH-MYANFLIX-DOMAIN.invalid"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "MYANFLIX_RELEASE_BUILD": "1",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.REPLACE-WITH-MYANFLIX-DOMAIN.invalid/api",
+        "EXPO_PUBLIC_WEBSITE_URL": "https://REPLACE-WITH-MYANFLIX-DOMAIN.invalid"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

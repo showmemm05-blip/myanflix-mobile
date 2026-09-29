@@ -8,10 +8,12 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.myanflix.mobile"
+      "bundleIdentifier": "com.myanflix.mobile",
+      "buildNumber": "1"
     },
     "android": {
       "package": "com.myanflix.mobile",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#0A0A0A",
         "foregroundImage": "./assets/android-icon-foreground.png",

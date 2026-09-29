@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
@@ -39,7 +39,12 @@ export function DepositSheet({ visible, onClose }: Props) {
   const { t } = useLanguage();
   const createDeposit = useCreateDeposit();
   const { data: financeSettings } = useFinanceSettings();
-  const { data: accounts, isLoading: accountsLoading } = usePaymentAccounts();
+  const { data: accounts, isLoading: accountsLoading, refetch: refetchAccounts } = usePaymentAccounts();
+  // The sheet stays mounted behind `visible`, so the query never remounts:
+  // ask for a fresh list on every open instead (the hook's staleTime is 0).
+  useEffect(() => {
+    if (visible) void refetchAccounts();
+  }, [visible, refetchAccounts]);
   const { data: types } = usePaymentAccountTypes();
   const [amount, setAmount] = useState(DEFAULT_AMOUNT);
   const [selectedType, setSelectedType] = useState<string | null>(null);
