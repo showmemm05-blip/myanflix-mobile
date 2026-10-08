@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, StatusBar, Pressable, Share, View, StyleSheet, ActivityIndicator } from "react-native";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { BackHandler, StatusBar, Pressable, Share, View, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-// Deep import, not the "@expo/vector-icons" root: that barrel statically
-// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
-import Ionicons from "@expo/vector-icons/Ionicons";
+import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useKeepAwake } from "expo-keep-awake";
 import { useQueryClient } from "@tanstack/react-query";
@@ -11,19 +9,23 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { SubtitleTrack } from "expo-video";
 import { VideoPlayer, type VideoPlayerHandle } from "@/video/VideoPlayer";
 import { PlayerControls } from "@/components/player/PlayerControls";
-import { SpeedSheet } from "@/components/player/SpeedSheet";
-import { QualitySheet } from "@/components/player/QualitySheet";
-import { SubtitleSheet } from "@/components/player/SubtitleSheet";
+import { PlayerSettingsSheet, type SettingsTab } from "@/components/player/PlayerSettingsSheet";
 import { SubtitleOverlay } from "@/components/player/SubtitleOverlay";
 import { EpisodeSheet } from "@/components/player/EpisodeSheet";
 import { LockedOverlay } from "@/components/player/LockedOverlay";
 import { EpisodesSection } from "@/components/player/EpisodesSection";
 import { MoviePortraitDetails } from "@/components/player/MoviePortraitDetails";
+import { BufferingDots } from "@/components/player/BufferingDots";
+import { PlayerGlyph } from "@/components/player/PlayerGlyph";
+import { PlayerLoading } from "@/components/player/PlayerLoading";
+import { SeekFlash } from "@/components/player/SeekFlash";
+import { describeEpisode, episodeTag, findNextEpisode } from "@/components/player/episodeOrder";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Button } from "@/components/ui/Button";
 import { TopBar } from "@/components/layout/TopBar";
 import { useResumePosition, useStreamInfo } from "@/hooks/useVideo";
 import { useMovie, useMovies } from "@/hooks/useMovies";
+import { usePlayerEpisodes } from "@/hooks/useSeries";
 import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
 import { useSubscriptionStatus } from "@/hooks/useSubscription";
 import { useWatchProgressReporter } from "@/video/useWatchProgressReporter";
@@ -44,6 +46,15 @@ import { theme } from "@/theme";
 import type { RootStackParamList } from "@/navigation/types";
 import type { Movie } from "@/types/movie";
 import type { StreamSubtitle } from "@/types/video";
+
+type VideoProgress = { currentTime: number; bufferedSeconds: number };
+type VideoLoad = { durationSeconds: number };
+/** The latest-render handlers behind Player's stable video callbacks. */
+interface VideoEvents {
+  onProgress: (data: VideoProgress) => void;
+  onLoad: (data: VideoLoad) => void;
+  onError: (message: string | undefined) => void;
+}
 
 type Props = NativeStackScreenProps<RootStackParamList, "Player">;
 
@@ -116,10 +127,25 @@ export function PlayerScreen({ route, navigation }: Props) {
   const [muted, setMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [speedSheetOpen, setSpeedSheetOpen] = useState(false);
-  const [qualitySheetOpen, setQualitySheetOpen] = useState(false);
-  const [subtitleSheetOpen, setSubtitleSheetOpen] = useState(false);
+  /**
+   * Which tab of the settings panel is open, or null when it is closed. Speed,
+   * quality and subtitles used to be three sheets with a flag each; they are
+   * one tabbed panel now (PlayerSettings.dc.html), opened on the tab the
+   * control that was tapped stands for.
+   */
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [episodeSheetOpen, setEpisodeSheetOpen] = useState(false);
+  /**
+   * How far up from the stage's bottom the control bar reaches, as the bar
+   * measured itself — the caption lifts clear of exactly that. Only a layout
+   * change moves it, never the playback tick. One value PER LAYOUT: the
+   * portrait bar and the (wrapping) fullscreen bar differ, and a single value
+   * carried the old layout's height into the first frames after a toggle, so
+   * the caption jumped. A layout not yet measured reads 0, which is
+   * SubtitleOverlay's documented fallback rule.
+   */
+  const [controlsClearance, setControlsClearance] = useState({ inline: 0, full: 0 });
+  const reduceMotion = useReducedMotion();
   const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
   /**
    * The stage's measured size, which the caption overlay needs because the web
@@ -183,6 +209,12 @@ export function PlayerScreen({ route, navigation }: Props) {
   const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { updatePosition, reportNow } = useWatchProgressReporter(movieId, duration);
+
+  /** Stable, and a no-op for an unchanged size — the bar reports on every layout. */
+  const handleControlsClearance = useCallback((clearance: number, fullscreen: boolean) => {
+    const key = fullscreen ? "full" : "inline";
+    setControlsClearance((current) => (current[key] === clearance ? current : { ...current, [key]: clearance }));
+  }, []);
 
   const scheduleHide = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -756,15 +788,24 @@ export function PlayerScreen({ route, navigation }: Props) {
    * whatever that tab was showing. Watch position is still flushed by
    * useWatchProgressReporter's unmount effect.
    *
-   * Subscribe is pushed on the HOME stack specifically, so a locked title
-   * opened from the Media or Library tab finishes on Home rather than back on
-   * its own tab. Accepted rather than missed: the alternative is registering
-   * Subscribe on the root stack, and that one instance would then lose the
-   * floating tab bar it is padded for (theme.layout.tabBarClearance) — a
-   * visible regression to fix an edge of a history bug.
+   * Where Subscribe opens depends on what is under the player. Opened from a
+   * page reached through Profile (the root "Profile" stack, above the tabs),
+   * it is pushed on THAT stack, so Back returns to Profile's page instead of
+   * dropping the viewer on Home (owner, 2026-10-07: Profile is not a tab).
+   * Otherwise it is pushed on the HOME stack, so a locked title opened from
+   * the Media tab finishes on Home rather than back where it was opened —
+   * accepted: registering Subscribe on the root stack would lose the floating
+   * tab bar it is padded for (theme.layout.tabBarClearance).
    */
-  const handleSubscribe = () =>
-    navigation.popTo("Main", { screen: "HomeTab", params: { screen: "Subscribe" } });
+  const openedFromProfile = useCallback(() => {
+    const { routes } = navigation.getState();
+    const at = routes.findIndex((r) => r.key === route.key);
+    return at > 0 && routes[at - 1]?.name === "Profile";
+  }, [navigation, route.key]);
+  const handleSubscribe = () => {
+    if (openedFromProfile()) navigation.popTo("Profile", { screen: "Subscribe" });
+    else navigation.popTo("Main", { screen: "HomeTab", params: { screen: "Subscribe" } });
+  };
 
   /**
    * Whether this sitting has ever had a picture. Until it has, waiting is
@@ -967,18 +1008,46 @@ export function PlayerScreen({ route, navigation }: Props) {
       if (!hasAccess(next.accessType, isSubscribed) || next.status !== "PUBLISHED") {
         // popTo, not navigate: the same reasoning as handleSubscribe above —
         // from this root modal, navigate("Main") would push a second tab
-        // shell over a video that keeps playing underneath.
-        navigation.popTo("Main", {
-          screen: "HomeTab",
-          params: { screen: "MovieDetails", params: { movieId: next.id } },
-        });
+        // shell over a video that keeps playing underneath. Like Subscribe,
+        // it lands on Profile's stack when the player was opened from there.
+        if (openedFromProfile()) {
+          navigation.popTo("Profile", { screen: "MovieDetails", params: { movieId: next.id } });
+        } else {
+          navigation.popTo("Main", {
+            screen: "HomeTab",
+            params: { screen: "MovieDetails", params: { movieId: next.id } },
+          });
+        }
         return;
       }
       queryClient.setQueryData<Movie>(["movie", next.id], (current) => current ?? next);
       switchTitle(next.id);
     },
-    [movieId, isSubscribed, navigation, queryClient, switchTitle],
+    [movieId, isSubscribed, navigation, queryClient, switchTitle, openedFromProfile],
   );
+
+  /**
+   * NEXT EPISODE (owner decision 2026-10-02). The episode after the one
+   * playing, in the order the episode list already returns — the same query
+   * and cache the rail reads, so no request of its own — played through the
+   * very handler a tap on the rail uses: reportNow, the in-place swap, the
+   * route kept in step. Null on the last episode, for an episode the list does
+   * not carry, and for every film (no series, the query never runs), which is
+   * what hides the control.
+   */
+  const playingSeriesId = loadedSeriesId ?? sessionSeriesId;
+  const playerEpisodesQuery = usePlayerEpisodes(playingSeriesId ?? undefined);
+  const nextEpisode = useMemo(
+    () => (playingSeriesId ? findNextEpisode(playerEpisodesQuery.data?.seasons, movieId) : null),
+    [playingSeriesId, playerEpisodesQuery.data, movieId],
+  );
+  const nextEpisodeId = nextEpisode?.episode.id ?? null;
+  const handleNextEpisode = useCallback(() => {
+    if (nextEpisodeId) handleSelectEpisode(nextEpisodeId);
+  }, [nextEpisodeId, handleSelectEpisode]);
+  const nextEpisodeLabel = nextEpisode
+    ? t.player.nextEpisodeLabel.replace("{title}", describeEpisode(nextEpisode, t.series.episodeFallbackTitle))
+    : undefined;
 
   useEffect(() => {
     if (routeMovieId === routeEpisodeRef.current) return;
@@ -1038,6 +1107,87 @@ export function PlayerScreen({ route, navigation }: Props) {
   };
 
   /**
+   * The video's three event handlers, kept STABLE across renders. This screen
+   * re-renders on every playback tick (4×/s); inline arrows gave VideoPlayer
+   * new props each time, so it re-rendered with it. These wrappers never
+   * change and call whatever the latest COMMITTED render put in
+   * `videoEventsRef` (the layout effect below) — so the handlers still see
+   * current state, exactly as the inline arrows did. Native events only
+   * arrive after a render has committed, so the ref is always current.
+   */
+  const videoEventsRef = useRef<VideoEvents | null>(null);
+  const handleVideoProgress = useCallback((data: VideoProgress) => videoEventsRef.current?.onProgress(data), []);
+  const handleVideoLoad = useCallback((data: VideoLoad) => videoEventsRef.current?.onLoad(data), []);
+  const handleVideoError = useCallback((message: string | undefined) => videoEventsRef.current?.onError(message), []);
+  const closeEpisodeSheet = useCallback(() => setEpisodeSheetOpen(false), []);
+
+  /**
+   * Null only while an episode swap waits for its stream: the stage, and every
+   * layer over it, stays mounted with no video in it rather than the screen
+   * going away. The old episode's player is gone by then — nothing plays under
+   * the spinner.
+   */
+  const sourceUrl = !resumeSettled
+    ? // Held back until the resume lookup answers — see "RESUME" above. The
+      // buffering treatment covers the wait, exactly as it covers a swap.
+      null
+    : (pinnedPlaylistUrl ?? (streamQuery.data?.status === "ready" ? streamQuery.data.playlistUrl : null));
+
+  // The bodies behind the stable handlers above. Set after commit, never
+  // during render, so a render React throws away cannot leave its handlers
+  // here. No dependency list: every committed render refreshes them.
+  useLayoutEffect(() => {
+    videoEventsRef.current = {
+      onProgress: ({ currentTime, bufferedSeconds }) => {
+        // A player rebuilt for a quality switch ticks 0:00 before it has
+        // been seeked back. Letting those through would rewind the scrub
+        // bar and the caption clock to the start — and, worse, write a
+        // zero into the watch-progress reporter for the film being
+        // watched. The gate closes at the switch and reopens in `onLoad`,
+        // the moment the seek is issued.
+        if (pendingResumeRef.current !== null) return;
+        setBuffered(bufferedSeconds);
+        setPosition(currentTime);
+        updatePosition(currentTime);
+      },
+      onLoad: ({ durationSeconds }) => {
+        setDuration(durationSeconds);
+        // This source opened, so any later failure of it is an expiry and
+        // not a rung missing from storage — see `dropToAutoAfterError`.
+        sourceEverLoadedRef.current = true;
+        const resumeAt = pendingResumeRef.current;
+        if (resumeAt === null) return;
+        // Cleared BEFORE the seek: from here VideoPlayer's own
+        // pendingSeekRef holds the ticks until the reported time is
+        // actually near the target, so the resume needs no settling
+        // machinery of its own. Clearing first also makes a second,
+        // spurious `sourceLoad` mid-playback a no-op, and it retires the
+        // give-up backstop the switch armed.
+        clearResumeWait();
+        // Issued here rather than from the switch, because a seek into a
+        // player that has not parsed its manifest yet is unreliable —
+        // this is the first moment the new source has a duration.
+        videoRef.current?.seek(resumeAt);
+      },
+      onError: (message) => {
+        // The video is only mounted while there is a source (see the stage
+        // below), so this never fires without one; the check is for the type.
+        if (!sourceUrl) return;
+        // Recorded BEFORE either cure runs, so neither can hand this very
+        // link back as the recovery — that is what bounds the two of them
+        // when nothing plays at all. See `failedSourcesRef`.
+        failedSourcesRef.current.add(sourceUrl);
+        // The ladder gets the first word, but only for a source that
+        // never opened: a rung that was never uploaded must not cost the
+        // stream its one fresh-link attempt, and an expiry mid-film must
+        // not be mistaken for one.
+        if (dropToAutoAfterError()) return;
+        recoverPlayback(() => setPlaybackError(message ?? t.movie.playbackError));
+      },
+    };
+  });
+
+  /**
    * A full-screen gate is only ever right for a screen with nothing to show.
    * Before the first picture that is still true, so waiting owns the screen as
    * it always did. During an episode swap the queries are loading again — but
@@ -1049,11 +1199,8 @@ export function PlayerScreen({ route, navigation }: Props) {
    * stream query has settled on an answer, so they cannot fire mid-swap.
    */
   if ((movieQuery.isLoading || streamQuery.isLoading) && !hasStage) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={theme.colors.primary} />
-      </View>
-    );
+    // The shape of the screen about to land, pulsing — never a spinner.
+    return <PlayerLoading />;
   }
 
   if (!streamQuery.isLoading && streamQuery.data?.status === "forbidden") {
@@ -1068,38 +1215,34 @@ export function PlayerScreen({ route, navigation }: Props) {
 
   if (!streamQuery.isLoading && (!streamQuery.data || streamQuery.data.status !== "ready")) {
     const message = streamQuery.isError ? t.common.somethingWentWrong : t.movie.notReady;
+    // Back only: the app offers no Retry for an unready stream or a failed
+    // load, and the board draws none (AREA-NOTES, Player).
     return (
-      <View style={styles.center}>
-        <View style={styles.messageTile}>
-          <Ionicons name="alert-circle-outline" size={28} color={theme.colors.textMuted} />
-        </View>
-        <ThemedText variant="body" style={styles.centerText}>
-          {message}
-        </ThemedText>
-        <Button title={t.common.back} variant="outline" icon="chevron-back" onPress={() => navigation.goBack()} />
+      <View style={styles.center} accessibilityRole="alert">
+        <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(320)} style={styles.messageBlock}>
+          <View style={styles.messageTile}>
+            <PlayerGlyph name="alert" size={28} color={theme.colors.textMuted} />
+          </View>
+          <ThemedText weight="bold" style={[styles.centerText, styles.messageText]}>
+            {message}
+          </ThemedText>
+          <Button
+            title={t.common.back}
+            variant="secondary"
+            icon="chevron-back"
+            onPress={() => navigation.goBack()}
+            style={styles.messageButton}
+          />
+        </Animated.View>
       </View>
     );
   }
 
   const movie = movieQuery.data;
   const seriesId = loadedSeriesId ?? sessionSeriesId;
-  /**
-   * Null only while an episode swap waits for its stream: the stage, and every
-   * layer over it, stays mounted with no video in it rather than the screen
-   * going away. The old episode's player is gone by then — nothing plays under
-   * the spinner.
-   */
-  const sourceUrl = !resumeSettled
-    ? // Held back until the resume lookup answers — see "RESUME" above. The
-      // buffering treatment covers the wait, exactly as it covers a swap.
-      null
-    : (pinnedPlaylistUrl ?? (streamQuery.data?.status === "ready" ? streamQuery.data.playlistUrl : null));
   const showBuffering = !playbackError && (isBuffering || !sourceUrl);
   const showEpisodesRail = !!seriesId && !isFullscreen;
-  const episodeLabel =
-    movie?.seasonNumber && movie?.episodeNumber
-      ? `S${movie.seasonNumber} · E${movie.episodeNumber}`
-      : undefined;
+  const episodeLabel = episodeTag(movie?.seasonNumber, movie?.episodeNumber) ?? undefined;
 
   return (
     <View style={styles.container}>
@@ -1109,7 +1252,7 @@ export function PlayerScreen({ route, navigation }: Props) {
           the stage starts at y=0, so without this spacer the controls' back
           button and title sit under the notch / Dynamic Island. Fullscreen
           keeps the frame edge-to-edge — its controls inset themselves. */}
-      {!isFullscreen && <View style={{ height: insets.top }} />}
+      {!isFullscreen && <View style={[styles.cutout, { height: insets.top }]} />}
 
       <View
         style={isFullscreen ? styles.stageFull : styles.stage}
@@ -1143,51 +1286,11 @@ export function PlayerScreen({ route, navigation }: Props) {
             subtitleTrack={nativeFallbackTrack}
             subtitleTracksReady={subtitleTracks.length > 0}
             onSubtitleTracksChange={handleSubtitleTracksChange}
-            onProgress={({ currentTime, bufferedSeconds }) => {
-              // A player rebuilt for a quality switch ticks 0:00 before it has
-              // been seeked back. Letting those through would rewind the scrub
-              // bar and the caption clock to the start — and, worse, write a
-              // zero into the watch-progress reporter for the film being
-              // watched. The gate closes at the switch and reopens in `onLoad`,
-              // the moment the seek is issued.
-              if (pendingResumeRef.current !== null) return;
-              setBuffered(bufferedSeconds);
-              setPosition(currentTime);
-              updatePosition(currentTime);
-            }}
-            onLoad={({ durationSeconds }) => {
-              setDuration(durationSeconds);
-              // This source opened, so any later failure of it is an expiry and
-              // not a rung missing from storage — see `dropToAutoAfterError`.
-              sourceEverLoadedRef.current = true;
-              const resumeAt = pendingResumeRef.current;
-              if (resumeAt === null) return;
-              // Cleared BEFORE the seek: from here VideoPlayer's own
-              // pendingSeekRef holds the ticks until the reported time is
-              // actually near the target, so the resume needs no settling
-              // machinery of its own. Clearing first also makes a second,
-              // spurious `sourceLoad` mid-playback a no-op, and it retires the
-              // give-up backstop the switch armed.
-              clearResumeWait();
-              // Issued here rather than from the switch, because a seek into a
-              // player that has not parsed its manifest yet is unreliable —
-              // this is the first moment the new source has a duration.
-              videoRef.current?.seek(resumeAt);
-            }}
+            onProgress={handleVideoProgress}
+            onLoad={handleVideoLoad}
             onBufferingChange={setIsBuffering}
             onEnd={reportNow}
-            onError={(message) => {
-              // Recorded BEFORE either cure runs, so neither can hand this very
-              // link back as the recovery — that is what bounds the two of them
-              // when nothing plays at all. See `failedSourcesRef`.
-              failedSourcesRef.current.add(sourceUrl);
-              // The ladder gets the first word, but only for a source that
-              // never opened: a rung that was never uploaded must not cost the
-              // stream its one fresh-link attempt, and an expiry mid-film must
-              // not be mistaken for one.
-              if (dropToAutoAfterError()) return;
-              recoverPlayback(() => setPlaybackError(message ?? t.movie.playbackError));
-            }}
+            onError={handleVideoError}
           />
         )}
 
@@ -1204,16 +1307,35 @@ export function PlayerScreen({ route, navigation }: Props) {
           stageWidth={stageSize.width}
           stageHeight={stageSize.height}
           edgeInsets={captionInsets}
+          controlsClearance={isFullscreen ? controlsClearance.full : controlsClearance.inline}
         />
 
+        {/* Waiting is three pulsing dots in a dark pill over a 40% dim —
+            never a spinner (Marquee). While the controls show, the dots move
+            into the play disc instead and the pill steps aside, so the two
+            never stack in the middle of the picture; the disc then reports
+            itself busy to screen readers. */}
         {showBuffering && (
           <View style={[StyleSheet.absoluteFill, styles.bufferingOverlay]} pointerEvents="none">
-            <View style={styles.bufferingPill}>
-              <ActivityIndicator color={theme.colors.primary} />
-              <ThemedText variant="caption" weight="semibold">
-                {t.player.buffering}
-              </ThemedText>
-            </View>
+            {!controlsVisible && (
+              <View
+                style={[styles.bufferingPill, isFullscreen && styles.bufferingPillFull]}
+                accessible
+                accessibilityRole="progressbar"
+                accessibilityLabel={t.player.buffering}
+              >
+                <BufferingDots size={isFullscreen ? 7 : 6} />
+                <ThemedText
+                  variant="caption"
+                  weight="bold"
+                  color={theme.colors.text}
+                  maxFontSizeMultiplier={1.6}
+                  style={isFullscreen ? styles.bufferingTextFull : undefined}
+                >
+                  {t.player.buffering}
+                </ThemedText>
+              </View>
+            )}
           </View>
         )}
 
@@ -1233,30 +1355,23 @@ export function PlayerScreen({ route, navigation }: Props) {
           <Pressable style={styles.tapZone} onPress={() => handleZoneTap("right")} />
         </View>
 
-        {seekFlash && (
-          <View style={[StyleSheet.absoluteFill, styles.seekFlashLayer]} pointerEvents="none">
-            <View style={[styles.seekFlash, seekFlash === "left" ? styles.seekFlashLeft : styles.seekFlashRight]}>
-              <Ionicons
-                name={seekFlash === "left" ? "play-back" : "play-forward"}
-                size={22}
-                color={theme.colors.primary}
-              />
-              <ThemedText variant="caption" weight="bold" tabular>
-                {seekFlash === "left" ? `-${SKIP_SECONDS}s` : `+${SKIP_SECONDS}s`}
-              </ThemedText>
-            </View>
-          </View>
-        )}
+        {seekFlash && seekFlash !== "center" && <SeekFlash side={seekFlash} seconds={SKIP_SECONDS} />}
 
+        {/* No Retry, as before: playback errors offer Back only (AREA-NOTES). */}
         {playbackError && (
-          <View style={[StyleSheet.absoluteFill, styles.errorOverlay]} pointerEvents="none">
-            <View style={styles.messageTile}>
-              <Ionicons name="warning-outline" size={26} color={theme.colors.danger} />
+          <Animated.View
+            entering={reduceMotion ? undefined : FadeIn.duration(200)}
+            style={[StyleSheet.absoluteFill, styles.errorOverlay]}
+            pointerEvents="none"
+            accessibilityRole="alert"
+          >
+            <View style={styles.errorDisc}>
+              <PlayerGlyph name="warning" size={24} color={theme.colors.danger} />
             </View>
-            <ThemedText variant="body" style={styles.centerText}>
+            <ThemedText weight="bold" color={theme.colors.text} style={styles.centerText}>
               {playbackError}
             </ThemedText>
-          </View>
+          </Animated.View>
         )}
 
         <PlayerControls
@@ -1274,29 +1389,43 @@ export function PlayerScreen({ route, navigation }: Props) {
           onToggleMute={() => setMuted((m) => !m)}
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
-          onOpenSpeed={() => setSpeedSheetOpen(true)}
+          onOpenSpeed={() => setSettingsTab("speed")}
           onBack={handleBack}
           speed={preferredSpeed}
           isBuffering={showBuffering}
           onOpenEpisodes={seriesId ? () => setEpisodeSheetOpen(true) : undefined}
           // Undefined hides the control outright: a title with no subtitles at
           // all gets no button, rather than a menu whose only row is "Off".
-          onOpenSubtitles={streamSubtitles.length > 0 ? () => setSubtitleSheetOpen(true) : undefined}
+          onOpenSubtitles={streamSubtitles.length > 0 ? () => setSettingsTab("subtitles") : undefined}
           subtitleTag={activeSubtitle ? subtitleTrackTag(activeSubtitle) : undefined}
           // Same rule as the subtitle control: a title with no ladder to choose
           // from gets no button at all rather than a sheet whose only row is
           // "Auto".
-          onOpenQuality={qualities.length > 0 ? () => setQualitySheetOpen(true) : undefined}
+          onOpenQuality={qualities.length > 0 ? () => setSettingsTab("quality") : undefined}
           // The label verbatim, and nothing on Auto — so the badge means "you
           // have left the adaptive default", exactly as the speed control stays
           // bare at 1x. `activeQuality` rather than the stored label, because a
           // title lacking that rung really is playing Auto.
           qualityTag={activeQuality?.label}
+          // Series only, hidden on the last episode — see NEXT EPISODE above.
+          onNextEpisode={nextEpisode ? handleNextEpisode : undefined}
+          nextEpisodeLabel={nextEpisodeLabel}
+          onBottomClearance={handleControlsClearance}
         />
       </View>
 
+      {/* Memoized like the film panel below: every prop is state, a
+          structurally shared record or a useCallback. */}
       {showEpisodesRail && seriesId && (
-        <EpisodesSection seriesId={seriesId} currentEpisodeId={movieId} onSelectEpisode={handleSelectEpisode} />
+        <EpisodesSection
+          seriesId={seriesId}
+          currentEpisodeId={movieId}
+          onSelectEpisode={handleSelectEpisode}
+          episode={movie}
+          nextEpisode={nextEpisode}
+          onNextEpisode={handleNextEpisode}
+          bottomInset={insets.bottom}
+        />
       )}
 
       {/* One memoized subtree, so the 4x/s playback tick stops at this line:
@@ -1314,50 +1443,37 @@ export function PlayerScreen({ route, navigation }: Props) {
         />
       )}
 
-      {/* Mounted only while open — the same treatment EpisodeSheet already
-          gets below, for the same reason: this screen renders four times a
-          second off the playback tick, and a closed sheet's whole element tree
-          was being built on every one of them. None of the three holds any
-          internal state (they have no hooks at all), and BottomSheet's own
-          position is derived from the window, not measured — so a fresh mount
-          opens exactly as the kept-mounted one did. */}
-      {speedSheetOpen && (
-        <SpeedSheet
-          visible
-          value={preferredSpeed}
-          onSelect={handleSelectSpeed}
-          onClose={() => setSpeedSheetOpen(false)}
-        />
-      )}
-
-      {qualitySheetOpen && (
-        <QualitySheet
-          visible
-          options={qualities}
+      {/* Mounted only while open: this screen renders four times a second
+          off the playback tick, and a closed panel's whole element tree would
+          be built on every one of them. Its only state is the tab, seeded from
+          the control that opened it, so a fresh mount opens exactly where it
+          should. Fullscreen gets the board's right-side panel, portrait a
+          bottom sheet with the same tabs and rows. */}
+      {settingsTab && (
+        <PlayerSettingsSheet
+          initialTab={settingsTab}
+          layout={isFullscreen ? "panel" : "sheet"}
+          onClose={() => setSettingsTab(null)}
+          speed={preferredSpeed}
+          onSelectSpeed={handleSelectSpeed}
+          qualities={qualities}
           // What is PLAYING, not what is merely remembered — see `activeQuality`.
-          value={activeQuality?.label ?? null}
-          onSelect={handleSelectQuality}
-          onClose={() => setQualitySheetOpen(false)}
-        />
-      )}
-
-      {subtitleSheetOpen && (
-        <SubtitleSheet
-          visible
+          qualityValue={activeQuality?.label ?? null}
+          onSelectQuality={handleSelectQuality}
           tracks={streamSubtitles}
-          value={activeSubtitle}
-          onSelect={handleSelectSubtitle}
-          onClose={() => setSubtitleSheetOpen(false)}
+          subtitleValue={activeSubtitle}
+          onSelectSubtitle={handleSelectSubtitle}
         />
       )}
 
       {seriesId && (
         <EpisodeSheet
           visible={episodeSheetOpen}
-          onClose={() => setEpisodeSheetOpen(false)}
+          onClose={closeEpisodeSheet}
           seriesId={seriesId}
           currentEpisodeId={movieId}
           onSelectEpisode={handleSelectEpisode}
+          isFullscreen={isFullscreen}
         />
       )}
     </View>
@@ -1367,6 +1483,8 @@ export function PlayerScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   gate: { flex: 1, backgroundColor: theme.colors.background },
+  /** The strip under the cutout reads as part of the black stage, as on the board. */
+  cutout: { backgroundColor: "#000" },
   stage: { width: "100%", aspectRatio: 16 / 9, backgroundColor: "#000" },
   stageFull: { flex: 1, backgroundColor: "#000" },
   center: {
@@ -1374,52 +1492,48 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     alignItems: "center",
     justifyContent: "center",
-    gap: theme.spacing.md,
     padding: theme.spacing.lg,
   },
   centerText: { textAlign: "center" },
+  messageBlock: { alignItems: "center", maxWidth: 420 },
   messageTile: {
-    width: 60,
-    height: 60,
-    borderRadius: theme.radius.pill,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.colors.secondary,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceElevated,
   },
+  messageText: { marginTop: 20, fontSize: 17 },
+  messageButton: { marginTop: theme.spacing.lg },
   errorOverlay: {
     alignItems: "center",
     justifyContent: "center",
-    gap: theme.spacing.sm,
+    gap: 12,
     padding: theme.spacing.lg,
-    backgroundColor: theme.colors.scrim,
+    backgroundColor: "rgba(8,8,11,0.8)",
   },
-  bufferingOverlay: { alignItems: "center", justifyContent: "center", backgroundColor: theme.colors.scrimSoft },
+  errorDisc: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.dangerSoft,
+  },
+  bufferingOverlay: { alignItems: "center", justifyContent: "center", backgroundColor: "rgba(8,8,11,0.4)" },
   bufferingPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing.sm,
+    gap: 10,
+    minHeight: 40,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.scrim,
-    borderWidth: 1,
-    borderColor: theme.colors.ring,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: theme.colors.artBadge,
   },
+  bufferingPillFull: { minHeight: 44, paddingHorizontal: 18, borderRadius: 22 },
+  bufferingTextFull: { fontSize: 14 },
   tapZones: { flexDirection: "row" },
   tapZone: { flex: 1 },
-  seekFlashLayer: { flexDirection: "row", alignItems: "center" },
-  seekFlash: {
-    alignItems: "center",
-    gap: 2,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.scrim,
-    borderWidth: 1,
-    borderColor: theme.colors.primary + "3D",
-  },
-  seekFlashLeft: { marginLeft: theme.spacing.xl },
-  seekFlashRight: { marginLeft: "auto", marginRight: theme.spacing.xl },
 });

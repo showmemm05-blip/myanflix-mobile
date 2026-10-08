@@ -1,7 +1,7 @@
 import { Text, type TextProps } from "react-native";
 import { tabularNums, theme, type TypeVariant } from "@/theme";
 
-export type ThemedTextWeight = "regular" | "medium" | "semibold" | "bold";
+export type ThemedTextWeight = "regular" | "medium" | "semibold" | "bold" | "extrabold" | "black";
 export type ThemedTextVariant =
   | "body"
   | "title"
@@ -10,7 +10,7 @@ export type ThemedTextVariant =
   | "caption"
   | "muted"
   | "label"
-  /* added in the Aurora redesign — the full type scale from theme.type */
+  /* the full type scale from theme.type */
   | "display"
   | "section"
   | "overline";
@@ -76,6 +76,15 @@ const VARIANT_COLOR: Record<ThemedTextVariant, string> = {
  */
 const MYANMAR_SCRIPT = /[\u1000-\u109F\uAA60-\uAA7F]/;
 
+/**
+ * Extra line height for text that carries Myanmar script (Marquee type rule:
+ * "line-height +4"). Stacked medial and vowel marks sit above and below the
+ * Latin line box; the extra room keeps them clear of the next line and of the
+ * clip at the top of a single-line label. A caller's own `lineHeight` in
+ * `style` still wins, as every other base value does.
+ */
+const MYANMAR_LINE_BONUS = 4;
+
 function containsMyanmar(children: Props["children"]): boolean {
   if (typeof children === "string") return MYANMAR_SCRIPT.test(children);
   if (Array.isArray(children)) return children.some((c) => typeof c === "string" && MYANMAR_SCRIPT.test(c));
@@ -85,8 +94,9 @@ function containsMyanmar(children: Props["children"]): boolean {
 export function ThemedText({ variant = "body", weight, tabular, color, style, ...rest }: Props) {
   const scale = theme.type[VARIANT_ROLE[variant]];
   const resolvedWeight: ThemedTextWeight = weight ?? scale.weight;
-  const letterSpacing =
-    scale.letterSpacing !== 0 && containsMyanmar(rest.children) ? 0 : scale.letterSpacing;
+  const myanmar = containsMyanmar(rest.children);
+  const letterSpacing = scale.letterSpacing !== 0 && myanmar ? 0 : scale.letterSpacing;
+  const lineHeight = scale.lineHeight + (myanmar ? MYANMAR_LINE_BONUS : 0);
 
   return (
     <Text
@@ -95,7 +105,7 @@ export function ThemedText({ variant = "body", weight, tabular, color, style, ..
         {
           fontFamily: theme.font[resolvedWeight],
           fontSize: scale.fontSize,
-          lineHeight: scale.lineHeight,
+          lineHeight,
           color: color ?? VARIANT_COLOR[variant],
           letterSpacing,
         },

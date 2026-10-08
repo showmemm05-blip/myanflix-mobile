@@ -11,8 +11,6 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useReducedMotion } from "react-native-reanimated";
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { ReaderTopBar } from "@/components/books/ReaderTopBar";
 import { ReaderFooter } from "@/components/books/ReaderFooter";
@@ -22,6 +20,8 @@ import { ReaderSearchSheet, type ReaderSearchResult } from "@/components/books/R
 import { BlockActionsSheet } from "@/components/books/BlockActionsSheet";
 import { ReaderDim } from "@/components/books/ReaderDim";
 import { ReaderKeepAwake } from "@/components/books/ReaderKeepAwake";
+import { ReaderEndNav } from "@/components/books/ReaderEndNav";
+import { ReaderMessage } from "@/components/books/ReaderMessage";
 import { RichText, containsMyanmar, pmPlainBlocks } from "@/components/books/RichText";
 import { HIGHLIGHT_COLORS, READER_THEMES, highlightAlpha } from "@/components/books/readerThemes";
 import { useReaderFonts } from "@/components/books/readerFonts";
@@ -458,20 +458,29 @@ export function ChapterReader({
 
           {/* -------- body -------- */}
           {chapterQuery.isLoading ? (
-            <View style={styles.skeletons}>
+            // Pulse lines in the page's own ink, so they read on Paper as on Night.
+            <View style={styles.skeletons} accessibilityLabel={t.common.loading}>
               {Array.from({ length: 9 }).map((_, index) => (
-                <Skeleton key={index} height={14} radius="sm" width={index % 4 === 3 ? "62%" : "100%"} />
+                <Skeleton
+                  key={index}
+                  height={14}
+                  radius="xs"
+                  width={index % 4 === 3 ? "62%" : "100%"}
+                  style={{ backgroundColor: withAlpha(colors.ink, 0.1) }}
+                />
               ))}
             </View>
           ) : chapterQuery.isError ? (
-            <EmptyState
-              fill={false}
-              message={r.loadError}
-              icon="cloud-offline-outline"
-              tone={theme.colors.danger}
-              actionLabel={t.common.retry}
-              onAction={() => chapterQuery.refetch()}
-            />
+            <View style={styles.message}>
+              <ReaderMessage
+                colors={colors}
+                icon="cloud-offline-outline"
+                iconColor={theme.colors.danger}
+                message={r.loadError}
+                actionLabel={t.common.retry}
+                onAction={() => chapterQuery.refetch()}
+              />
+            </View>
           ) : isEmptyDoc ? (
             <ThemedText variant="body" style={[styles.emptyChapter, { color: colors.muted }]}>
               {r.emptyChapter}
@@ -492,35 +501,13 @@ export function ChapterReader({
             />
           )}
 
-          {/* -------- end-of-chapter controls, in flow -------- */}
+          {/* -------- end-of-chapter way on, in flow: the next chapter is the loud card -------- */}
           {!chapterQuery.isLoading && (
             <View style={styles.endControls}>
-              {previousChapter && (
-                <Button
-                  title={previousChapter.title}
-                  icon="chevron-back"
-                  variant="outline"
-                  onPress={() => goToChapter(previousChapter.id)}
-                  disabled={previousChapter.status !== "READY"}
-                  accessibilityLabel={r.previousChapter}
-                  style={styles.endButton}
-                />
-              )}
-              {nextChapter ? (
-                <Button
-                  title={nextChapter.title}
-                  trailingIcon="chevron-forward"
-                  variant="outline"
-                  onPress={() => goToChapter(nextChapter.id)}
-                  disabled={nextChapter.status !== "READY"}
-                  accessibilityLabel={r.nextChapter}
-                  style={styles.endButton}
-                />
-              ) : (
-                <ThemedText variant="caption" style={[styles.finished, { color: colors.muted }]}>
-                  {r.finished}
-                </ThemedText>
-              )}
+              <ThemedText variant="body" style={[styles.endOrnament, { color: colors.muted }]}>
+                ❦
+              </ThemedText>
+              <ReaderEndNav colors={colors} previous={previousChapter} next={nextChapter} onGo={goToChapter} />
             </View>
           )}
         </Pressable>
@@ -537,7 +524,7 @@ export function ChapterReader({
         onBookmark={toggleBookmark}
         bookmarked={!!currentBookmark}
       />
-      <ReaderFooter visible={barsVisible} colors={colors} label={footerLabel} />
+      <ReaderFooter visible={barsVisible} colors={colors} label={footerLabel} progress={chapterPercent / 100} />
 
       <ReaderContentsSheet
         visible={contentsOpen}
@@ -603,8 +590,8 @@ const styles = StyleSheet.create({
   chapterTitle: { textAlign: "center" },
   ornament: { marginTop: theme.spacing.xs },
   skeletons: { gap: theme.spacing.md, paddingVertical: theme.spacing.md },
+  message: { paddingTop: 64 },
   emptyChapter: { textAlign: "center", paddingVertical: theme.spacing.xl },
-  endControls: { marginTop: theme.spacing.xxl, gap: theme.spacing.sm, alignItems: "stretch" },
-  endButton: { alignSelf: "stretch" },
-  finished: { textAlign: "center", paddingVertical: theme.spacing.md },
+  endControls: { marginTop: theme.spacing.xxl, alignItems: "stretch" },
+  endOrnament: { textAlign: "center", marginBottom: 28 },
 });

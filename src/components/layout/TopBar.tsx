@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { StyleProp, ViewStyle } from "react-native";
+import type { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -22,6 +22,15 @@ interface Props {
   rightAccessibilityLabel?: string;
   backAccessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Over the page, which scrolls under it, instead of in the layout flow —
+   * the glass bar (components/layout/GlassBar). See AppBar's `floating`.
+   */
+  floating?: boolean;
+  /** The bar's whole box — a floating or transparent bar's screen measures it here. */
+  onLayout?: (event: LayoutChangeEvent) => void;
+  /** Floating or transparent: the bar's empty space passes touches through — see AppBar's `touchThrough`. */
+  touchThrough?: boolean;
 }
 
 /**
@@ -41,6 +50,9 @@ export function TopBar({
   rightAccessibilityLabel,
   backAccessibilityLabel,
   style,
+  floating,
+  onLayout,
+  touchThrough,
 }: Props) {
   return (
     <AppBar
@@ -50,6 +62,9 @@ export function TopBar({
       onBack={onBack}
       backAccessibilityLabel={backAccessibilityLabel}
       style={style}
+      floating={floating}
+      onLayout={onLayout}
+      touchThrough={touchThrough}
       trailing={
         <>
           {trailing}

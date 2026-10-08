@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -16,16 +17,33 @@ interface Props {
   selected?: boolean;
   onPress?: () => void;
   tone?: ChipTone;
-  /** "md" (default) is a 44pt touch target; "sm" is for static metadata only. */
+  /** "md" (default) is a 34pt chip with a 44pt touch target; "sm" is for static metadata only. */
   size?: ChipSize;
   disabled?: boolean;
   accessibilityLabel?: string;
+  /**
+   * "button" (default): a pick, spoken "selected" while chosen. "checkbox": an
+   * independent on/off (a hub's "Free only"), spoken "checked" / "not checked"
+   * — `selected` is then its on state.
+   */
+  accessibilityRole?: "button" | "checkbox";
   style?: StyleProp<ViewStyle>;
+  /**
+   * Lines the label may wrap to before it ellipsizes (default 1). Above 1 the
+   * label shrinks to the chip, so pair it with a `maxWidth` on the chip: a
+   * long label then wraps inside the row instead of running past its edge.
+   */
+  labelLines?: number;
 }
 
-const TONE_COLORS: Record<ChipTone, string> = {
-  neutral: theme.colors.primary,
-  primary: theme.colors.primary,
+/**
+ * What a SELECTED chip fills with. Neutral and primary chips select to WHITE
+ * (Marquee: "selected = white fill, near-black text"); a role chip keeps its
+ * role colour so a gold or green filter still reads as that role.
+ */
+const SELECTED_FILL: Record<ChipTone, string> = {
+  neutral: theme.colors.play,
+  primary: theme.colors.play,
   premium: theme.colors.premium,
   finance: theme.colors.finance,
   danger: theme.colors.danger,
@@ -33,10 +51,25 @@ const TONE_COLORS: Record<ChipTone, string> = {
   info: theme.colors.info,
 };
 
+/** Label ink of an UNSELECTED chip on the #1C1C23 fill. Crimson words use `link`. */
+const RESTING_INK: Record<ChipTone, string> = {
+  neutral: theme.colors.text,
+  primary: theme.colors.link,
+  premium: theme.colors.premium,
+  finance: theme.colors.finance,
+  danger: theme.colors.danger,
+  warning: theme.colors.warning,
+  info: theme.colors.info,
+};
+
+/** md: the visual chip is 34pt; this slop puts the 44pt touch target back. */
+const MD_HIT_SLOP = { top: 5, bottom: 5, left: 0, right: 0 };
+
 /**
- * Tappable filter/genre chip. Selected chips fill with their tone; unselected
- * ones stay quiet so a long filter row doesn't shout. Interactive chips are
- * 44pt tall — drop to `size="sm"` only for non-tappable metadata.
+ * Tappable filter/genre chip (Marquee): a 34pt fully-round chip on the raised
+ * #1C1C23 fill, no border. Selected chips turn white with near-black ink (role
+ * chips fill with their role). The touch target stays 44pt via hitSlop — drop
+ * to `size="sm"` only for non-tappable metadata.
  */
 export function Chip({
   label,
@@ -48,18 +81,26 @@ export function Chip({
   size = "md",
   disabled,
   accessibilityLabel,
+  accessibilityRole = "button",
   style,
+  labelLines = 1,
 }: Props) {
-  const accent = TONE_COLORS[tone];
-  // A selected chip is filled with its tone, so its ink has to follow the fill —
-  // gold and emerald need their own foregrounds, not violet's.
-  const contentColor = selected ? onSolid(accent) : tone === "neutral" ? theme.colors.textMuted : accent;
+  const reduceMotion = useReducedMotion();
+  const fill = SELECTED_FILL[tone];
+  // A selected chip is filled, so its ink has to follow the fill —
+  // white needs near-black, gold and green need their own foregrounds.
+  const contentColor = selected ? onSolid(fill) : RESTING_INK[tone];
   const iconSize = size === "sm" ? 12 : 14;
 
   const inner = (
     <>
       {icon && <Ionicons name={icon} size={iconSize} color={contentColor} />}
-      <ThemedText variant={size === "sm" ? "caption" : "label"} weight={selected ? "bold" : "semibold"} numberOfLines={1} style={{ color: contentColor }}>
+      <ThemedText
+        variant={size === "sm" ? "caption" : "muted"}
+        weight={selected ? "bold" : "semibold"}
+        numberOfLines={labelLines}
+        style={[{ color: contentColor }, labelLines > 1 && styles.wrappingLabel]}
+      >
         {label}
       </ThemedText>
       {trailingIcon && <Ionicons name={trailingIcon} size={iconSize} color={contentColor} />}
@@ -69,7 +110,8 @@ export function Chip({
   const containerStyle = [
     styles.base,
     size === "sm" ? styles.sm : styles.md,
-    selected ? { backgroundColor: accent, borderColor: accent } : styles.unselected,
+    labelLines > 1 && styles.wrapping,
+    { backgroundColor: selected ? fill : theme.colors.surfaceElevated },
     disabled && styles.disabled,
     style,
   ];
@@ -80,9 +122,17 @@ export function Chip({
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => [containerStyle, pressed && !disabled && styles.pressed]}
-      accessibilityRole="button"
-      accessibilityState={{ selected: !!selected, disabled: !!disabled }}
+      hitSlop={size === "md" ? MD_HIT_SLOP : undefined}
+      style={({ pressed }) => [
+        containerStyle,
+        pressed && !disabled && (reduceMotion ? styles.pressedStill : styles.pressed),
+      ]}
+      accessibilityRole={accessibilityRole}
+      accessibilityState={
+        accessibilityRole === "checkbox"
+          ? { checked: !!selected, disabled: !!disabled }
+          : { selected: !!selected, disabled: !!disabled }
+      }
       accessibilityLabel={accessibilityLabel ?? label}
     >
       {inner}
@@ -96,13 +146,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
+    // 17 = half the 34pt chip: a capsule on one line, a soft rectangle when a
+    // long label wraps (a 999 radius would make a two-line chip a lozenge).
+    borderRadius: theme.radius.xl,
     alignSelf: "flex-start",
   },
   sm: { minHeight: 26, paddingHorizontal: 10, paddingVertical: 3 },
-  md: { minHeight: theme.layout.minTouch, paddingHorizontal: theme.spacing.md },
-  unselected: { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.border },
+  md: { minHeight: 34, paddingHorizontal: 14 },
+  /** A wrapped label still gets breathing room above and below. */
+  wrapping: { paddingVertical: 6 },
+  wrappingLabel: { flexShrink: 1, textAlign: "center" },
   disabled: { opacity: 0.45 },
-  pressed: { opacity: 0.75 },
+  pressed: { transform: [{ scale: 0.96 }] },
+  pressedStill: { opacity: 0.75 },
 });

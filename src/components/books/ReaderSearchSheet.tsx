@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlatList, Pressable, StyleSheet, Text } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { BottomSheet, useSheetKeyboardLift } from "@/components/ui/BottomSheet";
+import { SearchField } from "@/components/ui/SearchField";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { pmPlainBlocks } from "@/components/books/RichText";
 import { composeChapterDoc } from "@/utils/chapterSections";
 import { chapterKey } from "@/hooks/useBooks";
 import { booksService } from "@/services/books.service";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { theme } from "@/theme";
+import { theme, withAlpha } from "@/theme";
 import type { BookChapterSummary } from "@/types/book";
 
 export interface ReaderSearchResult {
@@ -43,7 +44,11 @@ const CONTEXT_CHARS = 40;
 const MINUTE_MS = 60_000;
 
 /**
- * Search-in-book for TEXT (EDITOR) editions — client-side and lazy: chapters
+ * Search-in-book for TEXT (EDITOR) editions (BookReader.dc.html "search") —
+ * the app's 56pt search field, a status line, then every hit as a row: its
+ * chapter, and the words around it with the match marked in crimson.
+ *
+ * Client-side and lazy: chapters
  * are fetched sequentially through the SAME react-query key/fn as useChapter,
  * so every fetched chapter warms the reader cache. Page books are raster WebP
  * with no text layer — search never mounts for them (parked).
@@ -152,6 +157,14 @@ export function ReaderSearchSheet({ visible, onClose, bookId, editionId, chapter
   }, [query, runSearch]);
 
   const trimmed = query.trim();
+  /** "Chapter 3 · Title" over each hit — the chapter's own number from the list. */
+  const chapterLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const chapter of chapters) {
+      labels.set(chapter.id, `${r.chapterLabel.replace("{n}", String(chapter.order))} · ${chapter.title}`);
+    }
+    return labels;
+  }, [chapters, r.chapterLabel]);
   const countLabel =
     results.length === 1 ? r.searchCountOne : r.searchCount.replace("{n}", String(results.length));
   const progressLabel = progress
@@ -162,15 +175,15 @@ export function ReaderSearchSheet({ visible, onClose, bookId, editionId, chapter
 
   return (
     <BottomSheet visible={visible} onClose={onClose} title={r.searchInBook} showClose snapHeight={560}>
-      <TextInput
+      <SearchField
         value={query}
         onChangeText={setQuery}
+        // The search runs as the field settles; Return only puts the keyboard away.
+        onSubmit={() => {}}
+        onClear={() => setQuery("")}
         placeholder={r.searchPlaceholder}
-        placeholderTextColor={theme.colors.textFaint}
         accessibilityLabel={r.searchInBook}
-        autoCorrect={false}
-        returnKeyType="search"
-        style={styles.input}
+        clearAccessibilityLabel={t.common.clear}
       />
 
       {trimmed.length > 0 && trimmed.length < MIN_QUERY ? (
@@ -189,6 +202,7 @@ export function ReaderSearchSheet({ visible, onClose, bookId, editionId, chapter
 
       <ResultList
         results={results}
+        chapterLabels={chapterLabels}
         onSelect={(result) => {
           onClose();
           onSelectResult(result);
@@ -206,9 +220,11 @@ export function ReaderSearchSheet({ visible, onClose, bookId, editionId, chapter
  */
 function ResultList({
   results,
+  chapterLabels,
   onSelect,
 }: {
   results: ReaderSearchResult[];
+  chapterLabels: ReadonlyMap<string, string>;
   onSelect: (result: ReaderSearchResult) => void;
 }) {
   const keyboardLift = useSheetKeyboardLift();
@@ -220,57 +236,43 @@ function ResultList({
       showsVerticalScrollIndicator={false}
       contentContainerStyle={[styles.rows, { paddingBottom: theme.spacing.md + keyboardLift }]}
       renderItem={({ item }) => (
-        <View>
-          {item.firstInChapter && (
-            <ThemedText variant="label" color={theme.colors.textMuted} numberOfLines={1} style={styles.chapterHead}>
-              {item.chapterTitle}
-            </ThemedText>
-          )}
-          <Pressable
-            onPress={() => onSelect(item)}
-            accessibilityRole="button"
-            accessibilityLabel={`${item.pre}${item.match}${item.post}`}
-            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-          >
-            <ThemedText variant="caption" numberOfLines={2} color={theme.colors.textMuted}>
-              {item.pre}
-              <Text style={styles.match}>{item.match}</Text>
-              {item.post}
-            </ThemedText>
-          </Pressable>
-        </View>
+        <Pressable
+          onPress={() => onSelect(item)}
+          accessibilityRole="button"
+          accessibilityLabel={`${item.pre}${item.match}${item.post}`}
+          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+        >
+          <ThemedText variant="label" weight="bold" color={theme.colors.textFaint} numberOfLines={2} style={styles.chapterHead}>
+            {chapterLabels.get(item.chapterId) ?? item.chapterTitle}
+          </ThemedText>
+          <ThemedText variant="body" numberOfLines={3} color={theme.colors.textBody} style={styles.excerpt}>
+            {item.pre}
+            <Text style={styles.match}>{item.match}</Text>
+            {item.post}
+          </ThemedText>
+        </Pressable>
       )}
     />
   );
 }
 
 const styles = StyleSheet.create({
-  input: {
-    minHeight: theme.layout.minTouch,
-    backgroundColor: theme.colors.surfaceSunken,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    color: theme.colors.text,
-    fontFamily: theme.font.regular,
-    fontSize: 15,
-    marginBottom: theme.spacing.sm,
-  },
-  status: { textAlign: "center", paddingVertical: theme.spacing.xs },
+  status: { marginTop: 12, marginBottom: 6 },
   rows: { paddingBottom: theme.spacing.md },
-  chapterHead: { marginTop: theme.spacing.sm, marginBottom: theme.spacing.xs },
+  chapterHead: { letterSpacing: 0 },
+  excerpt: { marginTop: theme.spacing.xs },
   row: {
     minHeight: theme.layout.minTouch,
     justifyContent: "center",
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.sm,
-    borderRadius: theme.radius.lg,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border,
   },
-  pressed: { opacity: 0.75 },
+  pressed: { opacity: 0.7 },
+  /** Marquee's search mark: white words on crimson at 32%. */
   match: {
-    color: theme.colors.primary,
-    fontFamily: theme.font.semibold,
+    color: theme.colors.text,
+    backgroundColor: withAlpha(theme.colors.primary, 0.32),
+    fontFamily: theme.font.bold,
   },
 });

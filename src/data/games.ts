@@ -3,10 +3,10 @@ import type { TranslationShape } from "@/localization/translations";
 /**
  * THE GAMES SHELF — ported from userwebsite/lib/media/games-data.ts, shaped
  * exactly like the future `GET /games` payload so the swap to a real service
- * is mechanical. Mobile carries NO artwork URLs at all: every plate is drawn
- * locally by `components/common/GamePlate` from PLATE_PALETTES below, so the
- * storefront renders fully in airplane mode and never rents artwork from a
- * host it does not control.
+ * is mechanical. Mobile carries NO artwork URLs at all: every picture is
+ * drawn locally by `components/arcade/ArcadeArt` from the scenes in
+ * `components/arcade/arcadeScenes.ts`, so the storefront renders fully in
+ * airplane mode and never rents artwork from a host it does not control.
  *
  * Nothing outside `src/data/arcade.ts` may read GAMES — the selectors there
  * are the only consumer, so a games API someday replaces one file.
@@ -231,7 +231,11 @@ export const GAMES: Game[] = [
   },
 ];
 
-/** The two hues GamePlate paints a game's identity from. */
+/**
+ * The two hues the old GamePlate painted a game's identity from. Unused since
+ * the Marquee Arcade (its art is arcadeScenes.ts); kept with PLATE_BASE and
+ * PLATE_PALETTES below as data until the games API replaces this file.
+ */
 export interface PlatePalette {
   hueA: string;
   hueB: string;

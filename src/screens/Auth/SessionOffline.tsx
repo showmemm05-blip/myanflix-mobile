@@ -3,8 +3,9 @@ import { AppState, StyleSheet, View } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { AuthScreenShell, AuthTicket } from "@/components/auth/AuthScreenShell";
-import { Button } from "@/components/ui/Button";
+import { AuthScreenShell } from "@/components/auth/AuthScreenShell";
+import { AuthHero } from "@/components/auth/AuthHero";
+import { AuthButton, Rise } from "@/components/auth/AuthParts";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { restoreSession, useAuth } from "@/hooks/useAuth";
 import { useLanguage } from "@/localization/LanguageProvider";
@@ -54,68 +55,87 @@ export function SessionOfflineScreen() {
     return () => subscription.remove();
   }, [retry]);
 
+  /*
+   * SessionOffline.dc.html: the sign-in artwork drained of colour, a cloud
+   * badge and the title on its bottom edge, the reassurance under it, and the
+   * two ways forward pinned to the foot of the screen — white Retry (the one
+   * thing to do) over a quiet Log out.
+   */
   return (
-    <AuthScreenShell>
-      <AuthTicket
-        stub={
-          <View style={styles.actions}>
-            <Button
-              title={t.common.retry}
-              icon="refresh-outline"
-              size="lg"
-              fullWidth
-              loading={checking}
-              disabled={checking}
-              onPress={() => {
-                void retry();
-              }}
-            />
-            <Button
-              title={t.common.logOut}
-              icon="log-out-outline"
-              variant="ghost"
-              size="lg"
-              fullWidth
-              disabled={checking}
-              onPress={() => {
-                void logout();
-              }}
-            />
-          </View>
-        }
-      >
-        <View style={styles.badge}>
-          <Ionicons name="cloud-offline-outline" size={22} color={theme.colors.primary} />
+    <AuthScreenShell
+      footer={
+        <View style={styles.actions}>
+          <AuthButton
+            title={t.common.retry}
+            icon="refresh-outline"
+            variant="play"
+            loading={checking}
+            onPress={() => {
+              void retry();
+            }}
+          />
+          <AuthButton
+            title={t.common.logOut}
+            icon="log-out-outline"
+            variant="secondary"
+            disabled={checking}
+            onPress={() => {
+              void logout();
+            }}
+          />
         </View>
+      }
+    >
+      <AuthHero size="offline" muted>
+        <View style={styles.badge} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <Ionicons name="cloud-offline-outline" size={26} color={theme.colors.text} />
+        </View>
+        <ThemedText variant="display" accessibilityRole="header" style={styles.title}>
+          {t.auth.offline.title}
+        </ThemedText>
+      </AuthHero>
 
-        <View style={styles.copy}>
-          <ThemedText variant="title">{t.auth.offline.title}</ThemedText>
-          <ThemedText variant="body" style={styles.body}>
-            {t.auth.offline.body}
-          </ThemedText>
-          {stillOffline && !checking ? (
-            <ThemedText variant="caption" style={styles.body} accessibilityLiveRegion="polite">
-              {t.auth.offline.stillOffline}
-            </ThemedText>
-          ) : null}
-        </View>
-      </AuthTicket>
+      <View style={styles.page}>
+        <ThemedText variant="body" color={theme.colors.textBody} style={styles.body}>
+          {t.auth.offline.body}
+        </ThemedText>
+        {stillOffline && !checking ? (
+          <Rise style={styles.still}>
+            <View style={styles.stillRow} accessibilityLiveRegion="polite">
+              {/* Amber: a nudge to check the connection, not a failure of the app. */}
+              <Ionicons name="alert-circle-outline" size={18} color={theme.colors.warning} style={styles.stillIcon} />
+              <ThemedText variant="muted" color={theme.colors.textMuted} style={styles.stillText}>
+                {t.auth.offline.stillOffline}
+              </ThemedText>
+            </View>
+          </Rise>
+        ) : null}
+      </View>
     </AuthScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
   badge: {
-    width: 48,
-    height: 48,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.primarySoft,
-    borderWidth: 1,
-    borderColor: theme.colors.primary + "3D",
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    // White at 12% over the drained art (the board's frosted disc, without the blur).
+    backgroundColor: theme.colors.tonal,
     alignItems: "center",
     justifyContent: "center",
   },
-  copy: { gap: theme.spacing.sm },
-  body: { color: theme.colors.textMuted },
-  actions: { gap: theme.spacing.sm },
+  title: { marginTop: 18 },
+  page: { paddingHorizontal: theme.layout.screenPadding },
+  body: { marginTop: theme.spacing.sm },
+  still: {
+    marginTop: 20,
+    paddingTop: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  stillRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  stillIcon: { marginTop: 1 },
+  stillText: { flex: 1 },
+  actions: { gap: 12 },
 });

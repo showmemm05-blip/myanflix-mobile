@@ -31,10 +31,10 @@ type RequestOtpBody = { phone: string; purpose?: OtpPurpose };
  * Why it matters: backend/src/app.module.ts registers the global
  * ValidationPipe with `forbidNonWhitelisted: true`, so an unknown property is
  * REJECTED, not stripped. One extra key here 400s every OTP request for every
- * user — there is no partial failure and no slow rollout. The OTP channel
- * picker's remembered choice (src/store/authPrefsStore.ts) is the field most
- * likely to be added by reflex; it must stay on the device until the backend
- * DTO and a real delivery service ship first.
+ * user — there is no partial failure and no slow rollout. A delivery
+ * channel (Telegram, Viber — see components/auth/OtpMethodPicker.tsx) is the
+ * field most likely to be added by reflex; it must not be sent until the
+ * backend DTO and a real delivery service ship first.
  */
 function exactRequestOtpBody<
   T extends RequestOtpBody & Record<Exclude<keyof T, keyof RequestOtpBody>, never>,
@@ -69,8 +69,8 @@ export const authApi = {
    * property is rejected, not stripped, so adding (say) the sign-in screen's
    * chosen OTP channel here makes every OTP request 400 and stops sign-in
    * dead. Both stay bare parameters rather than an options object, so there
-   * is no comfortable slot to drop an extra field into. See the long comment
-   * in components/auth/OtpChannelPicker.tsx.
+   * is no comfortable slot to drop an extra field into. See the comment on
+   * exactRequestOtpBody above.
    *
    * Sign-in passes no purpose, so its body is still exactly `{ phone }`
    * (JSON drops the undefined key). "password_reset" is refused with 400 "No

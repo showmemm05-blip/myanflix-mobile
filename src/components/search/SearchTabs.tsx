@@ -1,15 +1,18 @@
 import { memo } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
-// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
-import Ionicons from "@expo/vector-icons/Ionicons";
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Type-only here, but
+// the rule is the same. Don't "tidy" it back.
+import type Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { theme } from "@/theme";
 
 export interface SearchTabOption {
   value: string;
   label: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  /** Kept for callers that still pass one; the Marquee pills draw no glyph. */
+  icon?: keyof typeof Ionicons.glyphMap;
 }
 
 interface Props {
@@ -18,79 +21,72 @@ interface Props {
   onChange: (value: string) => void;
 }
 
-/** Shorter than the 44pt rung on purpose — the strip shares the header with the field; hitSlop restores the target. */
-const TAB_HEIGHT = 40;
-const TAB_HIT_SLOP = { top: 2, bottom: 2, left: 0, right: 0 };
-const UNDERLINE = 2.5;
+/** The visible pill; the Pressable around it keeps the full 44pt target. */
+const PILL_HEIGHT = 36;
 
 /**
- * The Media screen's tab strip — icon + label with a violet underline under
- * the active one, the owner's mock-up, in place of the pill segments
- * SegmentedControl draws everywhere else (that control stays as it is for its
- * other eight screens).
+ * The search screen's scope pills — Marquee pills: the selected tab is a white
+ * pill with near-black ink, the others sit on the raised #1C1C23 fill. One
+ * sideways rail, so five tabs (and a long Burmese label) scroll instead of
+ * ever being shrunk or cut.
  *
- * The tabs grow to share the width when they fit, and the strip scrolls when
- * they do not — a label is never shrunk. There are five (All, Movies, Series,
- * Books, Music), which fit a phone in English; a longer language can still
- * push Music past the right edge, and then the strip scrolls.
- *
- * Memoized for the same reason the segment strip it replaces was: nothing in
- * it can change while the user types, and with stable `options`/`onChange`
- * from the screen a keystroke does not reach it.
+ * Memoized: nothing in it can change while the user types, and with stable
+ * `options`/`onChange` from the screen a keystroke does not reach it.
  */
 export const SearchTabs = memo(function SearchTabs({ options, value, onChange }: Props) {
+  const reduceMotion = useReducedMotion();
   return (
-    <View style={styles.strip}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-        {options.map((option) => {
-          const active = option.value === value;
-          const color = active ? theme.colors.primary : theme.colors.textMuted;
-          return (
-            <Pressable
-              key={option.value}
-              onPress={() => onChange(option.value)}
-              hitSlop={TAB_HIT_SLOP}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-              accessibilityLabel={option.label}
-              style={styles.tab}
-            >
-              <View style={styles.tabContent}>
-                <Ionicons name={option.icon} size={16} color={color} />
-                <ThemedText variant="label" weight={active ? "bold" : "semibold"} numberOfLines={1} style={{ color }}>
-                  {option.label}
-                </ThemedText>
-              </View>
-              <View style={[styles.underline, active && styles.underlineActive]} />
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    </View>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.row}
+      keyboardShouldPersistTaps="handled"
+      accessibilityRole="tablist"
+    >
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <Pressable
+            key={option.value}
+            onPress={() => onChange(option.value)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={option.label}
+            style={({ pressed }) => [
+              styles.target,
+              pressed && (reduceMotion ? styles.pressedStill : styles.pressed),
+            ]}
+          >
+            <View style={[styles.pill, active ? styles.pillActive : styles.pillIdle]}>
+              <ThemedText
+                variant="muted"
+                weight={active ? "extrabold" : "semibold"}
+                numberOfLines={1}
+                color={active ? theme.colors.onPlay : theme.colors.textBody}
+              >
+                {option.label}
+              </ThemedText>
+            </View>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
   );
 });
 
 const styles = StyleSheet.create({
-  /** The hairline the underline sits on — one rule across the full width, tabs or not. */
-  strip: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border },
-  row: { flexGrow: 1, paddingHorizontal: theme.spacing.sm },
-  tab: {
-    flexGrow: 1,
-    height: TAB_HEIGHT,
-    paddingHorizontal: theme.spacing.md - 2,
+  row: { gap: theme.spacing.sm, paddingHorizontal: theme.layout.screenPadding },
+  target: { minHeight: theme.layout.minTouch, justifyContent: "center" },
+  /** A minimum, so 2× text grows the pill rather than clipping the label. */
+  pill: {
+    minHeight: PILL_HEIGHT,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: PILL_HEIGHT / 2,
     alignItems: "center",
     justifyContent: "center",
   },
-  tabContent: { flexDirection: "row", alignItems: "center", gap: 6 },
-  underline: {
-    position: "absolute",
-    left: theme.spacing.sm,
-    right: theme.spacing.sm,
-    bottom: 0,
-    height: UNDERLINE,
-    borderTopLeftRadius: UNDERLINE,
-    borderTopRightRadius: UNDERLINE,
-    backgroundColor: "transparent",
-  },
-  underlineActive: { backgroundColor: theme.colors.primary },
+  pillActive: { backgroundColor: theme.colors.play },
+  pillIdle: { backgroundColor: theme.colors.surfaceElevated },
+  pressed: { transform: [{ scale: 0.96 }] },
+  pressedStill: { opacity: 0.75 },
 });

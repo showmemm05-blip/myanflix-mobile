@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { booksService } from "@/services/books.service";
 import { SEARCH_MIN_LENGTH, SEARCH_STALE_TIME_MS, SUGGEST_LIMIT } from "@/hooks/useSearchTerm";
+import type { CatalogListOptions } from "@/hooks/useMovies";
 import type { BookQuery, BookReadingProgress } from "@/types/book";
 
 /**
@@ -45,13 +46,17 @@ const MINUTE_MS = 60_000;
  * shelf" rail wants. `options.enabled` is how a caller states that the viewer
  * may ask at all — /books is members-only, so the Search screen passes its
  * auth flag here and a guest never fires a request that would 401.
+ * `options.staleTime` / `refetchOnWindowFocus`: see CatalogListOptions — the
+ * books hub passes 5 minutes for its shelves; the default stays 1 minute.
  */
-export function useBooksList(query: BookQuery = {}, options: { enabled?: boolean } = {}) {
+export function useBooksList(query: BookQuery = {}, options: CatalogListOptions = {}) {
   return useQuery({
     queryKey: booksKey(query),
     queryFn: ({ signal }) => booksService.getBooks(query, { signal }),
     enabled: options.enabled ?? true,
-    staleTime: MINUTE_MS,
+    staleTime: options.staleTime ?? MINUTE_MS,
+    // Only when the caller says so — otherwise the app-wide default applies.
+    ...(options.refetchOnWindowFocus !== undefined && { refetchOnWindowFocus: options.refetchOnWindowFocus }),
   });
 }
 
@@ -62,8 +67,9 @@ export function useBooksList(query: BookQuery = {}, options: { enabled?: boolean
  * exists for the same reason: /books is members-only, so a screen that can be
  * reached signed out (the Search screen's Books segment) states the session
  * here rather than firing a request that 401s and reads as a network failure.
+ * `options.staleTime` / `refetchOnWindowFocus`: see CatalogListOptions.
  */
-export function useBooksInfinite(query: BookQuery = {}, options: { enabled?: boolean } = {}) {
+export function useBooksInfinite(query: BookQuery = {}, options: CatalogListOptions = {}) {
   return useInfiniteQuery({
     queryKey: booksInfiniteKey(query),
     queryFn: ({ pageParam, signal }) => booksService.getBooks({ ...query, page: pageParam }, { signal }),
@@ -74,7 +80,9 @@ export function useBooksInfinite(query: BookQuery = {}, options: { enabled?: boo
       return loaded < lastPage.total ? lastPage.page + 1 : undefined;
     },
     placeholderData: keepPreviousData,
-    staleTime: MINUTE_MS,
+    staleTime: options.staleTime ?? MINUTE_MS,
+    // Only when the caller says so — otherwise the app-wide default applies.
+    ...(options.refetchOnWindowFocus !== undefined && { refetchOnWindowFocus: options.refetchOnWindowFocus }),
   });
 }
 

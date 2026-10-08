@@ -1,12 +1,20 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { Button } from "@/components/ui/Button";
 import { BottomSheet } from "@/components/ui/BottomSheet";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { ErrorNotice, SheetForm } from "@/components/wallet/SheetForm";
+import { SheetForm } from "@/components/wallet/SheetForm";
+import {
+  ActionButton,
+  IconDisc,
+  Notice,
+  SheetHeader,
+  SheetIntro,
+  accountActionBar,
+} from "@/components/profile/AccountKit";
 import { useAuth } from "@/hooks/useAuth";
 import { useLanguage } from "@/localization/LanguageProvider";
 import type { TranslationShape } from "@/localization/translations";
@@ -39,7 +47,16 @@ function describeError(err: unknown, t: TranslationShape): string {
 
 /**
  * "Delete account" (audit H-16; app-store rule): says plainly what happens,
- * asks once more in a native dialog, then calls DELETE /users/me.
+ * asks once more in an in-app dialog, then calls DELETE /users/me.
+ * Marquee: DeleteAccount.dc.html — a red trash disc, the title over a bold
+ * red "This can't be undone.", four points on hairlines, one deep-red button.
+ *
+ * The confirmation is the board's in-app dialog (owner, 2026-10-05; it was
+ * the native OS alert before), with the same strings the alert carried. It
+ * stays open while the request runs — its Delete shows the busy dots and
+ * nothing can close it — and a refusal closes it and lands in the sheet's
+ * notice, as before. The dialog is rendered INSIDE the sheet: iOS presents a
+ * Modal from the nearest view controller, which here is the sheet's own.
  *
  * The server decides whether it may happen — it refuses while the wallet
  * holds money or a deposit/withdrawal is waiting for review — so nothing is
@@ -53,41 +70,53 @@ export function DeleteAccountSheet({ visible, onClose }: Props) {
   const p = t.profile;
   const { deleteAccount } = useAuth();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Set in the same tick as the tap, unlike `isDeleting`, which a second tap
+   * landing before the next render would still read as false. The native
+   * alert closed itself on the first tap; this dialog stays open, so this is
+   * what keeps a fast double tap to ONE DELETE /users/me.
+   */
+  const inFlight = useRef(false);
 
   const handleClose = () => {
     // Closing mid-request would hide the one answer this action gets.
-    if (isDeleting) return;
+    if (inFlight.current) return;
     onClose();
+    setConfirming(false);
     setError(null);
   };
 
   const runDelete = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setError(null);
     setIsDeleting(true);
     try {
       await deleteAccount();
-      // The navigator has already swapped to sign-in; the dialog outlives it.
+      setConfirming(false);
+      // The navigator has already swapped to sign-in; this NATIVE notice
+      // outlives the screen (it is drawn in a window of its own), which an
+      // in-app dialog in this unmounting sheet could not.
       Alert.alert(p.deleteAccountDoneTitle, p.deleteAccountDoneBody);
     } catch (err) {
+      setConfirming(false);
       setError(describeError(err, t));
     } finally {
+      inFlight.current = false;
       setIsDeleting(false);
     }
   };
 
   const confirm = () => {
-    if (isDeleting) return;
-    Alert.alert(p.deleteAccountConfirmTitle, p.deleteAccountConfirmBody, [
-      { text: t.common.cancel, style: "cancel" },
-      {
-        text: p.deleteAccountConfirmAction,
-        style: "destructive",
-        onPress: () => {
-          void runDelete();
-        },
-      },
-    ]);
+    if (inFlight.current) return;
+    setConfirming(true);
+  };
+
+  const cancelConfirm = () => {
+    if (inFlight.current) return;
+    setConfirming(false);
   };
 
   const points: { icon: keyof typeof Ionicons.glyphMap; text: string }[] = [
@@ -97,53 +126,85 @@ export function DeleteAccountSheet({ visible, onClose }: Props) {
     { icon: "call-outline", text: p.deleteAccountPointPhone },
   ];
 
+  const header = (
+    <SheetHeader onClose={handleClose} closeLabel={t.common.close} closeDisabled={isDeleting}>
+      <IconDisc icon="trash-outline" color={theme.colors.danger} fill={theme.colors.dangerSoft} size={64} iconSize={28} />
+    </SheetHeader>
+  );
+
   return (
     <BottomSheet
       visible={visible}
       onClose={handleClose}
-      snapHeight={600}
-      title={p.deleteAccount}
-      subtitle={p.deleteAccountSubtitle}
-      showClose
+      snapHeight={700}
+      header={header}
       dismissible={!isDeleting}
     >
       <SheetForm
+        actionStyle={accountActionBar}
         action={
           <>
-            {error ? <ErrorNotice message={error} /> : null}
-            <Button
+            {error ? <Notice message={error} /> : null}
+            <ActionButton
               title={p.deleteAccountButton}
+              tone="destructive"
+              icon="trash-outline"
               onPress={confirm}
               loading={isDeleting}
-              disabled={isDeleting}
-              size="lg"
-              icon="trash-outline"
-              color={theme.colors.danger}
-              style={styles.actionButton}
             />
           </>
         }
       >
+        <SheetIntro
+          title={p.deleteAccount}
+          subtitle={p.deleteAccountSubtitle}
+          subtitleTone="danger"
+          style={styles.intro}
+        />
         <View style={styles.points}>
-          {points.map((point) => (
-            <View key={point.icon} style={styles.point}>
-              <Ionicons name={point.icon} size={18} color={theme.colors.textMuted} style={styles.pointIcon} />
-              <ThemedText variant="body" style={styles.pointText}>
+          {points.map((point, index) => (
+            <View key={point.icon} style={[styles.point, index < points.length - 1 && styles.pointDivider]}>
+              <View style={styles.pointDisc} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+                <Ionicons name={point.icon} size={18} color={theme.colors.textMuted} />
+              </View>
+              <ThemedText variant="body" color={theme.colors.textBody} style={styles.pointText}>
                 {point.text}
               </ThemedText>
             </View>
           ))}
         </View>
+        {/* Its own window, so where it sits here does not affect the layout —
+            only that it is inside the sheet (see the note above). */}
+        <ConfirmDialog
+          visible={confirming}
+          title={p.deleteAccountConfirmTitle}
+          message={p.deleteAccountConfirmBody}
+          confirmLabel={p.deleteAccountConfirmAction}
+          cancelLabel={t.common.cancel}
+          onConfirm={() => {
+            void runDelete();
+          }}
+          onCancel={cancelConfirm}
+          busy={isDeleting}
+        />
       </SheetForm>
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  points: { gap: theme.spacing.md },
-  point: { flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.sm },
-  pointIcon: { marginTop: 2 },
-  pointText: { flex: 1, color: theme.colors.textMuted },
-  /** The pinned bar owns its own spacing, so the button inside it adds none. */
-  actionButton: { alignSelf: "stretch" },
+  intro: { marginTop: theme.spacing.md },
+  points: { marginTop: 20 },
+  point: { flexDirection: "row", alignItems: "flex-start", gap: 14, paddingVertical: 12 },
+  pointDivider: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  pointDisc: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.surfaceElevated,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  /** The board's 6pt drop centres the first line on the 36pt disc. */
+  pointText: { flex: 1, paddingTop: 6 },
 });

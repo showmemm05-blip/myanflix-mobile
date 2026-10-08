@@ -12,7 +12,9 @@ import { ScrollIntoViewContext, useKeyboardLift } from "@/hooks/useKeyboardLift"
  * useKeyboardLift for the why.
  */
 export const KeyboardLiftScrollView = forwardRef<ScrollView, ScrollViewProps>(function KeyboardLiftScrollView(
-  { children, onLayout, onScroll, ...rest },
+  // 32ms is plenty for the lift (it only notes the offset); a screen whose top
+  // bar fades with this scroll (the glass on the detail screens) passes 16.
+  { children, onLayout, onScroll, scrollEventThrottle = 32, ...rest },
   forwardedRef: ForwardedRef<ScrollView>,
 ) {
   const lift = useKeyboardLift();
@@ -41,7 +43,7 @@ export const KeyboardLiftScrollView = forwardRef<ScrollView, ScrollViewProps>(fu
         lift.onScroll(event);
         onScroll?.(event);
       }}
-      scrollEventThrottle={32}
+      scrollEventThrottle={scrollEventThrottle}
     >
       <View ref={lift.contentRef} onLayout={lift.onContentLayout}>
         <ScrollIntoViewContext.Provider value={lift.scrollFocusedIntoView}>{children}</ScrollIntoViewContext.Provider>

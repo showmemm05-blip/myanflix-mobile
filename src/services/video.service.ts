@@ -35,11 +35,6 @@ export type StreamAccessResult =
   | { status: "forbidden" } // premium + not purchased
   | { status: "not-ready" }; // 404 — movie doesn't exist, or video isn't READY yet (backend can't distinguish these for a normal user)
 
-/**
- * How many of the newest watch-history rows the resume lookup reads — the
- * backend's page-size ceiling (PaginationQueryDto @Max(100)).
- */
-const RESUME_LOOKUP_ROWS = 100;
 /** A title this far through counts as finished and starts again from the top. */
 const RESUME_FINISHED_PERCENT = 95;
 /** Less than this far in is not worth a seek — starting over costs nothing. */
@@ -74,18 +69,16 @@ export const videoService = {
    * start at 0:00 (audit H-27). Null when there is no saved position, when it
    * is under RESUME_MIN_SECONDS, or when the title was watched to 95% or more.
    *
-   * The API has no single-title progress route, so this reads the newest
-   * RESUME_LOOKUP_ROWS rows of the viewer's own history (newest first). A
-   * title last touched further back than that starts from the top — the same
-   * as before this lookup existed.
+   * One small request for this title's own row (GET
+   * /videos/:movieId/watch-progress) — it used to download the newest 100
+   * history rows to find one, and anything older than those started over.
    */
   async getResumePosition(movieId: string, options: RequestSignalOptions = {}): Promise<number | null> {
-    const { items } = await videosApi.getMyWatchHistory({ page: 1, limit: RESUME_LOOKUP_ROWS }, options);
-    const entry = items.find((row) => row.movieId === movieId);
+    const entry = await videosApi.getWatchProgress(movieId, options);
     if (!entry) return null;
     if (entry.progress >= RESUME_FINISHED_PERCENT) return null;
-    if (!(entry.lastPosition >= RESUME_MIN_SECONDS)) return null;
-    return entry.lastPosition;
+    if (!(entry.position >= RESUME_MIN_SECONDS)) return null;
+    return entry.position;
   },
 
   updateWatchProgress(movieId: string, progress: number, lastPosition: number) {

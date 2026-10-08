@@ -1,18 +1,12 @@
-import { withdrawalsApi } from "@/api/withdrawals.api";
-import type { PaginationParams, RequestSignalOptions } from "@/types/api";
+import { withdrawalsApi, type CreateWithdrawalInput } from "@/api/withdrawals.api";
+import type { RequestListParams, RequestSignalOptions } from "@/types/api";
 
 export const withdrawalsService = {
-  createWithdrawal(
-    amount: number,
-    accountType: string,
-    accountName: string,
-    accountNumber: string,
-    bankName?: string,
-  ) {
-    return withdrawalsApi.createWithdrawal(amount, accountType, accountName, accountNumber, bankName);
+  createWithdrawal(input: CreateWithdrawalInput) {
+    return withdrawalsApi.createWithdrawal(input);
   },
 
-  getMyWithdrawals(pagination: PaginationParams = {}, options: RequestSignalOptions = {}) {
+  getMyWithdrawals(pagination: RequestListParams = {}, options: RequestSignalOptions = {}) {
     return withdrawalsApi.getMyWithdrawals(pagination, options);
   },
 };

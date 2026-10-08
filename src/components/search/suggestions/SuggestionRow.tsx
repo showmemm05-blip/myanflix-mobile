@@ -8,17 +8,17 @@ import { theme, withAlpha } from "@/theme";
 
 /**
  * Artwork HEIGHT is the constant every kind shares, and the width follows the
- * real aspect: 38 for a 2:3 movie or series poster, 40 for a 5:7 book cover
+ * real aspect: 36 for a 2:3 movie or series poster, 39 for a 5:7 book cover
  * (BookCard's own ratio). Holding the height fixed is what keeps ROW_HEIGHT,
- * the five-row cap and the keyboard budget below identical for all three —
- * the 2pt shift of the text column is invisible, and a panel only ever lists
- * one kind at a time, so two widths are never seen side by side.
+ * the visible-row cap and the keyboard budget identical for all three — the
+ * text column's 3pt shift is invisible, and a panel only ever lists one kind
+ * at a time, so two widths are never seen side by side.
  */
-export const THUMB_HEIGHT = 56;
-export const POSTER_THUMB_WIDTH = 38;
-export const BOOK_THUMB_WIDTH = 40;
-/** 56pt thumbnail plus 6pt of air above and below — one fixed, measurable row. */
-export const ROW_HEIGHT = 68;
+export const THUMB_HEIGHT = 54;
+export const POSTER_THUMB_WIDTH = 36;
+export const BOOK_THUMB_WIDTH = 39;
+/** The Marquee board's 64pt row: a 54pt thumbnail plus 5pt of air above and below. */
+export const ROW_HEIGHT = 64;
 
 interface Props {
   /** The row's headline — the matched part of it is picked out below. */
@@ -36,7 +36,11 @@ interface Props {
   onPress: () => void;
 }
 
-/** One suggestion: thumbnail, the title with the typed part picked out, meta. */
+/**
+ * One suggestion: thumbnail, the title with the typed part picked out, meta.
+ * No trailing chevron any more — the Marquee board drops it; the whole row is
+ * the target and the highlight on press says so.
+ */
 export function SuggestionRow({ title, term, imageUrl, fallbackIcon, thumbWidth, meta, onPress }: Props) {
   return (
     <Pressable
@@ -73,8 +77,6 @@ export function SuggestionRow({ title, term, imageUrl, fallbackIcon, thumbWidth,
         ) : null}
       </View>
 
-      {/* Always drawn: a phone has no hover state to reveal it with. */}
-      <Ionicons name="chevron-forward" size={16} color={theme.colors.textFaint} />
     </Pressable>
   );
 }
@@ -104,7 +106,7 @@ function HighlightedTitle({ title, term }: { title: string; term: string }) {
   return (
     <ThemedText variant="body" weight="medium" numberOfLines={1} color={theme.colors.textMuted}>
       {title.slice(0, at)}
-      <ThemedText variant="body" weight="bold" color={theme.colors.text}>
+      <ThemedText variant="body" weight="extrabold" color={theme.colors.text}>
         {title.slice(at, at + term.length)}
       </ThemedText>
       {title.slice(at + term.length)}
@@ -122,18 +124,17 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     height: ROW_HEIGHT,
-    paddingHorizontal: theme.spacing.sm,
-    gap: theme.spacing.sm + theme.spacing.xs,
+    paddingLeft: 6,
+    paddingRight: theme.spacing.sm,
+    gap: 12,
     borderRadius: theme.radius.md,
   },
   rowPressed: { backgroundColor: withAlpha(theme.colors.text, 0.06) },
   thumb: {
     height: THUMB_HEIGHT,
-    borderRadius: theme.radius.sm,
+    borderRadius: 6,
     overflow: "hidden",
     backgroundColor: theme.colors.skeleton,
-    borderWidth: 1,
-    borderColor: theme.colors.ring,
     alignItems: "center",
     justifyContent: "center",
   },

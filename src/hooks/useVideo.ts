@@ -41,23 +41,28 @@ export function useResumePosition(movieId: string | undefined) {
   });
 }
 
-export function useWatchHistory(pagination: PaginationParams = {}) {
-  return useQuery({
-    queryKey: ["watch-history", "me", pagination],
-    queryFn: ({ signal }) => videoService.getMyWatchHistory(pagination, { signal }),
-  });
-}
-
 /**
- * The Watch-history screen's endless scroll. Same `["watch-history", …]`
- * prefix as useWatchHistory above, on purpose: Player's on-unmount
+ * The Watch-history screen's endless scroll. Keyed under the
+ * `["watch-history", …]` prefix on purpose: Player's on-unmount
  * `invalidateQueries({ queryKey: ["watch-history"] })` and the reporter's
- * mark-stale sweep the prefix, so the paged list picks up a new resume point
- * exactly as the single-page list did. `pageParam` rides in on top of the
+ * mark-stale sweep the prefix, so the paged list picks up a new resume point. `pageParam` rides in on top of the
  * caller's `limit`; the key holds the caller's params only, so page 2 lands
  * in the same entry as page 1.
+ *
+ * `options.staleTime`: Home's Continue watching and "Because you watched"
+ * rows pass five minutes (CatalogListOptions' reason: the app's foreground
+ * refetch would otherwise re-ask on every return to the phone). Safe, because
+ * the player invalidates the ["watch-history"] prefix when it closes, so a
+ * new resume point still shows at once. Omitted, the app-wide default.
+ *
+ * `options.enabled`: false keeps the request from being made at all — the
+ * Home screen asks for a guest's history nowhere (the endpoint is 401), so
+ * it passes `isAuthenticated`. Omitted, the query runs.
  */
-export function useWatchHistoryInfinite(pagination: PaginationParams = {}) {
+export function useWatchHistoryInfinite(
+  pagination: PaginationParams = {},
+  options: { staleTime?: number; enabled?: boolean } = {},
+) {
   return useInfiniteQuery({
     queryKey: ["watch-history", "me", "infinite", pagination],
     queryFn: ({ pageParam, signal }) =>
@@ -67,6 +72,8 @@ export function useWatchHistoryInfinite(pagination: PaginationParams = {}) {
     // A refetch after the player closes keeps the rows on screen until the
     // fresh pages land, rather than dropping the grid back to skeletons.
     placeholderData: keepPreviousData,
+    ...(options.staleTime !== undefined && { staleTime: options.staleTime }),
+    ...(options.enabled !== undefined && { enabled: options.enabled }),
   });
 }
 

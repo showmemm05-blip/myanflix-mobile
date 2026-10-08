@@ -99,6 +99,12 @@ export interface MovieQuery {
   durationMax?: number;
   sort?: MovieSort;
   accessType?: AccessType;
+  /**
+   * Only these titles (the phone's saved favourites), at most 100 — the
+   * page-size cap. Narrows only: still PUBLISHED standalone films. Needs the
+   * 2026-10-07 backend (an older one answers 400 to an unknown param).
+   */
+  ids?: string[];
 }
 
 /** One offered value of one facet, with how many public movies carry it. */

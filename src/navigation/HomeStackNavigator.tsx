@@ -3,9 +3,10 @@ import { HomeScreen } from "@/screens/Home/Home";
 import { MovieDetailsScreen } from "@/screens/MovieDetails/MovieDetails";
 import { SeriesDetailsScreen } from "@/screens/SeriesDetails/SeriesDetails";
 import { CategoryDetailScreen } from "@/screens/Categories/CategoryDetail";
+import { BrowseScreen } from "@/screens/Browse/Browse";
 import { ActorDetailsScreen } from "@/screens/Actors/ActorDetails";
 import { SubscribeScreen } from "@/screens/Subscribe/Subscribe";
-import { modalScreenOptions, stackScreenOptions } from "@/navigation/options";
+import { modalScreenOptions, stackScreenOptions, titleScreenOptions } from "@/navigation/options";
 import type { HomeStackParamList } from "@/navigation/types";
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -16,8 +17,8 @@ export function HomeStackNavigator() {
       {/* Home stays first, so it is this stack's index 0 and `goBack()` from a
           detail page lands here rather than leaving the tab. */}
       <Stack.Screen name="Home" component={HomeScreen} />
-      {/* THE MEDIA DETAIL GROUP. These same five routes are registered
-          identically in SearchStackNavigator and LibraryStackNavigator, and the
+      {/* THE MEDIA DETAIL GROUP. These same six routes are registered
+          identically in SearchStackNavigator and ProfileStackNavigator, and the
           duplication is deliberate: a detail page belongs to the tab that
           opened it. While they lived only here, Search/Favorites/Watch history
           had to jump to the Home tab to show a movie, so `goBack()` popped the
@@ -29,9 +30,10 @@ export function HomeStackNavigator() {
           ParamList generic is invariant, so a helper typed for the shared
           param list will not accept a stack typed for a wider one.)
           KEEP THE THREE COPIES IN SYNC. */}
-      <Stack.Screen name="MovieDetails" component={MovieDetailsScreen} />
-      <Stack.Screen name="SeriesDetails" component={SeriesDetailsScreen} />
+      <Stack.Screen name="MovieDetails" component={MovieDetailsScreen} options={titleScreenOptions} />
+      <Stack.Screen name="SeriesDetails" component={SeriesDetailsScreen} options={titleScreenOptions} />
       <Stack.Screen name="CategoryDetail" component={CategoryDetailScreen} />
+      <Stack.Screen name="Browse" component={BrowseScreen} />
       <Stack.Screen name="ActorDetails" component={ActorDetailsScreen} />
       <Stack.Screen name="Subscribe" component={SubscribeScreen} options={modalScreenOptions} />
     </Stack.Navigator>

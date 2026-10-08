@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import type { ComponentType, ReactElement, Ref } from "react";
 import {
   FlatList,
   StyleSheet,
@@ -55,13 +55,25 @@ interface ResultsGridProps<T> {
    * platform — do not give this a default value here.
    */
   clip?: boolean;
+  /**
+   * The row separator. Omitted → the 24pt gap this grid has always used. A
+   * caller's own must be defined at MODULE scope, for the reason RowSeparator is.
+   */
+  separator?: ComponentType;
+  /** Merged over the default content padding — e.g. the dock clearance. */
+  contentStyle?: StyleProp<ViewStyle>;
+  /**
+   * The list's ref — the Search screen hands an animated ref here so its glass
+   * bar can follow the grid's scroll (components/layout/GlassBar).
+   */
+  listRef?: Ref<FlatList<T>>;
 }
 
 /**
- * The poster GRID — the books tab's list. Movies and series moved to one-per-
- * row cards (ResultsList) in the Media redesign; the hardcover shelf stays a
- * grid because that is the book card the owner matched to the website. The
- * generic props are kept as they were so a second grid caller needs nothing new.
+ * The poster GRID — every Media tab's result list since the Marquee redesign
+ * (movies, series and books are all 3-column grids again). The Search screen
+ * is its only caller today; the generic props are kept as they were, and
+ * `separator` and `contentStyle` are optional additions.
  */
 export function ResultsGrid<T>({
   id,
@@ -76,18 +88,22 @@ export function ResultsGrid<T>({
   onEndReached,
   refreshControl,
   clip,
+  separator,
+  contentStyle,
+  listRef,
 }: ResultsGridProps<T>) {
   return (
     <FlatList
+      ref={listRef}
       key={`${id}-grid-${columns}`}
       data={data}
       numColumns={columns}
       keyExtractor={keyExtractor}
       ListHeaderComponent={header}
       ListFooterComponent={footer}
-      contentContainerStyle={styles.gridContent}
+      contentContainerStyle={[styles.gridContent, contentStyle]}
       columnWrapperStyle={rowStyle}
-      ItemSeparatorComponent={RowSeparator}
+      ItemSeparatorComponent={separator ?? RowSeparator}
       keyboardDismissMode="on-drag"
       keyboardShouldPersistTaps="handled"
       renderItem={renderItem}
@@ -98,6 +114,7 @@ export function ResultsGrid<T>({
       maxToRenderPerBatch={batch}
       windowSize={5}
       removeClippedSubviews={clip}
+      scrollEventThrottle={16}
     />
   );
 }

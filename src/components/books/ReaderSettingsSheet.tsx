@@ -1,14 +1,13 @@
 import { useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View, useWindowDimensions } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { IconButton } from "@/components/ui/IconButton";
-import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Slider } from "@/components/ui/Slider";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { Chip } from "@/components/common/Chip";
 import { useLanguage } from "@/localization/LanguageProvider";
 import {
   BRIGHTNESS_MAX,
@@ -25,8 +24,8 @@ import {
   type ReaderTheme,
   type ReaderWidth,
 } from "@/store/readerPrefsStore";
-import { PAGE_BACKGROUND_COLOR } from "@/store/readerPrefsStore";
 import { READER_THEMES, THEME_ORDER } from "@/components/books/readerThemes";
+import { ReaderSegments } from "@/components/books/ReaderSegments";
 import { theme } from "@/theme";
 
 /** Zoom/rotation live in per-book view memory, not global prefs — the page
@@ -34,6 +33,12 @@ import { theme } from "@/theme";
 export interface ReaderPagesControls {
   /** Multiplier over the fitted size (1–3). */
   zoom: number;
+  /**
+   * False in the scrolling layout, which zooms by fit only: the steppers and
+   * "Actual size" are drawn disabled there instead of silently doing nothing.
+   * Rotate works in every layout. Defaults to true.
+   */
+  zoomEnabled?: boolean;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onZoomReset: () => void;
@@ -52,25 +57,28 @@ interface Props {
 type SectionId = "appearance" | "layout" | "behavior";
 
 const SIZE_PRESET_ORDER = ["s", "m", "l", "xl"] as const;
-/** Visual "A" sizes for the four preset chips. */
+/** Visual "A" sizes for the four preset tiles. */
 const SIZE_PRESET_GLYPH: Record<(typeof SIZE_PRESET_ORDER)[number], number> = { s: 13, m: 16, l: 19, xl: 23 };
 const PAGE_BG_ORDER: ReaderPageBackground[] = ["theme", "black", "gray", "white"];
 
 /**
- * The one settings surface both readers share — three collapsible sections
- * (Appearance open by default; expansion is plain state, never persisted).
- * Writes readerPrefsStore; sliders commit ONCE on release, not per frame.
+ * The one settings surface both readers share (BookReader.dc.html /
+ * PageReader.dc.html "settings") — three collapsible sections. The text
+ * reader opens on Appearance, the page reader on Page (its main controls);
+ * expansion is plain state, never persisted. Writes readerPrefsStore;
+ * sliders commit ONCE on release, not per frame.
  */
 export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesControls }: Props) {
   const { t } = useLanguage();
   const r = t.books.reader;
   const mode: "text" | "pages" = rawMode === "text" ? "text" : "pages";
+  const { height: windowHeight } = useWindowDimensions();
 
   const prefs = useReaderPrefsStore();
 
   const [open, setOpen] = useState<Record<SectionId, boolean>>({
-    appearance: true,
-    layout: false,
+    appearance: mode === "text",
+    layout: mode === "pages",
     behavior: false,
   });
   const toggleSection = (id: SectionId) => setOpen((current) => ({ ...current, [id]: !current[id] }));
@@ -114,12 +122,10 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
     { value: "sans", label: r.fontSans },
     { value: "dyslexic", label: r.fontDyslexic },
   ];
-  const pageBgLabels: Record<ReaderPageBackground, string> = {
-    theme: r.bgTheme,
-    black: r.bgBlack,
-    gray: r.bgGray,
-    white: r.bgWhite,
-  };
+  const pageBgOptions = PAGE_BG_ORDER.map((value) => ({
+    value,
+    label: { theme: r.bgTheme, black: r.bgBlack, gray: r.bgGray, white: r.bgWhite }[value],
+  }));
 
   // "Fit height" is meaningless while the list scrolls vertically.
   const fitOptions = [
@@ -127,12 +133,19 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
     ...(prefs.pageMode === "scroll" ? [] : [{ value: "height", label: r.fitHeight }]),
     { value: "screen", label: r.fitScreen },
   ];
+  const zoomEnabled = pagesControls?.zoomEnabled ?? true;
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} title={r.settingsTitle} showClose snapHeight={560}>
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title={r.settingsTitle}
+      showClose
+      snapHeight={Math.round(windowHeight * 0.85)}
+    >
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* ================= Appearance ================= */}
-        <Section title={r.sectionAppearance} open={open.appearance} onToggle={() => toggleSection("appearance")}>
+        <Section title={r.sectionAppearance} open={open.appearance} onToggle={() => toggleSection("appearance")} first>
           <View style={styles.swatchRow}>
             {THEME_ORDER.map((value) => {
               const swatch = READER_THEMES[value];
@@ -153,12 +166,16 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
                       selected ? styles.swatchSelected : styles.swatchIdle,
                     ]}
                   >
-                    <Text style={[styles.swatchGlyph, { color: swatch.ink }]}>Aa</Text>
+                    <Text style={[styles.swatchGlyph, { color: swatch.ink }]} allowFontScaling={false}>
+                      Aa
+                    </Text>
                   </View>
                   <ThemedText
                     variant="caption"
-                    color={selected ? theme.colors.primary : theme.colors.textMuted}
-                    numberOfLines={1}
+                    weight="bold"
+                    color={selected ? theme.colors.link : theme.colors.textMuted}
+                    numberOfLines={2}
+                    style={styles.swatchLabel}
                   >
                     {themeLabels[value]}
                   </ThemedText>
@@ -168,19 +185,17 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
           </View>
 
           {mode === "text" && (
-            <View style={styles.group}>
-              <ThemedText variant="overline">{r.fontFamily.toUpperCase()}</ThemedText>
-              <SegmentedControl
+            <Group label={r.fontFamily}>
+              <ReaderSegments
                 options={fontOptions}
                 value={prefs.fontFamily}
                 onChange={(value) => prefs.setFontFamily(value as ReaderFontFamily)}
               />
-            </View>
+            </Group>
           )}
 
           {mode === "text" && (
-            <View style={styles.group}>
-              <ThemedText variant="overline">{r.textSize.toUpperCase()}</ThemedText>
+            <Group label={r.textSize}>
               <View style={styles.presetRow}>
                 {SIZE_PRESET_ORDER.map((preset) => {
                   const value = SIZE_PRESETS[preset];
@@ -192,13 +207,14 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
                       accessibilityRole="button"
                       accessibilityLabel={sizeLabels[preset]}
                       accessibilityState={{ selected }}
-                      style={[styles.presetChip, selected ? styles.presetSelected : styles.presetIdle]}
+                      style={[styles.presetTile, selected ? styles.presetSelected : styles.presetIdle]}
                     >
                       <Text
+                        allowFontScaling={false}
                         style={[
                           styles.presetGlyph,
                           { fontSize: SIZE_PRESET_GLYPH[preset] },
-                          { color: selected ? theme.colors.primary : theme.colors.textMuted },
+                          { color: selected ? theme.colors.link : theme.colors.textMuted },
                         ]}
                       >
                         A
@@ -237,17 +253,16 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
                   disabled={prefs.textScale >= TEXT_SCALE_MAX - 1e-6}
                   accessibilityLabel={r.larger}
                 />
-                <ThemedText variant="caption" tabular style={styles.readout}>
+                <ThemedText variant="caption" weight="bold" tabular style={styles.readout}>
                   {`${Math.round(shownScale * 100)}%`}
                 </ThemedText>
               </View>
-            </View>
+            </Group>
           )}
 
-          <View style={styles.group}>
-            <ThemedText variant="overline">{r.brightness.toUpperCase()}</ThemedText>
+          <Group label={r.brightness}>
             <View style={styles.sliderRow}>
-              <Ionicons name="moon-outline" size={16} color={theme.colors.textMuted} />
+              <Ionicons name="moon-outline" size={18} color={theme.colors.textMuted} />
               <Slider
                 value={shownBrightness}
                 min={BRIGHTNESS_MIN}
@@ -261,12 +276,12 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
                 accessibilityLabel={r.brightness}
                 style={styles.slider}
               />
-              <Ionicons name="sunny-outline" size={16} color={theme.colors.textMuted} />
-              <ThemedText variant="caption" tabular style={styles.readout}>
+              <Ionicons name="sunny-outline" size={18} color={theme.colors.textMuted} />
+              <ThemedText variant="caption" weight="bold" tabular style={styles.readout}>
                 {`${Math.round(shownBrightness * 100)}%`}
               </ThemedText>
             </View>
-          </View>
+          </Group>
         </Section>
 
         {/* ================= Layout (text) / Page (pages) ================= */}
@@ -277,27 +292,29 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
         >
           {mode === "text" ? (
             <>
-              <ChipGroup
-                label={r.lineSpacing}
-                options={lineOptions}
-                value={prefs.lineHeight}
-                onChange={(value) => prefs.setLineHeight(value as ReaderLineHeight)}
-              />
-              <ChipGroup
-                label={r.readingWidth}
-                options={widthOptions}
-                value={prefs.width}
-                onChange={(value) => prefs.setWidth(value as ReaderWidth)}
-              />
-              <ChipGroup
-                label={r.margins}
-                options={marginOptions}
-                value={prefs.margins}
-                onChange={(value) => prefs.setMargins(value as ReaderMargins)}
-              />
-              <View style={styles.group}>
-                <ThemedText variant="overline">{r.alignment.toUpperCase()}</ThemedText>
-                <SegmentedControl
+              <Group label={r.lineSpacing}>
+                <ReaderSegments
+                  options={lineOptions}
+                  value={prefs.lineHeight}
+                  onChange={(value) => prefs.setLineHeight(value as ReaderLineHeight)}
+                />
+              </Group>
+              <Group label={r.readingWidth}>
+                <ReaderSegments
+                  options={widthOptions}
+                  value={prefs.width}
+                  onChange={(value) => prefs.setWidth(value as ReaderWidth)}
+                />
+              </Group>
+              <Group label={r.margins}>
+                <ReaderSegments
+                  options={marginOptions}
+                  value={prefs.margins}
+                  onChange={(value) => prefs.setMargins(value as ReaderMargins)}
+                />
+              </Group>
+              <Group label={r.alignment}>
+                <ReaderSegments
                   options={[
                     { value: "justify", label: r.alignJustify },
                     { value: "left", label: r.alignLeft },
@@ -305,7 +322,7 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
                   value={prefs.textAlign}
                   onChange={(value) => prefs.setTextAlign(value as "justify" | "left")}
                 />
-              </View>
+              </Group>
               <SwitchRow
                 label={r.chapterTitleToggle}
                 value={prefs.showChapterTitle}
@@ -314,9 +331,8 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
             </>
           ) : (
             <>
-              <View style={styles.group}>
-                <ThemedText variant="overline">{r.pageLayout.toUpperCase()}</ThemedText>
-                <SegmentedControl
+              <Group label={r.pageLayout}>
+                <ReaderSegments
                   options={[
                     { value: "single", label: r.layoutSingle },
                     { value: "double", label: r.layoutDouble },
@@ -325,56 +341,56 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
                   value={prefs.pageMode}
                   onChange={(value) => prefs.setPageMode(value as "scroll" | "single" | "double")}
                 />
-              </View>
-              <View style={styles.group}>
-                <SegmentedControl
+              </Group>
+              <Group label={r.fit}>
+                <ReaderSegments
                   options={fitOptions}
                   value={prefs.fitMode === "height" && prefs.pageMode === "scroll" ? "width" : prefs.fitMode}
                   onChange={(value) => prefs.setFitMode(value as "width" | "height" | "screen")}
                 />
-              </View>
+              </Group>
               {pagesControls && (
-                <View style={styles.group}>
-                  <ThemedText variant="overline">{r.zoom.toUpperCase()}</ThemedText>
-                  <View style={styles.sliderRow}>
+                <Group label={r.zoom}>
+                  <View style={styles.zoomRow}>
                     <IconButton
                       icon="remove"
-                      variant="outline"
+                      variant="tonal"
                       size="sm"
                       onPress={pagesControls.onZoomOut}
+                      disabled={!zoomEnabled}
                       accessibilityLabel={r.zoomOut}
                     />
-                    <ThemedText variant="section" tabular style={styles.readout}>
+                    <ThemedText
+                      variant="body"
+                      weight="extrabold"
+                      tabular
+                      color={zoomEnabled ? theme.colors.text : theme.colors.textFaint}
+                      style={styles.zoomReadout}
+                    >
                       {`${Math.round(pagesControls.zoom * 100)}%`}
                     </ThemedText>
                     <IconButton
                       icon="add"
-                      variant="outline"
+                      variant="tonal"
                       size="sm"
                       onPress={pagesControls.onZoomIn}
+                      disabled={!zoomEnabled}
                       accessibilityLabel={r.zoomIn}
                     />
+                    <PillButton label={r.zoomReset} onPress={pagesControls.onZoomReset} disabled={!zoomEnabled} />
                     <View style={styles.rowSpacer} />
                     <IconButton
-                      icon="contract-outline"
-                      variant="ghost"
-                      size="sm"
-                      onPress={pagesControls.onZoomReset}
-                      accessibilityLabel={r.zoomReset}
-                    />
-                    <IconButton
                       icon="refresh-outline"
-                      variant="ghost"
+                      variant="tonal"
                       size="sm"
                       onPress={pagesControls.onRotate}
                       accessibilityLabel={r.rotate}
                     />
                   </View>
-                </View>
+                </Group>
               )}
-              <View style={styles.group}>
-                <ThemedText variant="overline">{r.direction.toUpperCase()}</ThemedText>
-                <SegmentedControl
+              <Group label={r.direction}>
+                <ReaderSegments
                   options={[
                     { value: "ltr", label: r.dirLtr },
                     { value: "rtl", label: r.dirRtl },
@@ -382,41 +398,14 @@ export function ReaderSettingsSheet({ visible, onClose, mode: rawMode, pagesCont
                   value={prefs.pageDirection}
                   onChange={(value) => prefs.setPageDirection(value as "ltr" | "rtl")}
                 />
-              </View>
-              <View style={styles.group}>
-                <ThemedText variant="overline">{r.background.toUpperCase()}</ThemedText>
-                <View style={styles.swatchRow}>
-                  {PAGE_BG_ORDER.map((value) => {
-                    const selected = prefs.pageBackground === value;
-                    const fill = PAGE_BACKGROUND_COLOR[value] ?? READER_THEMES[prefs.readerTheme].bg;
-                    return (
-                      <Pressable
-                        key={value}
-                        onPress={() => prefs.setPageBackground(value)}
-                        accessibilityRole="button"
-                        accessibilityLabel={pageBgLabels[value]}
-                        accessibilityState={{ selected }}
-                        style={styles.swatchWrap}
-                      >
-                        <View
-                          style={[
-                            styles.swatch,
-                            { backgroundColor: fill },
-                            selected ? styles.swatchSelected : styles.swatchIdle,
-                          ]}
-                        />
-                        <ThemedText
-                          variant="caption"
-                          color={selected ? theme.colors.primary : theme.colors.textMuted}
-                          numberOfLines={1}
-                        >
-                          {pageBgLabels[value]}
-                        </ThemedText>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
+              </Group>
+              <Group label={r.background}>
+                <ReaderSegments
+                  options={pageBgOptions}
+                  value={prefs.pageBackground}
+                  onChange={(value) => prefs.setPageBackground(value as ReaderPageBackground)}
+                />
+              </Group>
             </>
           )}
         </Section>
@@ -446,13 +435,15 @@ interface SectionProps {
   title: string;
   open: boolean;
   onToggle: () => void;
+  /** The first section has no hairline above it. */
+  first?: boolean;
   children: ReactNode;
 }
 
 /** Collapsible section — plain conditional render, no LayoutAnimation (RM law). */
-function Section({ title, open, onToggle, children }: SectionProps) {
+function Section({ title, open, onToggle, first, children }: SectionProps) {
   return (
-    <View style={styles.section}>
+    <View style={!first && styles.sectionRule}>
       <Pressable
         onPress={onToggle}
         style={styles.sectionHeader}
@@ -460,7 +451,9 @@ function Section({ title, open, onToggle, children }: SectionProps) {
         accessibilityLabel={title}
         accessibilityState={{ expanded: open }}
       >
-        <ThemedText variant="section">{title}</ThemedText>
+        <ThemedText variant="body" weight="extrabold" style={styles.sectionTitle}>
+          {title}
+        </ThemedText>
         <Ionicons name={open ? "chevron-up" : "chevron-down"} size={18} color={theme.colors.textMuted} />
       </Pressable>
       {open && <View style={styles.sectionBody}>{children}</View>}
@@ -468,28 +461,35 @@ function Section({ title, open, onToggle, children }: SectionProps) {
   );
 }
 
-interface ChipGroupProps {
-  label: string;
-  options: { value: string; label: string }[];
-  value: string;
-  onChange: (value: string) => void;
-}
-
-function ChipGroup({ label, options, value, onChange }: ChipGroupProps) {
+/** An overline-labelled control group. */
+function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
     <View style={styles.group}>
       <ThemedText variant="overline">{label.toUpperCase()}</ThemedText>
-      <View style={styles.chipRow}>
-        {options.map((option) => (
-          <Chip
-            key={option.value}
-            label={option.label}
-            selected={value === option.value}
-            onPress={() => onChange(option.value)}
-          />
-        ))}
-      </View>
+      {children}
     </View>
+  );
+}
+
+/** "Actual size" — a text pill on the raised fill beside the zoom steppers. */
+function PillButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      style={({ pressed }) => [
+        styles.pill,
+        pressed && !disabled && (reduceMotion ? styles.pressedStill : styles.pressed),
+      ]}
+    >
+      <ThemedText variant="muted" weight="bold" color={disabled ? theme.colors.textFaint : theme.colors.text} numberOfLines={2}>
+        {label}
+      </ThemedText>
+    </Pressable>
   );
 }
 
@@ -504,13 +504,21 @@ function SwitchRow({ label, hint, value, onChange }: SwitchRowProps) {
   return (
     <View style={styles.switchRow}>
       <View style={styles.switchLabel}>
-        <ThemedText variant="body">{label}</ThemedText>
-        {hint && <ThemedText variant="caption">{hint}</ThemedText>}
+        <ThemedText variant="body" weight="semibold">
+          {label}
+        </ThemedText>
+        {hint && (
+          <ThemedText variant="label" weight="regular" color={theme.colors.textFaint} style={styles.hint}>
+            {hint}
+          </ThemedText>
+        )}
       </View>
       <Switch
         value={value}
         onValueChange={onChange}
-        trackColor={{ false: theme.colors.surfaceSunken, true: theme.colors.primary }}
+        trackColor={{ false: theme.colors.tonalStrong, true: theme.colors.primary }}
+        thumbColor={theme.colors.text}
+        ios_backgroundColor={theme.colors.tonalStrong}
         accessibilityLabel={label}
       />
     </View>
@@ -518,55 +526,66 @@ function SwitchRow({ label, hint, value, onChange }: SwitchRowProps) {
 }
 
 const styles = StyleSheet.create({
-  scrollContent: { paddingBottom: theme.spacing.lg, gap: theme.spacing.sm },
-  section: {
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    paddingBottom: theme.spacing.sm,
-  },
+  scrollContent: { paddingBottom: theme.spacing.lg },
+  sectionRule: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.border },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    minHeight: theme.layout.minTouch,
+    gap: theme.spacing.sm,
+    minHeight: 52,
   },
-  sectionBody: { gap: theme.spacing.lg, paddingBottom: theme.spacing.sm },
+  sectionTitle: { flex: 1 },
+  sectionBody: { gap: 20, paddingBottom: theme.spacing.md },
   group: { gap: theme.spacing.sm },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
-  swatchRow: { flexDirection: "row", gap: theme.spacing.md },
-  swatchWrap: { alignItems: "center", gap: theme.spacing.xs, flex: 1 },
+  swatchRow: { flexDirection: "row", gap: 10 },
+  swatchWrap: { flex: 1, alignItems: "center", gap: 6 },
   swatch: {
-    width: theme.layout.minTouch,
-    height: theme.layout.minTouch,
-    borderRadius: theme.radius.pill,
+    alignSelf: "stretch",
+    height: 56,
+    borderRadius: theme.radius.lg,
     alignItems: "center",
     justifyContent: "center",
   },
   swatchIdle: { borderWidth: 1, borderColor: theme.colors.borderStrong },
   swatchSelected: { borderWidth: 2, borderColor: theme.colors.primary },
-  swatchGlyph: { fontSize: 15, fontFamily: theme.font.semibold },
+  swatchGlyph: { fontSize: 18, fontFamily: theme.font.extrabold },
+  swatchLabel: { textAlign: "center" },
   presetRow: { flexDirection: "row", gap: theme.spacing.sm },
-  presetChip: {
+  presetTile: {
     flex: 1,
     minHeight: theme.layout.minTouch,
     borderRadius: theme.radius.lg,
-    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  presetIdle: { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.border },
-  presetSelected: { backgroundColor: theme.colors.accent, borderColor: theme.colors.primary },
-  presetGlyph: { fontFamily: theme.font.semibold },
-  sliderRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
-  slider: { flex: 1 },
-  readout: { minWidth: 48, textAlign: "center" },
+  presetIdle: { backgroundColor: theme.colors.surfaceElevated },
+  presetSelected: { backgroundColor: theme.colors.primarySoft },
+  presetGlyph: { fontFamily: theme.font.extrabold },
+  sliderRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, minHeight: theme.layout.minTouch },
+  slider: { flex: 1, marginHorizontal: theme.spacing.xs },
+  readout: { minWidth: 44, textAlign: "right" },
+  zoomRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: theme.spacing.sm },
+  zoomReadout: { minWidth: 56, textAlign: "center" },
   rowSpacer: { flex: 1 },
+  pill: {
+    minHeight: theme.layout.minTouch,
+    paddingHorizontal: 14,
+    borderRadius: theme.layout.minTouch / 2,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.surfaceElevated,
+    flexShrink: 1,
+  },
+  pressed: { transform: [{ scale: 0.96 }] },
+  pressedStill: { opacity: 0.7 },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: theme.spacing.md,
-    minHeight: theme.layout.minTouch,
+    gap: 12,
+    minHeight: 52,
   },
-  switchLabel: { flex: 1, gap: 2 },
+  switchLabel: { flex: 1 },
+  hint: { letterSpacing: 0 },
 });

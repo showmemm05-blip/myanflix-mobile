@@ -9,7 +9,6 @@ import {
   useWindowDimensions,
   type KeyboardEvent,
 } from "react-native";
-import { BlurView } from "expo-blur";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -27,6 +26,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { ThemedText } from "@/components/ui/ThemedText";
+import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 
 interface Props {
@@ -38,6 +38,11 @@ interface Props {
   title?: string;
   /** One quiet line under the title. */
   subtitle?: string;
+  /**
+   * What a screen reader says for the subtitle, when the visible text is not
+   * speakable as is (e.g. a masked amount's dots). Defaults to the subtitle.
+   */
+  subtitleAccessibilityLabel?: string;
   /** Shows a 44pt close button on the right of the header. */
   showClose?: boolean;
   /** Pinned below the scrollable body (e.g. a submit button). */
@@ -54,6 +59,23 @@ interface Props {
    * cannot strand it.
    */
   dismissible?: boolean;
+  /**
+   * Spoken name of the scrim and the header X. Defaults to the localized
+   * "Close" (`t.common.close`); a caller passes its own only to say more.
+   */
+  closeLabel?: string;
+  /**
+   * Replaces the grabber and the title row with the caller's own header. It is
+   * still the drag handle, and `title` / `subtitle` / `showClose` are ignored.
+   */
+  header?: ReactNode;
+  /**
+   * A full-height flow instead of a card: the whole window, square corners,
+   * the page background, the status bar and side safe areas kept clear, and
+   * no side padding — the content owns its own margins (the wallet's
+   * deposit / withdraw steps). Keyboard handling is exactly the sheet's.
+   */
+  fullScreen?: boolean;
 }
 
 /**
@@ -189,6 +211,10 @@ export function useSheetKeyboardLift(): number {
  * The app's modal surface for pickers, filters and short forms. Drag the
  * grabber header (or tap the scrim) to dismiss — the pan lives on the header
  * only so scrollable sheet bodies never fight the dismiss gesture.
+ *
+ * Marquee: a #121217 sheet with 24pt top corners, a 36×4 grabber, a 19pt
+ * title beside a 44pt round close button, 16pt side margins, over a plain
+ * 60% black backdrop. No border, no shadow.
  */
 /**
  * The sheet's entrance curve. Deliberately NOT a spring: the spring this
@@ -212,14 +238,21 @@ export function BottomSheet({
   snapHeight,
   title,
   subtitle,
+  subtitleAccessibilityLabel,
   showClose,
   footer,
   dismissible = true,
+  closeLabel: closeLabelProp,
+  header,
+  fullScreen = false,
 }: Props) {
+  const { t } = useLanguage();
+  /** Spoken on the close button and the scrim; the localized "Close" unless a caller names it. */
+  const closeLabel = closeLabelProp ?? t.common.close;
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const maxHeight = windowHeight * 0.92;
-  const sheetHeight = Math.min(snapHeight ?? windowHeight * 0.6, maxHeight);
+  const sheetHeight = fullScreen ? windowHeight : Math.min(snapHeight ?? windowHeight * 0.6, maxHeight);
   const keyboardOverlap = useKeyboardOverlap(visible, windowHeight);
   const sheetBottomPadding = Math.max(insets.bottom, theme.spacing.md);
   /**
@@ -304,13 +337,10 @@ export function BottomSheet({
         style={styles.backdropTouchable}
         onPress={onClose}
         disabled={!dismissible}
-        accessibilityLabel="Close"
+        accessibilityLabel={closeLabel}
         accessibilityRole="button"
       >
-        <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-          <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
-          <View style={styles.backdrop} />
-        </Animated.View>
+        <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, backdropStyle]} />
       </Pressable>
 
       <Animated.View
@@ -320,34 +350,47 @@ export function BottomSheet({
           // what keep the body's frame — and so every field in it — perfectly
           // still while the keyboard comes and goes.
           { height: sheetHeight, paddingBottom: sheetBottomPadding },
+          fullScreen && [
+            styles.sheetFullScreen,
+            { paddingTop: insets.top, paddingHorizontal: Math.max(insets.left, insets.right) },
+          ],
           sheetStyle,
         ]}
       >
         <GestureDetector gesture={pan}>
-          <View style={styles.header}>
-            <View style={styles.handle} />
-            {(title || showClose) && (
-              <View style={styles.headerRow}>
-                <View style={styles.headerText}>
-                  {title && (
-                    <ThemedText variant="section" numberOfLines={1}>
-                      {title}
-                    </ThemedText>
-                  )}
-                  {subtitle && (
-                    <ThemedText variant="caption" numberOfLines={2}>
-                      {subtitle}
-                    </ThemedText>
+          {header ? (
+            <View>{header}</View>
+          ) : (
+            <View style={styles.header}>
+              <View style={styles.handle} />
+              {(title || showClose) && (
+                <View style={styles.headerRow}>
+                  <View style={styles.headerText}>
+                    {title && (
+                      <ThemedText variant="section" numberOfLines={1} accessibilityRole="header">
+                        {title}
+                      </ThemedText>
+                    )}
+                    {subtitle && (
+                      <ThemedText variant="caption" numberOfLines={2} accessibilityLabel={subtitleAccessibilityLabel}>
+                        {subtitle}
+                      </ThemedText>
+                    )}
+                  </View>
+                  {showClose && (
+                    <Pressable
+                      onPress={onClose}
+                      style={({ pressed }) => [styles.close, pressed && styles.closePressed]}
+                      accessibilityRole="button"
+                      accessibilityLabel={closeLabel}
+                    >
+                      <Ionicons name="close" size={18} color={theme.colors.text} />
+                    </Pressable>
                   )}
                 </View>
-                {showClose && (
-                  <Pressable onPress={onClose} style={styles.close} accessibilityRole="button" accessibilityLabel="Close">
-                    <Ionicons name="close" size={20} color={theme.colors.textMuted} />
-                  </Pressable>
-                )}
-              </View>
-            )}
-          </View>
+              )}
+            </View>
+          )}
         </GestureDetector>
 
         <SheetKeyboardContext.Provider value={keyboardLift}>
@@ -373,38 +416,48 @@ export function BottomSheet({
 
 const styles = StyleSheet.create({
   backdropTouchable: { ...StyleSheet.absoluteFill },
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: theme.colors.scrim },
+  backdrop: { backgroundColor: theme.colors.overlay },
   sheet: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: theme.colors.popover,
-    borderTopLeftRadius: theme.radius["3xl"],
-    borderTopRightRadius: theme.radius["3xl"],
-    borderTopWidth: 1,
-    borderColor: theme.colors.borderStrong,
-    paddingHorizontal: theme.spacing.lg,
-    ...theme.shadow.lg,
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: theme.radius.sheet,
+    borderTopRightRadius: theme.radius.sheet,
+    paddingHorizontal: theme.layout.screenPadding,
+  },
+  sheetFullScreen: {
+    backgroundColor: theme.colors.background,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
   },
   header: { paddingTop: theme.spacing.sm, paddingBottom: theme.spacing.sm },
+  /** DesignSystem: 36×4, white at 24%. */
   handle: {
     alignSelf: "center",
-    width: 40,
+    width: 36,
     height: 4,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.borderStrong,
+    borderRadius: 2,
+    backgroundColor: theme.colors.grabber,
   },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, marginTop: theme.spacing.sm },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.md,
+    minHeight: theme.layout.minTouch,
+    marginTop: 12,
+  },
   headerText: { flex: 1, gap: 2 },
   close: {
     width: theme.layout.minTouch,
     height: theme.layout.minTouch,
-    borderRadius: theme.radius.pill,
+    borderRadius: theme.layout.minTouch / 2,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.colors.secondary,
+    backgroundColor: theme.colors.tonalSoft,
   },
+  closePressed: { opacity: 0.7 },
   body: { flex: 1 },
-  footer: { paddingTop: theme.spacing.md, backgroundColor: theme.colors.popover },
+  footer: { paddingTop: theme.spacing.md, backgroundColor: theme.colors.surface },
 });

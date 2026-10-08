@@ -11,8 +11,6 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useReducedMotion } from "react-native-reanimated";
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { ReaderTopBar } from "@/components/books/ReaderTopBar";
 import { ReaderFooter } from "@/components/books/ReaderFooter";
@@ -20,6 +18,8 @@ import { ReaderContentsSheet } from "@/components/books/ReaderContentsSheet";
 import { ReaderSettingsSheet, type ReaderPagesControls } from "@/components/books/ReaderSettingsSheet";
 import { ReaderDim } from "@/components/books/ReaderDim";
 import { ReaderKeepAwake } from "@/components/books/ReaderKeepAwake";
+import { ReaderEndNav } from "@/components/books/ReaderEndNav";
+import { ReaderMessage } from "@/components/books/ReaderMessage";
 import { PageSheet, FOLIO_HEIGHT, type PageRotation } from "@/components/books/PageSheet";
 import { PageThumbGrid } from "@/components/books/PageThumbGrid";
 import { JumpToPageSheet } from "@/components/books/JumpToPageSheet";
@@ -438,6 +438,7 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
   const noop = useCallback(() => {}, []);
   const pagesControls: ReaderPagesControls = {
     zoom: paged ? zoom : 1,
+    zoomEnabled: paged,
     onZoomIn: paged ? zoomIn : noop,
     onZoomOut: paged ? zoomOut : noop,
     onZoomReset: paged ? zoomReset : noop,
@@ -567,36 +568,20 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
     [windowWidth],
   );
 
-  const endControls = (
-    <View style={styles.endControls}>
-      {previousChapter && (
-        <Button
-          title={previousChapter.title}
-          icon="chevron-back"
-          variant="outline"
-          onPress={() => goToChapter(previousChapter.id)}
-          disabled={previousChapter.status !== "READY"}
-          accessibilityLabel={r.previousChapter}
-          style={styles.endButton}
-        />
-      )}
-      {nextChapter ? (
-        <Button
-          title={nextChapter.title}
-          trailingIcon="chevron-forward"
-          variant="outline"
-          onPress={() => goToChapter(nextChapter.id)}
-          disabled={nextChapter.status !== "READY"}
-          accessibilityLabel={r.nextChapter}
-          style={styles.endButton}
-        />
-      ) : (
-        <ThemedText variant="caption" style={[styles.finished, { color: colors.muted }]}>
-          {r.finished}
-        </ThemedText>
-      )}
-    </View>
+  // The chapter way on — the next chapter is the ink-filled card. `goToChapter`
+  // takes an optional entry page, so it is wrapped rather than passed bare.
+  const endNav = (
+    <ReaderEndNav
+      colors={colors}
+      previous={previousChapter}
+      next={nextChapter}
+      onGo={(targetId) => goToChapter(targetId)}
+    />
   );
+  // Under the scrolled pages (an edge-to-edge list) it brings its own side inset;
+  // under a state message the centred stage's screen padding is the only one.
+  const endControls = <View style={styles.endControls}>{endNav}</View>;
+  const messageEndControls = <View style={styles.messageEndControls}>{endNav}</View>;
 
   // Null while converting/empty/errored — a counter over zero pages reads
   // as "1 / 0", which is worse than no counter.
@@ -618,32 +603,35 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
       {!chapterReady ? (
         // Still converting — said INSIDE the reader so neighbour chapters stay one tap away.
         <View style={styles.centerState}>
-          <ThemedText variant="body" style={{ color: colors.muted, textAlign: "center" }}>
-            {r.stillConverting}
-          </ThemedText>
-          {endControls}
+          <ReaderMessage colors={colors} icon="hourglass-outline" disc message={r.stillConverting}>
+            {messageEndControls}
+          </ReaderMessage>
         </View>
       ) : pagesQuery.isLoading ? (
-        <View style={styles.centerState}>
-          <Skeleton width={contentWidth} height={Math.min(contentWidth * 1.4, heightBudget)} radius="sm" />
+        <View style={styles.centerState} accessibilityLabel={t.common.loading}>
+          <Skeleton
+            width={contentWidth}
+            height={Math.min(contentWidth * 1.4, heightBudget)}
+            radius="xs"
+            style={{ backgroundColor: withAlpha(colors.ink, 0.1) }}
+          />
         </View>
       ) : pagesQuery.isError ? (
         <View style={styles.centerState}>
-          <EmptyState
-            fill={false}
-            message={r.loadError}
+          <ReaderMessage
+            colors={colors}
             icon="cloud-offline-outline"
-            tone={theme.colors.danger}
+            iconColor={theme.colors.danger}
+            message={r.loadError}
             actionLabel={t.common.retry}
             onAction={() => pagesQuery.refetch()}
           />
         </View>
       ) : pages.length === 0 ? (
         <View style={styles.centerState}>
-          <ThemedText variant="body" style={{ color: colors.muted, textAlign: "center" }}>
-            {r.emptyChapter}
-          </ThemedText>
-          {endControls}
+          <ReaderMessage colors={colors} icon="document-outline" disc message={r.emptyChapter}>
+            {messageEndControls}
+          </ReaderMessage>
         </View>
       ) : paged ? (
         <FlatList
@@ -701,6 +689,7 @@ export function PageReader({ book, edition, chapters, initialChapterId, initialP
         visible={barsVisible}
         colors={colors}
         label={footerLabel}
+        progress={pages.length > 0 ? Math.min(currentIndex + 1, pages.length) / pages.length : null}
         onPressLabel={pages.length > 0 ? () => setJumpOpen(true) : undefined}
         labelAccessibilityLabel={r.jumpToPage}
         onPrev={() => goToPage(paged ? firstPageOfItem(Math.max(0, currentItemIndex - 1)) : currentIndex - 1)}
@@ -799,13 +788,11 @@ const styles = StyleSheet.create({
     gap: theme.spacing.lg,
   },
   endControls: {
-    paddingHorizontal: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.xl,
-    gap: theme.spacing.sm,
     alignSelf: "stretch",
   },
-  endButton: { alignSelf: "stretch" },
-  finished: { textAlign: "center", paddingVertical: theme.spacing.md },
+  messageEndControls: { paddingTop: theme.spacing.xl, alignSelf: "stretch" },
   notice: {
     position: "absolute",
     left: theme.spacing.xl,

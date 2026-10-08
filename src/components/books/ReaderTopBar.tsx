@@ -24,10 +24,11 @@ interface Props {
 }
 
 /**
- * The readers' auto-hiding top bar: close, contents, book title, then the
- * optional search and bookmark slots and display settings — translucent over
- * the page colour so it belongs to the page, not the app chrome. Fades with
- * reanimated; snaps under OS reduce-motion.
+ * The readers' auto-hiding top bar (BookReader.dc.html): close, contents, the
+ * book's title, then the optional search and bookmark slots and the reading
+ * settings — on the page colour at 94% with a hairline under it, so it
+ * belongs to the page, not the app chrome. Fades with reanimated; snaps under
+ * OS reduce-motion.
  */
 export function ReaderTopBar({
   visible,
@@ -52,7 +53,7 @@ export function ReaderTopBar({
     <Animated.View
       style={[
         styles.bar,
-        { paddingTop: insets.top, backgroundColor: withAlpha(colors.bg, 0.92) },
+        { paddingTop: insets.top, backgroundColor: withAlpha(colors.bg, 0.94), borderBottomColor: colors.rule },
         animatedStyle,
       ]}
       pointerEvents={visible ? "box-none" : "none"}
@@ -61,27 +62,27 @@ export function ReaderTopBar({
         <IconButton
           icon="close"
           variant="ghost"
-          size="sm"
+          size="md"
           color={colors.ink}
           onPress={onClose}
           accessibilityLabel={t.books.reader.close}
         />
         <IconButton
-          icon="list-outline"
+          icon="list"
           variant="ghost"
-          size="sm"
+          size="md"
           color={colors.ink}
           onPress={onContents}
           accessibilityLabel={t.books.reader.contents}
         />
-        <ThemedText variant="caption" weight="medium" numberOfLines={1} style={[styles.title, { color: colors.muted }]}>
+        <ThemedText variant="caption" weight="semibold" numberOfLines={1} style={[styles.title, { color: colors.muted }]}>
           {title}
         </ThemedText>
         {onSearch && (
           <IconButton
-            icon="search-outline"
+            icon="search"
             variant="ghost"
-            size="sm"
+            size="md"
             color={colors.ink}
             onPress={onSearch}
             accessibilityLabel={t.books.reader.searchInBook}
@@ -91,7 +92,7 @@ export function ReaderTopBar({
           <IconButton
             icon={bookmarked ? "bookmark" : "bookmark-outline"}
             variant="ghost"
-            size="sm"
+            size="md"
             color={bookmarked ? theme.colors.primary : colors.ink}
             onPress={onBookmark}
             accessibilityLabel={bookmarked ? t.books.reader.removeBookmark : t.books.reader.addBookmark}
@@ -100,7 +101,7 @@ export function ReaderTopBar({
         <IconButton
           icon="text-outline"
           variant="ghost"
-          size="sm"
+          size="md"
           color={colors.ink}
           onPress={onSettings}
           accessibilityLabel={t.books.reader.settingsTitle}
@@ -117,13 +118,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  /** 60pt under the safe area: the 44pt controls with 8pt above and below. */
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing.xs,
+    gap: 2,
+    minHeight: 60,
     paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
   },
   title: { flex: 1, textAlign: "center" },
 });

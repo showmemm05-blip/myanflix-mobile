@@ -10,8 +10,24 @@ import type { SeriesListItem } from "@/types/series";
  */
 export type MediaCardContent = Pick<
   MediaCardProps,
-  "title" | "posterUrl" | "coverUrl" | "accessType" | "rating" | "meta" | "genre" | "qualityLabel"
+  "title" | "posterUrl" | "coverUrl" | "accessType" | "rating" | "meta" | "genre" | "qualityLabel" | "isNew"
 >;
+
+/** How long after it lands in the catalogue a title still wears the NEW tab. */
+export const NEW_TITLE_WINDOW_DAYS = 14;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * True when `createdAt` (the catalogue row's own timestamp) is inside the NEW
+ * window. Data-driven only: an unparsable or future date is never "new".
+ */
+export function isRecentlyAdded(createdAt: string | null | undefined, now: number = Date.now()): boolean {
+  if (!createdAt) return false;
+  const added = Date.parse(createdAt);
+  if (!Number.isFinite(added)) return false;
+  const age = now - added;
+  return age >= 0 && age <= NEW_TITLE_WINDOW_DAYS * DAY_MS;
+}
 
 /**
  * The only rendition names this platform produces (backend RENDITION_TIERS),
@@ -42,6 +58,12 @@ export interface MovieCardOptions {
    * grid, whose cells are roughly twice that, has the room for it.
    */
   showGenre?: boolean;
+  /**
+   * Stamps the crimson NEW tab on titles added in the last
+   * NEW_TITLE_WINDOW_DAYS (from `createdAt`). Off by default — only the
+   * browse surfaces opt in.
+   */
+  markNew?: boolean;
 }
 
 /**
@@ -65,6 +87,7 @@ export function movieCardContent(movie: Movie, options: MovieCardOptions = {}): 
     // Straight from the API's reported rendition — null until a title has
     // finished transcoding, which is a badge-less card, not a guessed one.
     qualityLabel: qualityBadgeLabel(movie.maxQuality),
+    isNew: options.markNew ? isRecentlyAdded(movie.createdAt) : undefined,
   };
 }
 

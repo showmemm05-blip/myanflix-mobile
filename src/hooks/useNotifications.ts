@@ -11,16 +11,9 @@ import { nextPageParam } from "@/hooks/pagination";
 import type { PaginatedResponse, PaginationParams } from "@/types/api";
 import type { AppNotification } from "@/types/notification";
 
-export function useNotifications(pagination: PaginationParams = {}) {
-  return useQuery({
-    queryKey: ["notifications", pagination],
-    queryFn: ({ signal }) => notificationsService.getNotifications(pagination, { signal }),
-  });
-}
-
 /**
- * The Notifications screen's endless scroll. Under the same `["notifications"]`
- * prefix as the single-page hook, so mark-all-read's prefix invalidation and
+ * The Notifications screen's endless scroll. Under the `["notifications"]`
+ * prefix, so mark-all-read's prefix invalidation and
  * mark-read's prefix patch (below) reach the paged list too — a key of its own
  * would have left the feed showing unread rows the server had already cleared.
  */
@@ -38,9 +31,11 @@ export function useNotificationsInfinite(pagination: PaginationParams = {}) {
 }
 
 /**
- * The two shapes a `["notifications", …]` entry can hold — one page (the
- * single-page hook, and the badge's number which the guards below skip) or
- * React Query's `{pages, pageParams}` envelope from the infinite hook. Named
+ * The shapes a `["notifications", …]` entry can hold — React Query's
+ * `{pages, pageParams}` envelope from the infinite hook, the badge's number
+ * (which the guards below skip), or one plain page (no hook writes that shape
+ * since the single-page hook was removed; the guard is kept as a cheap
+ * safety net). Named
  * so the mark-read patch can tell them apart without a cast at the call site.
  */
 type NotificationsCacheEntry = PaginatedResponse<AppNotification> | InfiniteData<PaginatedResponse<AppNotification>>;

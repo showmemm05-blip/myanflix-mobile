@@ -3,10 +3,16 @@ import { subscriptionsService } from "@/services/subscriptions.service";
 import { profileService } from "@/services/profile.service";
 import { useAuthStore } from "@/store/authStore";
 
-export function useSubscriptionPlans() {
+/**
+ * GET /subscription-plans needs a signed-in user (a guest would 401 into the
+ * logout path, as /subscriptions/me does), so a screen a guest can reach —
+ * Home's Premium band — passes `enabled: false` for a guest.
+ */
+export function useSubscriptionPlans(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["subscription", "plans"],
     queryFn: ({ signal }) => subscriptionsService.getPlans({ signal }),
+    enabled: options.enabled ?? true,
   });
 }
 

@@ -9,10 +9,10 @@ import Animated, {
 import { FadeInView } from "@/components/ui/FadeInView";
 
 /**
- * How far held-over results fade while the next term loads. Matches the web's
- * stale treatment — visibly secondary, still readable, still tappable.
+ * How far held-over results fade while the next term loads — the Marquee
+ * board's 40%: visibly secondary, still readable, still tappable.
  */
-const STALE_OPACITY = 0.45;
+const STALE_OPACITY = 0.4;
 
 /**
  * The results region.

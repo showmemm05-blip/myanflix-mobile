@@ -12,9 +12,12 @@ interface Props {
   series: SeriesListItem[];
   onPressSeries: (series: SeriesListItem) => void;
   onSeeAll?: () => void;
+  /** Fixed card width — the title pages pass the boards' 112pt (see MediaRail). */
+  cardWidth?: number;
 }
 
-const ITEM_GAP = 12;
+/** Marquee rails: 10pt between cards, the same stride as MediaRail. */
+const ITEM_GAP = 10;
 
 // Module scope, same shape as MediaRail: an inline separator ARROW is a new
 // component TYPE every render, so React unmounts and rebuilds every separator
@@ -23,9 +26,10 @@ const keyExtractor = (item: SeriesListItem) => item.id;
 const Separator = () => <View style={styles.separator} />;
 
 /** Horizontal series rail built from the app's portrait MediaCard — mirrors MediaRail's numbers. */
-export function SeriesRow({ title, series, onPressSeries, onSeeAll }: Props) {
+export function SeriesRow({ title, series, onPressSeries, onSeeAll, cardWidth: fixedWidth }: Props) {
   const { t } = useLanguage();
-  const cardWidth = useRailCardWidth();
+  const railWidth = useRailCardWidth();
+  const cardWidth = fixedWidth ?? railWidth;
 
   const renderItem = useCallback(
     ({ item }: { item: SeriesListItem }) => (
@@ -70,7 +74,8 @@ export function SeriesRow({ title, series, onPressSeries, onSeeAll }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: theme.spacing.xs },
+  /** SectionHeader already keeps the board's 14pt above the cards. */
+  container: {},
   listContent: { paddingHorizontal: theme.layout.screenPadding },
   separator: { width: ITEM_GAP },
 });

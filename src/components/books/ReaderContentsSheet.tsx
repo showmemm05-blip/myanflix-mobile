@@ -1,6 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { Image } from "expo-image";
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -39,7 +38,7 @@ interface Props {
   currentChapterId: string;
   /** Called with a READY chapter's id; the sheet closes itself first. */
   onSelect: (chapterId: string) => void;
-  /** PDF books show a chapter thumb + page count instead of the bare number column. */
+  /** PDF books show each chapter's page count at the row's end, and page ranges on its sections. */
   pdf?: boolean;
   /** Edition whose annotations to list — entries carry editionId; chapter ids are edition-specific. */
   editionId?: string;
@@ -60,9 +59,16 @@ interface Props {
 }
 
 /**
- * The readers' contents drawer — chapter list plus, once a reader wires the
- * annotation handlers, Bookmarks/Notes tabs over the same sheet (and any
- * injected extra tabs). With no handlers it stays the plain chapter list.
+ * The readers' contents drawer (BookReader.dc.html / PageReader.dc.html
+ * "contents") — the chapter list plus, once a reader wires the annotation
+ * handlers, Bookmarks / Notes tabs over the same sheet (and any injected
+ * extra tabs, like the page reader's thumbnails). With no handlers it stays
+ * the plain chapter list.
+ *
+ * Marquee rows: a number column, the title, the chapter's minutes or pages at
+ * the end; the open chapter carries the crimson tint and a 3pt rail. A
+ * chapter still being prepared keeps its row, inert, in the secondary inks
+ * with "Coming soon" — no longer dimmed as a whole.
  */
 export function ReaderContentsSheet({
   visible,
@@ -81,6 +87,7 @@ export function ReaderContentsSheet({
 }: Props) {
   const { t } = useLanguage();
   const r = t.books.reader;
+  const { height: windowHeight } = useWindowDimensions();
 
   const showBookmarks = !!editionId && !!onSelectBookmark;
   const showNotes = !!editionId && !!onSelectHighlight;
@@ -107,8 +114,8 @@ export function ReaderContentsSheet({
     .filter((row) => row.editionId === editionId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-  const chapterOrder = (chapterId: string): number | null =>
-    chapters.find((chapter) => chapter.id === chapterId)?.order ?? null;
+  const chapterOf = (chapterId: string) => chapters.find((chapter) => chapter.id === chapterId) ?? null;
+  const chapterOrder = (chapterId: string): number | null => chapterOf(chapterId)?.order ?? null;
 
   const bookmarkLabel = (bookmark: ReaderBookmark): string => {
     if (bookmark.pageNumber != null) return r.pageLabel.replace("{n}", String(bookmark.pageNumber));
@@ -122,20 +129,31 @@ export function ReaderContentsSheet({
     ? (extraTabs ?? []).find((candidate) => candidate.id === tab.slice("extra:".length))
     : undefined;
 
-  const annotationsFooter = (
-    <ThemedText variant="caption" color={theme.colors.textFaint} style={styles.localNote}>
-      {r.annotationsLocal}
-    </ThemedText>
+  /** "Saved on this device" — said first: these lists do not follow the reader to another phone. */
+  const localNote = (
+    <View style={styles.localNote}>
+      <Ionicons name="phone-portrait-outline" size={16} color={theme.colors.textFaint} />
+      <ThemedText variant="caption" color={theme.colors.textFaint} style={styles.localNoteText}>
+        {r.annotationsLocal}
+      </ThemedText>
+    </View>
   );
 
-  /** One chapter row — the ORIGINAL markup, shared by the flat and the grouped list. */
+  /** One chapter row — shared by the flat and the grouped list. */
   const renderChapter = (chapter: BookChapterSummary, number: string) => {
     const current = chapter.id === currentChapterId;
     const ready = chapter.status === "READY";
-    const pageCountLabel =
-      chapter.pageCount === 1
-        ? t.books.pageCountOne
-        : t.books.pageCount.replace("{n}", String(chapter.pageCount));
+    const trailing = !ready
+      ? t.books.chapterComingSoon
+      : pdf
+        ? chapter.pageCount > 0
+          ? chapter.pageCount === 1
+            ? t.books.pageCountOne
+            : t.books.pageCount.replace("{n}", String(chapter.pageCount))
+          : null
+        : chapterMinutes?.has(chapter.id)
+          ? r.estMinutes.replace("{n}", String(chapterMinutes.get(chapter.id)))
+          : null;
     return (
       <Pressable
         key={chapter.id}
@@ -153,64 +171,24 @@ export function ReaderContentsSheet({
         accessibilityRole="button"
         accessibilityLabel={chapter.title}
         accessibilityState={{ selected: current, disabled: !ready }}
-        style={({ pressed }) => [
-          styles.row,
-          current && styles.currentRow,
-          !ready && styles.dimmed,
-          pressed && ready && styles.pressed,
-        ]}
+        style={({ pressed }) => [styles.row, current && styles.currentRow, pressed && ready && styles.pressed]}
       >
-        {pdf ? (
-          <View style={styles.thumb}>
-            {chapter.imageUrl ? (
-              <Image
-                source={{ uri: chapter.imageUrl }}
-                style={StyleSheet.absoluteFill}
-                contentFit="cover"
-                transition={160}
-              />
-            ) : (
-              <ThemedText variant="caption" tabular color={theme.colors.textFaint}>
-                {number}
-              </ThemedText>
-            )}
-          </View>
-        ) : (
-          <ThemedText variant="caption" tabular style={styles.order}>
-            {number.padStart(2, "0")}
+        <ThemedText variant="caption" weight="bold" tabular color={theme.colors.textFaint} style={styles.order}>
+          {number.padStart(2, "0")}
+        </ThemedText>
+        <ThemedText
+          variant="body"
+          weight="semibold"
+          color={current ? theme.colors.link : ready ? theme.colors.text : theme.colors.textFaint}
+          numberOfLines={2}
+          style={styles.rowTitle}
+        >
+          {chapter.title}
+        </ThemedText>
+        {trailing ? (
+          <ThemedText variant="label" weight="regular" tabular color={theme.colors.textFaint} style={styles.trailing}>
+            {trailing}
           </ThemedText>
-        )}
-
-        <View style={styles.body}>
-          <ThemedText
-            variant="body"
-            weight={current ? "semibold" : "regular"}
-            color={current ? theme.colors.primary : theme.colors.text}
-            numberOfLines={2}
-          >
-            {chapter.title}
-          </ThemedText>
-          {pdf && chapter.pageCount > 0 && (
-            <ThemedText variant="caption" tabular numberOfLines={1}>
-              {pageCountLabel}
-            </ThemedText>
-          )}
-          {!pdf && chapterMinutes?.has(chapter.id) && (
-            <ThemedText variant="caption" tabular numberOfLines={1}>
-              {t.books.reader.estMinutes.replace(
-                "{n}",
-                String(chapterMinutes.get(chapter.id)),
-              )}
-            </ThemedText>
-          )}
-        </View>
-
-        {!ready ? (
-          <ThemedText variant="caption" color={theme.colors.textFaint}>
-            {t.books.chapterComingSoon}
-          </ThemedText>
-        ) : current ? (
-          <Ionicons name="bookmark" size={14} color={theme.colors.primary} />
         ) : null}
       </Pressable>
     );
@@ -225,6 +203,14 @@ export function ReaderContentsSheet({
       <View style={styles.sectionRows}>
         {sections.map((section) => {
           const label = `${section.number} ${section.title}`;
+          const range =
+            pdf && section.startPage != null
+              ? section.endPage != null
+                ? t.books.pageRange
+                    .replace("{from}", String(section.startPage))
+                    .replace("{to}", String(section.endPage))
+                : t.books.pageAt.replace("{n}", String(section.startPage))
+              : null;
           return (
             <Pressable
               key={section.id}
@@ -236,15 +222,15 @@ export function ReaderContentsSheet({
               accessibilityLabel={label}
               style={({ pressed }) => [styles.sectionRow, pressed && styles.pressed]}
             >
-              <ThemedText variant="caption" tabular style={styles.sectionNumber}>
+              <ThemedText variant="caption" tabular color={theme.colors.textFaint} style={styles.sectionNumber}>
                 {section.number}
               </ThemedText>
-              <ThemedText variant="caption" color={theme.colors.text} numberOfLines={2} style={styles.sectionTitle}>
+              <ThemedText variant="muted" color={theme.colors.textBody} numberOfLines={2} style={styles.sectionTitle}>
                 {section.title}
               </ThemedText>
-              {pdf && section.startPage != null && (
-                <ThemedText variant="caption" tabular color={theme.colors.textFaint}>
-                  {t.books.pageAt.replace("{n}", String(section.startPage))}
+              {range && (
+                <ThemedText variant="label" weight="regular" tabular color={theme.colors.textFaint} style={styles.trailing}>
+                  {range}
                 </ThemedText>
               )}
             </Pressable>
@@ -263,22 +249,30 @@ export function ReaderContentsSheet({
 
   const renderPartHeader = (part: BookContents["parts"][number]) => {
     const label = `${r.partLabel.replace("{n}", String(part.number))} · ${part.title}`;
+    const myanmar = containsMyanmar(label);
     return (
       <ThemedText
-        variant="overline"
+        variant={myanmar ? "caption" : "overline"}
+        weight={myanmar ? "bold" : undefined}
+        color={theme.colors.textFaint}
         numberOfLines={2}
-        // Tracking widens Latin overlines; Myanmar text must never be letter-spaced.
-        style={[styles.partHeader, containsMyanmar(label) && styles.noTracking]}
+        style={styles.partHeader}
       >
-        {label}
+        {myanmar ? label : label.toUpperCase()}
       </ThemedText>
     );
   };
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} title={r.contents} showClose snapHeight={560}>
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title={r.contents}
+      showClose
+      snapHeight={Math.round(windowHeight * (pdf ? 0.75 : 0.9))}
+    >
       {tabOptions.length > 1 && (
-        <SegmentedControl options={tabOptions} value={tab} onChange={setActiveTab} style={styles.tabs} />
+        <SegmentedControl wrap options={tabOptions} value={tab} onChange={setActiveTab} style={styles.tabs} />
       )}
 
       {tab === "contents" && (
@@ -288,7 +282,7 @@ export function ReaderContentsSheet({
               <>
                 {contents.chapters.map(renderTreeChapter)}
                 {contents.parts.map((part) => (
-                  <View key={part.id} style={styles.partGroup}>
+                  <View key={part.id}>
                     {renderPartHeader(part)}
                     {part.chapters.map(renderTreeChapter)}
                   </View>
@@ -304,49 +298,65 @@ export function ReaderContentsSheet({
       {tab === "bookmarks" && (
         <ScrollView showsVerticalScrollIndicator={false}>
           <View style={styles.rows}>
+            {localNote}
             {editionBookmarks.length === 0 ? (
               <ThemedText variant="body" color={theme.colors.textMuted} style={styles.empty}>
                 {r.noBookmarks}
               </ThemedText>
             ) : (
-              editionBookmarks.map((bookmark) => (
-                <View key={bookmark.id} style={styles.annoRow}>
-                  <Pressable
-                    onPress={() => {
-                      onClose();
-                      onSelectBookmark?.(bookmark);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={bookmarkLabel(bookmark)}
-                    style={({ pressed }) => [styles.annoBody, pressed && styles.pressed]}
-                  >
-                    <View style={styles.annoHead}>
-                      <Ionicons name="bookmark" size={14} color={theme.colors.primary} />
-                      <ThemedText variant="label" tabular color={theme.colors.text}>
-                        {bookmarkLabel(bookmark)}
-                      </ThemedText>
-                      <ThemedText variant="caption" color={theme.colors.textFaint} style={styles.annoDate}>
-                        {new Date(bookmark.createdAt).toLocaleDateString()}
-                      </ThemedText>
-                    </View>
-                    {!!bookmark.excerpt && (
-                      <ThemedText variant="caption" numberOfLines={2}>
-                        {bookmark.excerpt}
-                      </ThemedText>
-                    )}
-                  </Pressable>
-                  <IconButton
-                    icon="close"
-                    variant="ghost"
-                    size="sm"
-                    color={theme.colors.textFaint}
-                    onPress={() => removeBookmark(bookmark.id)}
-                    accessibilityLabel={r.removeBookmark}
-                  />
-                </View>
-              ))
+              editionBookmarks.map((bookmark) => {
+                const paged = bookmark.pageNumber != null;
+                const chapterTitle = chapterOf(bookmark.chapterId)?.title;
+                return (
+                  <View key={bookmark.id} style={styles.annoRow}>
+                    <Ionicons name="bookmark" size={18} color={theme.colors.primary} style={styles.annoGlyph} />
+                    <Pressable
+                      onPress={() => {
+                        onClose();
+                        onSelectBookmark?.(bookmark);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={bookmarkLabel(bookmark)}
+                      style={({ pressed }) => [styles.annoBody, pressed && styles.pressed]}
+                    >
+                      <View style={styles.annoHead}>
+                        <ThemedText
+                          variant={paged ? "body" : "label"}
+                          weight="bold"
+                          tabular
+                          color={paged ? theme.colors.text : theme.colors.textFaint}
+                          style={styles.annoLabel}
+                        >
+                          {bookmarkLabel(bookmark)}
+                        </ThemedText>
+                        <ThemedText variant="label" weight="regular" tabular color={theme.colors.textFaint} style={styles.annoDate}>
+                          {new Date(bookmark.createdAt).toLocaleDateString()}
+                        </ThemedText>
+                      </View>
+                      {paged
+                        ? !!chapterTitle && (
+                            <ThemedText variant="caption" color={theme.colors.textFaint} numberOfLines={2}>
+                              {chapterTitle}
+                            </ThemedText>
+                          )
+                        : !!bookmark.excerpt && (
+                            <ThemedText variant="body" color={theme.colors.textBody} numberOfLines={2}>
+                              {bookmark.excerpt}
+                            </ThemedText>
+                          )}
+                    </Pressable>
+                    <IconButton
+                      icon="close"
+                      variant="ghost"
+                      size="sm"
+                      color={theme.colors.textMuted}
+                      onPress={() => removeBookmark(bookmark.id)}
+                      accessibilityLabel={r.removeBookmark}
+                    />
+                  </View>
+                );
+              })
             )}
-            {annotationsFooter}
           </View>
         </ScrollView>
       )}
@@ -354,13 +364,15 @@ export function ReaderContentsSheet({
       {tab === "notes" && (
         <ScrollView showsVerticalScrollIndicator={false}>
           <View style={styles.rows}>
+            {localNote}
             {editionHighlights.length === 0 ? (
               <ThemedText variant="body" color={theme.colors.textMuted} style={styles.empty}>
                 {r.noAnnotations}
               </ThemedText>
             ) : (
               editionHighlights.map((highlight) => (
-                <View key={highlight.id} style={styles.annoRow}>
+                <View key={highlight.id} style={[styles.annoRow, styles.noteRow]}>
+                  <View style={[styles.colorRail, { backgroundColor: HIGHLIGHT_COLORS[highlight.color] }]} />
                   <Pressable
                     onPress={() => {
                       onClose();
@@ -371,37 +383,33 @@ export function ReaderContentsSheet({
                     style={({ pressed }) => [styles.annoBody, pressed && styles.pressed]}
                   >
                     <View style={styles.annoHead}>
-                      <View style={[styles.colorDot, { backgroundColor: HIGHLIGHT_COLORS[highlight.color] }]} />
-                      <ThemedText variant="label" tabular color={theme.colors.text}>
+                      <ThemedText variant="label" weight="bold" tabular color={theme.colors.textFaint} style={styles.annoLabel}>
                         {r.chapterLabel.replace("{n}", String(chapterOrder(highlight.chapterId) ?? "–"))}
                       </ThemedText>
-                      <ThemedText variant="caption" color={theme.colors.textFaint} style={styles.annoDate}>
+                      <ThemedText variant="label" weight="regular" tabular color={theme.colors.textFaint} style={styles.annoDate}>
                         {new Date(highlight.createdAt).toLocaleDateString()}
                       </ThemedText>
                     </View>
-                    <ThemedText variant="caption" numberOfLines={2}>
+                    <ThemedText variant="body" numberOfLines={2}>
                       {highlight.excerpt}
                     </ThemedText>
                     {!!highlight.note && (
-                      <View style={styles.noteWrap}>
-                        <ThemedText variant="caption" color={theme.colors.textMuted} numberOfLines={1}>
-                          {highlight.note}
-                        </ThemedText>
-                      </View>
+                      <ThemedText variant="caption" color={theme.colors.textMuted} numberOfLines={2} style={styles.note}>
+                        {highlight.note}
+                      </ThemedText>
                     )}
                   </Pressable>
                   <IconButton
                     icon="close"
                     variant="ghost"
                     size="sm"
-                    color={theme.colors.textFaint}
+                    color={theme.colors.textMuted}
                     onPress={() => removeHighlight(highlight.id)}
                     accessibilityLabel={r.removeHighlight}
                   />
                 </View>
               ))
             )}
-            {annotationsFooter}
           </View>
         </ScrollView>
       )}
@@ -412,66 +420,65 @@ export function ReaderContentsSheet({
 }
 
 const styles = StyleSheet.create({
-  tabs: { marginBottom: theme.spacing.sm },
-  rows: { gap: theme.spacing.xs, paddingBottom: theme.spacing.md },
+  tabs: { marginBottom: 12 },
+  rows: { paddingBottom: theme.spacing.md },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing.sm + 4,
-    minHeight: 52,
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.sm,
-    borderRadius: theme.radius.lg,
+    gap: 12,
+    minHeight: 48,
+    paddingVertical: theme.spacing.xs,
+    paddingLeft: 12,
+    paddingRight: theme.spacing.xs,
+    borderRadius: theme.radius.md,
+    // The current chapter's rail; transparent on every other row so nothing shifts.
+    borderLeftWidth: 3,
+    borderLeftColor: "transparent",
   },
-  currentRow: { backgroundColor: withAlpha(theme.colors.primary, 0.12) },
-  dimmed: { opacity: 0.45 },
-  pressed: { opacity: 0.75 },
-  order: { minWidth: 26, textAlign: "right", color: theme.colors.textFaint },
-  thumb: {
-    width: 48,
-    height: 48,
-    borderRadius: theme.radius.sm,
-    overflow: "hidden",
-    backgroundColor: theme.colors.skeleton,
-    borderWidth: 1,
-    borderColor: theme.colors.ring,
-    alignItems: "center",
-    justifyContent: "center",
+  currentRow: {
+    backgroundColor: withAlpha(theme.colors.primary, 0.12),
+    borderLeftColor: theme.colors.primary,
   },
-  body: { flex: 1, gap: 2 },
-  partGroup: { gap: theme.spacing.xs, marginTop: theme.spacing.sm },
-  partHeader: { letterSpacing: 1.2, paddingHorizontal: theme.spacing.sm, paddingBottom: 2 },
-  noTracking: { letterSpacing: 0 },
-  sectionRows: { gap: 2, paddingLeft: theme.spacing.xl + theme.spacing.sm, paddingBottom: theme.spacing.xs },
+  pressed: { opacity: 0.7 },
+  order: { width: 28 },
+  rowTitle: { flex: 1 },
+  trailing: { letterSpacing: 0, textAlign: "right" },
+  partHeader: { paddingTop: theme.spacing.md, paddingBottom: theme.spacing.xs },
+  sectionRows: { paddingLeft: 40 },
   sectionRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: theme.spacing.sm,
-    minHeight: 36,
+    alignItems: "center",
+    gap: 10,
+    minHeight: theme.layout.minTouch,
     paddingVertical: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.sm,
-    borderRadius: theme.radius.md,
+    paddingRight: theme.spacing.xs,
   },
-  sectionNumber: { color: theme.colors.textFaint, minWidth: 30 },
+  sectionNumber: { minWidth: 28 },
   sectionTitle: { flex: 1 },
+  localNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+  localNoteText: { flexShrink: 1 },
   annoRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: theme.spacing.xs,
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.sm,
-    borderRadius: theme.radius.lg,
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border,
   },
-  annoBody: { flex: 1, gap: theme.spacing.xs },
+  noteRow: { alignItems: "stretch" },
+  annoGlyph: { alignSelf: "flex-start", marginTop: 2 },
+  annoBody: { flex: 1, gap: 2 },
   annoHead: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
-  annoDate: { marginLeft: "auto" },
-  colorDot: { width: 12, height: 12, borderRadius: 6 },
-  noteWrap: {
-    borderLeftWidth: 2,
-    borderLeftColor: theme.colors.borderStrong,
-    paddingLeft: theme.spacing.sm,
-  },
+  annoLabel: { flexShrink: 1, letterSpacing: 0 },
+  annoDate: { marginLeft: "auto", letterSpacing: 0 },
+  colorRail: { width: 4, borderRadius: 2 },
+  note: { marginTop: 2 },
   empty: { textAlign: "center", paddingVertical: theme.spacing.xl },
-  localNote: { textAlign: "center", paddingTop: theme.spacing.md },
   extra: { flex: 1 },
 });

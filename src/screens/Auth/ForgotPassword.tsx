@@ -4,23 +4,40 @@ import { StyleSheet, View } from "react-native";
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { AuthScreenShell, AuthTicket } from "@/components/auth/AuthScreenShell";
+import { AuthScreenShell } from "@/components/auth/AuthScreenShell";
+import { AuthHero } from "@/components/auth/AuthHero";
+import { AuthTopBar } from "@/components/auth/AuthTopBar";
 import { AuthField } from "@/components/auth/AuthField";
-import { OtpChannelPicker } from "@/components/auth/OtpChannelPicker";
+import {
+  AuthButton,
+  AuthDivider,
+  AuthError,
+  AuthLink,
+  IconDisc,
+  NumberChip,
+  Pop,
+  Rise,
+} from "@/components/auth/AuthParts";
 import { OtpInput } from "@/components/auth/OtpInput";
-import { Button } from "@/components/ui/Button";
-import { FadeInView } from "@/components/ui/FadeInView";
+import { OtpMethodPicker } from "@/components/auth/OtpMethodPicker";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { useAuth } from "@/hooks/useAuth";
 import { useLanguage } from "@/localization/LanguageProvider";
 import type { TranslationShape } from "@/localization/translations";
-import { ApiError } from "@/utils/errors";
-import { theme } from "@/theme";
+import { ApiError, isSmsUnavailable } from "@/utils/errors";
+import { theme, withAlpha } from "@/theme";
 import type { AuthStackParamList } from "@/navigation/types";
 
 type Props = NativeStackScreenProps<AuthStackParamList, "ForgotPassword">;
 
-type Step = "phone" | "reset" | "done";
+/** "method" = "Get your code": nothing is requested until a method is tapped there. */
+type Step = "phone" | "method" | "reset" | "done";
+
+/** The steps the top bar's rail counts ("done" has no rail — it has the artwork). */
+const RAIL_STEPS: readonly Step[] = ["phone", "method", "reset"];
+
+/** Which field an error is about — it takes the danger ring. Null: the method rows, or the form as a whole. */
+type ErrorField = "phone" | "code" | "password" | "confirm" | null;
 
 /** Same cooldown the sign-in flow shows — the server refuses a new code inside 60s. */
 const RESEND_COOLDOWN_SECONDS = 60;
@@ -38,6 +55,8 @@ function describeError(err: unknown, t: TranslationShape, fallback: string): str
   if (!(err instanceof ApiError)) return fallback;
   if (err.status === 0) return t.common.networkError;
   if (err.status === 429) return f.rateLimited;
+  // 503: the SMS gateway phone could not take the code — ask again shortly.
+  if (isSmsUnavailable(err)) return t.auth.otp.smsUnavailable;
   const message = err.message;
   if (/valid myanmar phone number/i.test(message)) return t.auth.phone.validationError;
   if (/no account was found/i.test(message)) return f.noAccount;
@@ -51,12 +70,13 @@ function describeError(err: unknown, t: TranslationShape, fallback: string): str
 
 /**
  * "Forgot password" on the CURRENT one-time-code flow (audit H-8): phone →
- * the same POST /auth/otp/request sign-in uses, with purpose "password_reset"
- * → code + new password → POST /auth/password/reset. The server only accepts
+ * "Get your code" (owner decision 2026-10-01: never requested automatically)
+ * → "Get code by SMS" sends the same POST /auth/otp/request sign-in uses, with
+ * purpose "password_reset" → code + new password → POST /auth/password/reset. The server only accepts
  * a reset code there (and refuses it for sign-in), so every request here —
  * resends included — must carry that purpose. Nothing about code delivery
- * changes here, so the code step says exactly what the sign-in code step says,
- * channel note included.
+ * changes here, so the method and code steps say exactly what the sign-in
+ * ones say.
  *
  * A reset signs the account out everywhere and opens no session, so the last
  * step sends the user back to sign in, number pre-filled. The two passwords
@@ -73,9 +93,18 @@ export function ForgotPasswordScreen({ route, navigation }: Props) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ message: string; field: ErrorField } | null>(null);
+  const error = failure?.message ?? null;
+  const errorField = failure?.field ?? null;
+  /** Every message shows directly under what it is about; `field` says which input takes the ring. */
+  const setError = (message: string | null, field: ErrorField = null) => {
+    setFailure(message === null ? null : { message, field });
+  };
   const [cooldown, setCooldown] = useState(0);
   const cooldownInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** The number the running cooldown belongs to: the code-step shortcut below
+   *  only applies to that number, never to one edited after going Back. */
+  const codeSentFor = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -97,23 +126,49 @@ export function ForgotPasswordScreen({ route, navigation }: Props) {
     }, 1000);
   };
 
-  const handleRequestCode = async () => {
+  /** Phone step → method step. Requests nothing. */
+  const handleSubmitPhone = () => {
     const trimmed = phone.trim();
     if (!trimmed) {
-      setError(t.auth.phone.validationError);
+      setError(t.auth.phone.validationError, "phone");
       return;
     }
     setError(null);
+    if (codeSentFor.current !== null && codeSentFor.current !== trimmed) {
+      // A different number: its own server cooldown applies, not this one.
+      setCooldown(0);
+      if (cooldownInterval.current) clearInterval(cooldownInterval.current);
+      codeSentFor.current = null;
+      setCode("");
+    }
+    setPhone(trimmed);
+    setStep("method");
+  };
+
+  /**
+   * "Get code by SMS". The code step opens only once the request succeeded;
+   * every refusal stays on the method step. Inside the resend cooldown the
+   * code already requested is still good and a new request would only be
+   * refused (409), so go straight back to it — nobody gets stuck here after
+   * "Choose another method".
+   */
+  const handleRequestSms = async () => {
+    if (isSubmitting) return;
+    setError(null);
+    if (cooldown > 0 && codeSentFor.current === phone) {
+      setStep("reset");
+      return;
+    }
     setIsSubmitting(true);
     try {
       // Refused right here, before any code is created or the cooldown is
-      // used, so these messages come before the code step: a number with no
+      // used, so these messages show on the method step: a number with no
       // customer account (staff numbers included — staff passwords are reset
       // by staff) gets 400 "No account was found…", and a suspended, banned
       // or closed account gets 401 "This account is no longer active" (a
       // skipAuth call, so that 401 is this answer, not a session ending).
-      await requestOtp(trimmed, "password_reset");
-      setPhone(trimmed);
+      await requestOtp(phone, "password_reset");
+      codeSentFor.current = phone;
       setCode("");
       setStep("reset");
       startCooldown();
@@ -122,6 +177,12 @@ export function ForgotPasswordScreen({ route, navigation }: Props) {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  /** Code step → method step. Requests nothing; the cooldown keeps running. */
+  const handleChooseAnotherMethod = () => {
+    setError(null);
+    setStep("method");
   };
 
   const handleResend = async () => {
@@ -141,19 +202,19 @@ export function ForgotPasswordScreen({ route, navigation }: Props) {
 
   const handleReset = async () => {
     if (code.length !== 6) {
-      setError(t.auth.otp.validationError);
+      setError(t.auth.otp.validationError, "code");
       return;
     }
     if (newPassword.length < MIN_PASSWORD) {
-      setError(t.auth.password.createValidationError);
+      setError(t.auth.password.createValidationError, "password");
       return;
     }
     if (newPassword.length > MAX_PASSWORD) {
-      setError(f.passwordTooLong);
+      setError(f.passwordTooLong, "password");
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError(t.auth.password.mismatchError);
+      setError(t.auth.password.mismatchError, "confirm");
       return;
     }
     setError(null);
@@ -165,7 +226,10 @@ export function ForgotPasswordScreen({ route, navigation }: Props) {
       setConfirmPassword("");
       setStep("done");
     } catch (err) {
-      setError(describeError(err, t, f.genericError));
+      const message = describeError(err, t, f.genericError);
+      // A wrong, expired or burnt-out code is about the code cells; anything
+      // else (no connection, the throttle) is about the form as a whole.
+      setError(message, message === t.auth.otp.genericError || message === f.tooManyAttempts ? "code" : null);
     } finally {
       setIsSubmitting(false);
     }
@@ -183,120 +247,149 @@ export function ForgotPasswordScreen({ route, navigation }: Props) {
 
   /* --- presentation only below this line --- */
 
-  const title = step === "phone" ? f.title : step === "reset" ? f.resetTitle : f.successTitle;
-  const hint = step === "phone" ? f.phoneHint : step === "reset" ? t.auth.otp.subtitle : f.successBody;
-
-  const stub =
-    step === "phone" ? (
-      // Back lives in the stub: a tear with nothing below it reads as a
-      // mistake, and on this step it is the one other thing to do.
-      <Button
-        title={t.common.back}
-        icon="chevron-back"
-        variant="soft"
-        size="lg"
-        fullWidth
-        disabled={isSubmitting}
-        onPress={() => navigation.navigate("Login")}
-      />
-    ) : step === "reset" ? (
-      <View style={styles.stubStack}>
-        {/* The same honest delivery note the sign-in code step carries. */}
-        <OtpChannelPicker />
-        <Button
-          title={cooldown > 0 ? t.auth.otp.resendCountdown.replace("{n}", String(cooldown)) : t.auth.otp.resend}
-          icon={cooldown > 0 ? "time-outline" : "refresh-outline"}
-          variant="ghost"
-          fullWidth
-          disabled={isSubmitting || cooldown > 0}
-          onPress={() => {
-            void handleResend();
-          }}
-        />
-        <Button
-          title={t.auth.password.changePhone}
-          icon="swap-horizontal-outline"
-          variant="ghost"
-          fullWidth
-          disabled={isSubmitting}
-          onPress={handleChangeNumber}
-        />
-      </View>
-    ) : (
-      <Button
-        title={f.backToSignIn}
-        icon="log-in-outline"
-        size="lg"
-        fullWidth
-        onPress={() => navigation.navigate("Login", { phone })}
-      />
+  /*
+   * ForgotPasswordReset.dc.html "done": a reset signs every session out and
+   * opens none, so the last step is the brand artwork, a green tick, and the
+   * way back to sign in with the number pre-filled.
+   */
+  if (step === "done") {
+    return (
+      <AuthScreenShell>
+        <AuthHero size="done">
+          <Pop style={styles.successBadge}>
+            <Ionicons name="checkmark-circle-outline" size={32} color={theme.colors.success} />
+          </Pop>
+        </AuthHero>
+        <Rise style={styles.page}>
+          <ThemedText
+            variant="display"
+            accessibilityRole="header"
+            accessibilityLiveRegion="polite"
+            style={styles.doneTitle}
+          >
+            {f.successTitle}
+          </ThemedText>
+          <ThemedText variant="body" color={theme.colors.textBody} style={styles.hint}>
+            {f.successBody}
+          </ThemedText>
+          <AuthButton
+            title={f.backToSignIn}
+            icon="log-in-outline"
+            variant="play"
+            onPress={() => navigation.navigate("Login", { phone })}
+            style={styles.doneButton}
+          />
+        </Rise>
+      </AuthScreenShell>
     );
+  }
+
+  /*
+   * The top-left back circle replaced the stub's Back button and does what it
+   * did: the phone step returns to sign in, the method step to the phone
+   * step. The reset step's circle returns to sign in too, as the system back
+   * gesture on this screen always has.
+   */
+  const handleBack =
+    step === "method"
+      ? () => {
+          setError(null);
+          setStep("phone");
+        }
+      : () => navigation.navigate("Login");
 
   return (
     <AuthScreenShell>
-      <AuthTicket stub={stub}>
-        <View style={styles.badge}>
-          <Ionicons
-            name={step === "done" ? "checkmark-circle-outline" : "key-outline"}
-            size={22}
-            color={step === "done" ? theme.colors.finance : theme.colors.primary}
-          />
-        </View>
+      <AuthTopBar
+        onBack={handleBack}
+        backDisabled={isSubmitting}
+        backLabel={t.common.back}
+        step={RAIL_STEPS.indexOf(step)}
+        steps={RAIL_STEPS.length}
+        railLabel={t.auth.steps.reset}
+      />
 
-        <View style={styles.copy}>
-          <ThemedText variant="title">{title}</ThemedText>
-          <ThemedText variant="body" style={styles.body}>
-            {hint}
-          </ThemedText>
-          {step === "reset" ? (
-            <View style={styles.identity}>
-              <Ionicons name="call-outline" size={14} color={theme.colors.textFaint} />
-              <ThemedText variant="caption" tabular numberOfLines={1}>
-                {phone}
-              </ThemedText>
+      <View style={styles.page}>
+        {/* ForgotPassword.dc.html: phone step */}
+        {step === "phone" && (
+          <Rise key="phone">
+            <View style={styles.disc}>
+              <IconDisc icon="key-outline" color={theme.colors.link} />
             </View>
-          ) : null}
-        </View>
-
-        {error ? (
-          <View style={styles.error} accessibilityLiveRegion="polite">
-            <Ionicons name="alert-circle" size={18} color={theme.colors.danger} />
-            <ThemedText variant="caption" style={styles.errorText} numberOfLines={3}>
-              {error}
+            <ThemedText variant="display" accessibilityRole="header" style={styles.title}>
+              {f.title}
             </ThemedText>
-          </View>
-        ) : null}
-
-        <FadeInView key={step} from="none" duration={220} style={styles.stepBlock}>
-          {step === "phone" && (
-            <>
+            <ThemedText variant="body" color={theme.colors.textMuted} style={styles.hint}>
+              {f.phoneHint}
+            </ThemedText>
+            <View style={styles.formTop}>
               <AuthField
                 label={t.auth.phone.label}
                 icon="call-outline"
                 placeholder={t.auth.phone.placeholder}
                 keyboardType="phone-pad"
                 autoComplete="tel"
+                numeric
                 value={phone}
                 onChangeText={setPhone}
                 editable={!isSubmitting}
-                invalid={!!error}
+                invalid={errorField === "phone"}
                 returnKeyType="go"
-                onSubmitEditing={handleRequestCode}
+                onSubmitEditing={handleSubmitPhone}
               />
-              <Button
-                title={f.requestCode}
-                onPress={handleRequestCode}
-                loading={isSubmitting}
-                disabled={isSubmitting}
-                size="lg"
-                fullWidth
-              />
-            </>
-          )}
+            </View>
+            <AuthError message={error} style={styles.error} />
+            <AuthButton
+              title={t.auth.phone.continueButton}
+              onPress={handleSubmitPhone}
+              disabled={isSubmitting}
+              style={styles.commit}
+            />
+          </Rise>
+        )}
 
-          {step === "reset" && (
-            <>
+        {/* ForgotPassword.dc.html: method step */}
+        {step === "method" && (
+          <Rise key="method">
+            <View style={styles.disc}>
+              <IconDisc icon="key-outline" color={theme.colors.link} />
+            </View>
+            <ThemedText variant="display" accessibilityRole="header" style={styles.title}>
+              {t.auth.method.title}
+            </ThemedText>
+            <ThemedText variant="body" color={theme.colors.textMuted} style={styles.hint}>
+              {t.auth.method.subtitle}
+            </ThemedText>
+            <View style={styles.chip}>
+              <NumberChip phone={phone} />
+            </View>
+            <View style={styles.methods}>
+              <OtpMethodPicker
+                onSms={() => {
+                  void handleRequestSms();
+                }}
+                loading={isSubmitting}
+              />
+            </View>
+            <AuthError message={error} style={styles.error} />
+          </Rise>
+        )}
+
+        {/* ForgotPasswordReset.dc.html */}
+        {step === "reset" && (
+          <Rise key="reset">
+            <ThemedText variant="display" accessibilityRole="header" style={styles.resetTitle}>
+              {f.resetTitle}
+            </ThemedText>
+            <ThemedText variant="body" color={theme.colors.textMuted} style={styles.hint}>
+              {t.auth.otp.subtitle}
+            </ThemedText>
+            <View style={styles.chip}>
+              <NumberChip phone={phone} />
+            </View>
+            <View style={styles.formTop}>
               <OtpInput
+                label={t.auth.otp.placeholder}
                 value={code}
                 onChangeText={setCode}
                 length={6}
@@ -304,7 +397,11 @@ export function ForgotPasswordScreen({ route, navigation }: Props) {
                 keyboardType="number-pad"
                 autoComplete="one-time-code"
                 placeholder={t.auth.otp.placeholder}
+                invalid={errorField === "code"}
+                invalidKey={failure}
               />
+            </View>
+            <View style={styles.afterCode}>
               <AuthField
                 label={f.newPasswordLabel}
                 icon="lock-closed-outline"
@@ -315,7 +412,10 @@ export function ForgotPasswordScreen({ route, navigation }: Props) {
                 value={newPassword}
                 onChangeText={setNewPassword}
                 editable={!isSubmitting}
+                invalid={errorField === "password"}
               />
+            </View>
+            <View style={styles.nextField}>
               <AuthField
                 label={f.confirmPasswordLabel}
                 icon="shield-checkmark-outline"
@@ -326,50 +426,71 @@ export function ForgotPasswordScreen({ route, navigation }: Props) {
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 editable={!isSubmitting}
+                invalid={errorField === "confirm"}
                 returnKeyType="go"
                 onSubmitEditing={handleReset}
               />
-              <Button
-                title={f.submit}
-                onPress={handleReset}
-                loading={isSubmitting}
-                disabled={isSubmitting}
-                size="lg"
-                fullWidth
+            </View>
+            <AuthError message={error} style={styles.error} />
+            <AuthButton title={f.submit} onPress={handleReset} loading={isSubmitting} style={styles.commit} />
+            <AuthDivider />
+            <View style={styles.links}>
+              <AuthLink
+                label={
+                  cooldown > 0 ? t.auth.otp.resendCountdown.replace("{n}", String(cooldown)) : t.auth.otp.resend
+                }
+                icon={cooldown > 0 ? "time-outline" : "refresh-outline"}
+                tone={cooldown > 0 ? "muted" : "link"}
+                tabular={cooldown > 0}
+                disabled={isSubmitting || cooldown > 0}
+                onPress={() => {
+                  void handleResend();
+                }}
               />
-            </>
-          )}
-        </FadeInView>
-      </AuthTicket>
+              <AuthLink
+                label={t.auth.method.chooseAnother}
+                icon="options-outline"
+                disabled={isSubmitting}
+                onPress={handleChooseAnotherMethod}
+              />
+              <AuthLink
+                label={t.auth.password.changePhone}
+                icon="swap-horizontal-outline"
+                disabled={isSubmitting}
+                onPress={handleChangeNumber}
+              />
+            </View>
+          </Rise>
+        )}
+      </View>
     </AuthScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  badge: {
-    width: 48,
-    height: 48,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.primarySoft,
-    borderWidth: 1,
-    borderColor: theme.colors.primary + "3D",
+  page: { paddingHorizontal: theme.layout.screenPadding },
+  disc: { marginTop: theme.spacing.md },
+  title: { marginTop: 20 },
+  resetTitle: { marginTop: theme.spacing.md },
+  hint: { marginTop: 10 },
+  chip: { marginTop: theme.spacing.md },
+  /** The first input sits 28pt under the copy above it. */
+  formTop: { marginTop: 28 },
+  methods: { marginTop: theme.spacing.lg },
+  afterCode: { marginTop: 20 },
+  nextField: { marginTop: theme.spacing.md },
+  error: { marginTop: 12 },
+  commit: { marginTop: 20 },
+  links: { marginTop: 12 },
+
+  successBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: withAlpha(theme.colors.success, 0.18),
     alignItems: "center",
     justifyContent: "center",
   },
-  copy: { gap: theme.spacing.sm },
-  body: { color: theme.colors.textMuted },
-  identity: { flexDirection: "row", alignItems: "center", gap: 6 },
-  stepBlock: { gap: theme.spacing.md },
-  stubStack: { gap: theme.spacing.xs },
-  error: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    padding: theme.spacing.sm + 2,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.danger + "40",
-    backgroundColor: theme.colors.dangerSoft,
-  },
-  errorText: { flex: 1, color: theme.colors.danger },
+  doneTitle: { marginTop: 12 },
+  doneButton: { marginTop: theme.spacing.xl },
 });

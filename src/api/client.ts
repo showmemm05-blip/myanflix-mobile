@@ -1,6 +1,6 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse, isAxiosError, isCancel } from "axios";
 import { tokenStore, notifyUnauthorized } from "@/services/token-store";
-import { ApiError } from "@/utils/errors";
+import { ApiError, type ApiErrorDetails } from "@/utils/errors";
 import { classifyRefreshBody, classifyRefreshFailure, type RefreshOutcome } from "@/api/refreshOutcome";
 
 /**
@@ -81,6 +81,24 @@ interface Envelope<T> {
   success: boolean;
   data?: T;
   message?: string;
+  /** A coded refusal's stable code (see utils/errors.ts ApiErrorDetails). */
+  code?: unknown;
+  triesLeft?: unknown;
+  lockedUntil?: unknown;
+}
+
+/**
+ * The coded-error fields of an error body, kept only when they have the
+ * shape the contract promises — the body is the server's, so nothing in it
+ * is trusted to be the right type.
+ */
+function errorDetails(body: Envelope<unknown> | undefined): ApiErrorDetails {
+  if (!body) return {};
+  return {
+    code: typeof body.code === "string" ? body.code : undefined,
+    triesLeft: typeof body.triesLeft === "number" && Number.isFinite(body.triesLeft) ? body.triesLeft : undefined,
+    lockedUntil: typeof body.lockedUntil === "string" ? body.lockedUntil : undefined,
+  };
 }
 
 // Single-flight refresh: every concurrent 401 awaits the SAME promise instead
@@ -201,7 +219,7 @@ async function request<T>(
 
     const body = response.data;
     if (!body || body.success === false || body.data === undefined) {
-      throw new ApiError(body?.message ?? `Request to ${path} failed`, response.status);
+      throw new ApiError(body?.message ?? `Request to ${path} failed`, response.status, errorDetails(body));
     }
     return body.data;
   } catch (err) {

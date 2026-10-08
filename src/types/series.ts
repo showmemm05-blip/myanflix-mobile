@@ -75,6 +75,10 @@ export interface SeriesQuery {
    * actor credited only on an episode still lists the show on their page.
    */
   actorIds?: string[];
+  /** Only series in this category (needs the 2026-10-07 backend, like `ids`). */
+  categoryId?: string;
+  /** Only these series (the saved favourites), at most 100. Still PUBLISHED only. */
+  ids?: string[];
   sort?: SeriesSort;
 }
 

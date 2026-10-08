@@ -7,6 +7,25 @@ import type { MovieQuery } from "@/types/movie";
 export const moviesInfiniteKey = (query: MovieQuery) => ["movies", "infinite", query] as const;
 
 /**
+ * What a caller may tune on the catalogue list queries. Both are optional and
+ * fall back to today's behaviour when left out.
+ *
+ * `staleTime` exists for the browse shelves: App.tsx makes "app came back to
+ * the foreground" count as a window focus, and the Media tab keeps every
+ * visited shelf mounted, so a 30s window re-asked every shelf at once each
+ * time the phone came out of a pocket. The hubs pass 5 minutes; search keeps
+ * its 30s (BROWSE_STALE_TIME_MS below is the hubs' value). Pull-to-refresh and Retry still force fresh data (they refetch or
+ * invalidate, which ignores staleTime).
+ */
+export const BROWSE_STALE_TIME_MS = 5 * 60_000;
+
+export interface CatalogListOptions {
+  enabled?: boolean;
+  staleTime?: number;
+  refetchOnWindowFocus?: boolean;
+}
+
+/**
  * The catalogue query, and the one the search field drives.
  *
  * A late response can never overwrite a newer one, for two independent
@@ -17,7 +36,7 @@ export const moviesInfiniteKey = (query: MovieQuery) => ["movies", "infinite", q
  * braces; there is deliberately no hand-rolled request-id guard on top,
  * because there would be nothing left for it to catch.
  */
-export function useMovies(query: MovieQuery = {}, options: { enabled?: boolean } = {}) {
+export function useMovies(query: MovieQuery = {}, options: CatalogListOptions = {}) {
   return useQuery({
     queryKey: ["movies", query],
     // React Query gives each fetch its own AbortSignal and aborts it when the
@@ -28,8 +47,10 @@ export function useMovies(query: MovieQuery = {}, options: { enabled?: boolean }
     // the grid never flashes empty between keystrokes.
     placeholderData: keepPreviousData,
     // Retyping a term searched in the last 30s is served from cache rather
-    // than re-requested.
-    staleTime: SEARCH_STALE_TIME_MS,
+    // than re-requested. The browse shelves pass a longer window.
+    staleTime: options.staleTime ?? SEARCH_STALE_TIME_MS,
+    // Only when the caller says so — otherwise the app-wide default applies.
+    ...(options.refetchOnWindowFocus !== undefined && { refetchOnWindowFocus: options.refetchOnWindowFocus }),
     // Same option shape as useBooksList/useSeriesList: a caller states when it
     // may ask at all. MovieDetails uses it to wait for the movie's category
     // instead of spending a request on a key it has already decided to discard.
@@ -42,9 +63,11 @@ export function useMovies(query: MovieQuery = {}, options: { enabled?: boolean }
  * useBooksInfinite: `pages[0].total` is the BACKEND total for the filtered
  * query and is the only honest match count (never items.length of one page).
  */
-export function useMoviesInfinite(query: MovieQuery = {}) {
+export function useMoviesInfinite(query: MovieQuery = {}, options: CatalogListOptions = {}) {
   return useInfiniteQuery({
     queryKey: moviesInfiniteKey(query),
+    // The siblings' option: the search screen only asks once a term is committed.
+    enabled: options.enabled ?? true,
     queryFn: ({ pageParam, signal }) => moviesService.getMovies({ ...query, page: pageParam }, { signal }),
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) => {
@@ -52,7 +75,9 @@ export function useMoviesInfinite(query: MovieQuery = {}) {
       return loaded < lastPage.total ? lastPage.page + 1 : undefined;
     },
     placeholderData: keepPreviousData,
-    staleTime: SEARCH_STALE_TIME_MS,
+    staleTime: options.staleTime ?? SEARCH_STALE_TIME_MS,
+    // Only when the caller says so — otherwise the app-wide default applies.
+    ...(options.refetchOnWindowFocus !== undefined && { refetchOnWindowFocus: options.refetchOnWindowFocus }),
   });
 }
 
@@ -107,12 +132,5 @@ export function useMovie(id: string | undefined) {
     queryKey: ["movie", id],
     queryFn: ({ signal }) => moviesService.getMovieById(id as string, { signal }),
     enabled: !!id,
-  });
-}
-
-export function useMostPurchased() {
-  return useQuery({
-    queryKey: ["movies", "most-purchased"],
-    queryFn: ({ signal }) => moviesService.getMostPurchased({ signal }),
   });
 }

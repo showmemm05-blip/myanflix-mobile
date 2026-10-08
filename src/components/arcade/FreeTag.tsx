@@ -1,6 +1,5 @@
-import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
-import { ThemedText } from "@/components/ui/ThemedText";
-import { SignageChip } from "@/components/arcade/ArcadeBadge";
+import type { StyleProp, ViewStyle } from "react-native";
+import { ArcadeChip, ChipLabel } from "@/components/arcade/ArcadeBadge";
 import { theme } from "@/theme";
 import { useLanguage } from "@/localization/LanguageProvider";
 
@@ -9,23 +8,17 @@ interface Props {
 }
 
 /**
- * "Free" in ArcadeBadge's sharp signage chip — literally that chip now, not a
- * copy of it — in finance green, rendered wherever a kyat figure would sit for
- * a free game. The label is translated copy, so it renders in the sans face,
- * never the mono slug.
+ * "Free" as a chip — the 22pt green tint the board puts on the free-to-play
+ * spotlight. Literally ArcadeBadge's chip, so the two can never drift apart
+ * when they sit in one row. (Where a free game's PRICE would sit, the board
+ * uses plain green words instead — see ArcadePrice.)
  */
 export function FreeTag({ style }: Props) {
   const { t } = useLanguage();
 
   return (
-    <SignageChip tone={theme.colors.finance} style={style}>
-      <ThemedText variant="caption" weight="semibold" style={styles.label}>
-        {t.arcade.price.free}
-      </ThemedText>
-    </SignageChip>
+    <ArcadeChip tone={theme.colors.finance} surface="tint" compact style={style}>
+      <ChipLabel color={theme.colors.finance}>{t.arcade.price.free}</ChipLabel>
+    </ArcadeChip>
   );
 }
-
-const styles = StyleSheet.create({
-  label: { fontSize: 11, lineHeight: 15, color: theme.colors.finance },
-});

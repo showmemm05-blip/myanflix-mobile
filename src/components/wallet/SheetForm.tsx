@@ -14,22 +14,30 @@ import {
   StyleSheet,
   TextInput,
   View,
+  useWindowDimensions,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type StyleProp,
   type TextInputProps,
+  type TextStyle,
   type ViewStyle,
 } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { ThemedText } from "@/components/ui/ThemedText";
+import { PressScale } from "@/components/wallet/PressScale";
 import { useSheetKeyboardLift } from "@/components/ui/BottomSheet";
-import { Chip } from "@/components/common/Chip";
-import { MethodLogo } from "@/components/wallet/MethodLogo";
-import { formatKyat } from "@/utils/currency";
-import { tabularNums, theme } from "@/theme";
+import { formatKyat, formatKyatNumber } from "@/utils/currency";
+import { tabularNums, theme, withAlpha } from "@/theme";
 
 /**
  * The form vocabulary of the app's bottom-sheet forms — one set of labels,
@@ -37,9 +45,9 @@ import { tabularNums, theme } from "@/theme";
  * sheet form looks and behaves identically. Purely presentational: every value
  * and handler is owned by the sheet that renders these.
  *
- * `QuickAmounts`, `MethodGrid` and `SheetInput`'s `numeric`/`suffix` modes are
- * money-specific and belong to the deposit/withdraw sheets; `SheetForm`,
- * `FieldLabel`, `SheetTextArea`, `HelperText`, `ErrorNotice` and `SheetSuccess`
+ * `AmountField`, `QuickAmounts` and `SheetInput`'s `numeric`/`suffix`/`flat`
+ * modes are money-specific and belong to the deposit/withdraw flows; `SheetForm`,
+ * `SheetTextArea`, `HelperText`, `ErrorNotice` and `SheetSuccess`
  * carry no money semantics and are what the feedback, search and reader sheets
  * reuse, rather than growing a second, slightly different set of form parts.
  *
@@ -73,6 +81,19 @@ interface SheetFormProps {
   action?: ReactNode;
   /** Layout for the field column — the bottom padding is owned here. */
   contentStyle?: StyleProp<ViewStyle>;
+  /**
+   * The pinned bar's own look, for a form that is not on the sheet's popover
+   * fill (the full-height money flows sit on the page background).
+   */
+  actionStyle?: StyleProp<ViewStyle>;
+  /**
+   * Lets touches through the parts of the pinned bar that draw nothing: the
+   * money flows' FlowActionBar opens with a see-through fade over the form,
+   * and a tap there belongs to the field under it. Off by default — this
+   * form's own bar is an opaque fill, and what lies under it must stay
+   * untouchable.
+   */
+  actionPassThrough?: boolean;
 }
 
 /**
@@ -87,7 +108,7 @@ interface SheetFormProps {
  * focused field is scrolled into view by hand — inside a Modal neither platform
  * does that for us, and the sheet is not going to move to make the point.
  */
-export function SheetForm({ children, action, contentStyle }: SheetFormProps) {
+export function SheetForm({ children, action, contentStyle, actionStyle, actionPassThrough }: SheetFormProps) {
   const keyboardLift = useSheetKeyboardLift();
   const scrollRef = useRef<ScrollView>(null);
   const contentRef = useRef<View>(null);
@@ -208,7 +229,8 @@ export function SheetForm({ children, action, contentStyle }: SheetFormProps) {
 
       {action ? (
         <View
-          style={[styles.actionBar, keyboardLift > 0 && { transform: [{ translateY: -keyboardLift }] }]}
+          style={[styles.actionBar, actionStyle, keyboardLift > 0 && { transform: [{ translateY: -keyboardLift }] }]}
+          pointerEvents={actionPassThrough ? "box-none" : "auto"}
           onLayout={(event: LayoutChangeEvent) => setActionHeight(event.nativeEvent.layout.height)}
         >
           {action}
@@ -218,16 +240,8 @@ export function SheetForm({ children, action, contentStyle }: SheetFormProps) {
   );
 }
 
-export function FieldLabel({ children }: { children: ReactNode }) {
-  return (
-    <ThemedText variant="label" style={styles.fieldLabel}>
-      {children}
-    </ThemedText>
-  );
-}
-
 interface FieldProps extends TextInputProps {
-  /** Renders the value with tabular figures at hero size (amount fields). */
+  /** Renders the value in large tracked tabular figures (the deposit's 6-digit reference). */
   numeric?: boolean;
   /** Static trailing unit, e.g. "Ks". */
   suffix?: string;
@@ -242,8 +256,14 @@ interface FieldProps extends TextInputProps {
   revealAccessibilityLabel?: string;
   /** …and while it is showing ("Hide password"), so the label names what the tap will do. */
   hideAccessibilityLabel?: string;
-  /** Paints the ring red while the form is reporting an error for this field. */
+  /** Paints a 2pt red ring while the form is reporting an error for this field. */
   invalid?: boolean;
+  /**
+   * A borderless field: no fill, just a hairline under the value, flush with
+   * the column's text edge. (The money flows used it before Marquee; kept for
+   * any form that still wants it.)
+   */
+  flat?: boolean;
   /**
    * Handed straight to the TextInput, so a multi-field form can hop focus on
    * "next". Declared rather than relying on React 19's ref-as-a-prop, because
@@ -252,7 +272,10 @@ interface FieldProps extends TextInputProps {
   ref?: Ref<TextInput>;
 }
 
-/** The one text field of the money sheets — 52pt tall, themed, never white. */
+/**
+ * The one text field of the sheet forms (Marquee): 56pt, radius 16, the raised
+ * #1C1C23 fill, no border; a 2pt red ring when invalid. Never white.
+ */
 export function SheetInput({
   numeric,
   suffix,
@@ -260,6 +283,7 @@ export function SheetInput({
   revealAccessibilityLabel,
   hideAccessibilityLabel,
   invalid,
+  flat,
   secureTextEntry,
   editable = true,
   style,
@@ -272,7 +296,14 @@ export function SheetInput({
   const showToggle = !!revealable && !!secureTextEntry;
 
   return (
-    <View style={[styles.inputShell, invalid && styles.inputShellInvalid, !editable && styles.inputShellDisabled]}>
+    <View
+      style={[
+        styles.inputShell,
+        flat && styles.inputShellFlat,
+        invalid && (flat ? styles.inputShellFlatInvalid : styles.inputShellInvalid),
+        !editable && styles.inputShellDisabled,
+      ]}
+    >
       <TextInput
         ref={ref}
         placeholderTextColor={theme.colors.textFaint}
@@ -308,22 +339,8 @@ export function SheetInput({
 }
 
 /**
- * A validation message that belongs to ONE field, rendered directly under it —
- * unlike `ErrorNotice`, which rides with the pinned submit and speaks for the
- * whole form. A three-field password form needs both: "too short" has to point
- * at the field it is about.
- */
-export function FieldError({ children }: { children: ReactNode }) {
-  return (
-    <ThemedText variant="caption" weight="semibold" style={styles.fieldError}>
-      {children}
-    </ThemedText>
-  );
-}
-
-/**
- * The multi-line field — feedback messages, reader notes. Same shell as
- * `SheetInput` in a taller box, and the same bring-into-view on focus.
+ * The multi-line field — feedback messages, reader notes. Same flat raised
+ * fill as `SheetInput` in a taller box, and the same bring-into-view on focus.
  */
 export function SheetTextArea({ style, onFocus, ...rest }: TextInputProps) {
   const reveal = useRevealOnFocus();
@@ -343,123 +360,234 @@ export function SheetTextArea({ style, onFocus, ...rest }: TextInputProps) {
   );
 }
 
+/** The boards' amount figure: 52/64 Black. */
+const AMOUNT_FONT = 52;
+/** Never scale the amount past this much of the OS text size — a 52pt figure is already large. */
+const AMOUNT_MAX_SCALE = 1.3;
+/** Smallest the figure shrinks to while it fits a very long number on a narrow phone. */
+const AMOUNT_MIN_FONT = 24;
+/**
+ * Advance widths in Noto Sans Myanmar Black with tabular figures, in em — a
+ * digit ~0.6em, the comma ~0.3em (the -0.03em tracking only buys slack); "Ks"
+ * in the 22pt ExtraBold unit ~1.2em. The slack covers the caret.
+ */
+const DIGIT_EM = 0.6;
+const COMMA_EM = 0.3;
+const CARET_SLACK_EM = 0.4;
+const UNIT_EM = 1.2;
+const UNIT_FONT = 22;
+/** The unit sits 10pt from the figure. */
+const UNIT_GAP = 10;
+
+interface AmountFieldProps {
+  label: string;
+  /** The raw digits ("10000"); shown grouped ("10,000"). */
+  value: string;
+  /** Receives digits only — the separators are stripped here. */
+  onChangeText: (digits: string) => void;
+  placeholder: string;
+  accessibilityLabel: string;
+  /** The form's current error is about the amount: the underline turns into a 2pt red rule. */
+  invalid?: boolean;
+}
+
+/**
+ * The money flows' amount input: a big borderless 52pt Black figure with "Ks"
+ * beside it and a rule under both (2pt red while the amount is the error). The
+ * state stays the raw digit string the validation always read; only the
+ * display is grouped. The figure shrinks to fit rather than scrolling out of
+ * sight, so an amount is never cut off.
+ */
+export function AmountField({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  accessibilityLabel,
+  invalid,
+}: AmountFieldProps) {
+  const reveal = useRevealOnFocus();
+  const { fontScale } = useWindowDimensions();
+  const [rowWidth, setRowWidth] = useState(0);
+  // Past 15 digits a Number can no longer hold the value exactly, so the raw
+  // digits are shown rather than a rounded figure the user never typed.
+  const display = value === "" ? "" : value.length > 15 ? value : formatKyatNumber(Number(value));
+  const scale = Math.min(fontScale, AMOUNT_MAX_SCALE);
+  const target = AMOUNT_FONT * scale;
+  const unitSize = UNIT_FONT * scale;
+  const shown = display || placeholder;
+  const commas = (shown.match(/,/g) ?? []).length;
+  const ems = (shown.length - commas) * DIGIT_EM + commas * COMMA_EM + CARET_SLACK_EM;
+  const room = rowWidth - unitSize * UNIT_EM - UNIT_GAP;
+  const fontSize = rowWidth > 0 ? Math.max(AMOUNT_MIN_FONT, Math.min(target, Math.floor(room / ems))) : target;
+
+  return (
+    <View>
+      <ThemedText variant="caption" weight="bold" style={styles.amountLabel}>
+        {label}
+      </ThemedText>
+      <View
+        style={[styles.amountRow, invalid && styles.amountRowInvalid]}
+        onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)}
+      >
+        <TextInput
+          value={display}
+          onChangeText={(next) => onChangeText(next.replace(/\D/g, ""))}
+          keyboardType="number-pad"
+          placeholder={placeholder}
+          placeholderTextColor={theme.colors.textFaint}
+          accessibilityLabel={accessibilityLabel}
+          onFocus={reveal}
+          // The size is computed above from the OS text size (capped), so the
+          // platform must not scale it a second time.
+          allowFontScaling={false}
+          underlineColorAndroid="transparent"
+          style={[
+            styles.amountInput,
+            { fontSize, lineHeight: Math.round(fontSize * 1.23), letterSpacing: -fontSize * 0.03 },
+          ]}
+        />
+        <ThemedText
+          maxFontSizeMultiplier={AMOUNT_MAX_SCALE}
+          weight="extrabold"
+          style={styles.amountUnit}
+        >
+          Ks
+        </ThemedText>
+      </View>
+    </View>
+  );
+}
+
 interface QuickAmountsProps {
   values: readonly number[];
   /** The current raw amount string — a chip lights up when it matches. */
   amount: string;
   onSelect: (value: number) => void;
+  /**
+   * 4 (default) = one row of four. 2 = a 2×2 grid, for narrow screens and
+   * large text sizes, where four in one row would squeeze "50,000".
+   */
+  columns?: 2 | 4;
 }
 
 /**
- * Preset top-up amounts — the shared `common/Chip`, so a money sheet's
- * selection reads exactly like a filter chip elsewhere in the app (quiet
- * elevated fill unselected, solid violet when picked). Each is a 44pt target.
+ * Preset amounts — 44pt flat chips on the raised fill, radius 12; the picked
+ * one turns white with near-black figures. The figure is shown without the
+ * unit (the field above already says "Ks") and is spoken with it. A label may
+ * wrap to a second line at the largest text sizes rather than being cut.
  */
-export function QuickAmounts({ values, amount, onSelect }: QuickAmountsProps) {
+export function QuickAmounts({ values, amount, onSelect, columns = 4 }: QuickAmountsProps) {
   return (
-    <View style={styles.chipsRow}>
-      {values.map((value) => (
-        <Chip
-          key={value}
-          label={formatKyat(value)}
-          selected={Number(amount) === value}
-          onPress={() => onSelect(value)}
-          style={styles.quickChip}
-        />
-      ))}
-    </View>
-  );
-}
-
-export interface MethodOption {
-  key: string;
-  label: string;
-  logoUrl: string | null;
-}
-
-interface MethodGridProps {
-  options: MethodOption[];
-  selectedKey: string | null;
-  onSelect: (key: string) => void;
-}
-
-/**
- * Two-column payment-method picker. A tile is a chip with a logo, so it wears
- * the shared `common/Chip` selection language: elevated + hairline border when
- * idle, solid violet with near-black ink when picked.
- */
-export function MethodGrid({ options, selectedKey, onSelect }: MethodGridProps) {
-  return (
-    <View style={styles.methodGrid}>
-      {options.map((option) => {
-        const active = selectedKey === option.key;
+    <View style={[styles.quickGrid, columns === 2 && styles.quickGridWrap]}>
+      {values.map((value) => {
+        const selected = Number(amount) === value;
         return (
-          <Pressable
-            key={option.key}
-            onPress={() => onSelect(option.key)}
-            style={({ pressed }) => [styles.methodTile, active && styles.methodTileActive, pressed && styles.pressed]}
+          <PressScale
+            key={value}
+            onPress={() => onSelect(value)}
             accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={option.label}
+            accessibilityLabel={formatKyat(value)}
+            accessibilityState={{ selected }}
+            style={[
+              styles.quickButton,
+              columns === 2 ? styles.quickButtonHalf : styles.quickButtonQuarter,
+              selected && styles.quickButtonSelected,
+            ]}
           >
-            <MethodLogo logoUrl={option.logoUrl} size={30} />
             <ThemedText
-              variant="caption"
-              weight={active ? "bold" : "semibold"}
-              numberOfLines={1}
-              style={active ? styles.methodTextActive : styles.methodText}
+              weight="extrabold"
+              tabular
+              numberOfLines={2}
+              style={[styles.quickLabel, selected && styles.quickLabelSelected]}
             >
-              {option.label}
+              {formatKyatNumber(value)}
             </ThemedText>
-            {active ? (
-              <View style={styles.methodCheck}>
-                <Ionicons name="checkmark-circle" size={16} color={theme.colors.onPrimary} />
-              </View>
-            ) : null}
-          </Pressable>
+          </PressScale>
         );
       })}
     </View>
   );
 }
 
-/** Quiet helper line under a field (limits, available balance, instructions). */
-export function HelperText({ children }: { children: ReactNode }) {
+/**
+ * Quiet helper line under a field (limits, available balance, instructions).
+ * `tone="muted"` lifts it from the faint ink to the readable muted one, for a
+ * hint the user needs to act on; every other caller keeps the default.
+ */
+export function HelperText({
+  children,
+  tone = "faint",
+  style,
+}: {
+  children: ReactNode;
+  tone?: "faint" | "muted";
+  style?: StyleProp<TextStyle>;
+}) {
   return (
-    <ThemedText variant="caption" tabular style={styles.helper}>
+    <ThemedText
+      variant="caption"
+      weight="regular"
+      tabular
+      style={[styles.helper, tone === "muted" && styles.helperMuted, style]}
+    >
       {children}
     </ThemedText>
   );
 }
 
 /**
- * Validation / submission failure — the only red in the sheet. It sits in the
- * pinned action row, so its spacing belongs to that row, not to this box.
+ * Validation / submission failure — a soft red fill, no border (Marquee). It
+ * sits in the pinned action row, so its spacing belongs to that row, not to
+ * this box.
  */
 export function ErrorNotice({ message }: { message: string }) {
   return (
     <View style={styles.errorBox}>
-      <Ionicons name="alert-circle" size={16} color={theme.colors.danger} />
-      <ThemedText variant="caption" weight="semibold" style={styles.errorText}>
+      <Ionicons name="alert-circle-outline" size={18} color={theme.colors.danger} style={styles.errorIcon} />
+      <ThemedText variant="caption" weight="semibold" tabular style={styles.errorText}>
         {message}
       </ThemedText>
     </View>
   );
 }
 
-/** Post-submit confirmation shown in place of the form. */
-export function SheetSuccess({ title, body }: { title: string; body: string }) {
+/** The success disc's entrance: 0.7 → 1 with a fade, .42s ease-out (the boards' `.pop`). */
+const POP_MS = 420;
+const POP_EASING = Easing.bezier(0.2, 0.8, 0.2, 1);
+
+/**
+ * Post-submit confirmation shown in place of the form: a green check on its
+ * soft disc (it pops in, or simply appears under reduce motion), the title in
+ * 24/30 ExtraBold and the body in 15/23.
+ */
+export function SheetSuccess({ title, body, haloSize = 88 }: { title: string; body: string; haloSize?: number }) {
+  const reduceMotion = useReducedMotion();
+  const pop = useSharedValue(reduceMotion ? 1 : 0);
+  useEffect(() => {
+    if (reduceMotion) {
+      pop.value = 1;
+      return;
+    }
+    pop.value = withTiming(1, { duration: POP_MS, easing: POP_EASING });
+  }, [pop, reduceMotion]);
+  const popStyle = useAnimatedStyle(() => ({ opacity: pop.value, transform: [{ scale: 0.7 + 0.3 * pop.value }] }));
+
   return (
     <View style={styles.successBox}>
-      <View style={styles.successHalo}>
-        <Ionicons name="checkmark-circle" size={44} color={theme.colors.finance} />
-      </View>
-      <ThemedText variant="title" style={styles.center}>
+      <Animated.View
+        style={[
+          styles.successHalo,
+          { width: haloSize, height: haloSize, borderRadius: haloSize / 2 },
+          popStyle,
+        ]}
+      >
+        <Ionicons name="checkmark" size={44} color={theme.colors.finance} />
+      </Animated.View>
+      <ThemedText variant="title" accessibilityRole="header" style={[styles.center, styles.successTitle]}>
         {title}
       </ThemedText>
-      <ThemedText variant="muted" style={[styles.center, styles.successBody]}>
-        {body}
-      </ThemedText>
+      <ThemedText style={[styles.center, styles.successBody]}>{body}</ThemedText>
     </View>
   );
 }
@@ -470,8 +598,8 @@ const styles = StyleSheet.create({
   /**
    * Out of the column flow on purpose — in it, the keyboard inset would shrink
    * the scroll view above. The hairline is what tells you the fields keep
-   * scrolling underneath, and the fill is the sheet's own, so they do it out of
-   * sight instead of showing through.
+   * scrolling underneath, and the fill is the sheet's own (#121217), so they
+   * do it out of sight instead of showing through.
    */
   actionBar: {
     position: "absolute",
@@ -482,21 +610,31 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.popover,
+    backgroundColor: theme.colors.surface,
   },
-  fieldLabel: { marginTop: theme.spacing.md, marginBottom: theme.spacing.xs },
   inputShell: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing.sm,
-    backgroundColor: theme.colors.surfaceSunken,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: theme.spacing.md,
-    minHeight: 52,
+    backgroundColor: theme.colors.surfaceElevated,
+    borderRadius: 16,
+    // Always 2pt, clear at rest: the invalid ring then costs no layout shift.
+    borderWidth: 2,
+    borderColor: "transparent",
+    paddingHorizontal: theme.spacing.md - 2,
+    minHeight: 56,
   },
-  inputShellInvalid: { borderColor: theme.colors.danger + "8C" },
+  inputShellFlat: {
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    borderRadius: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.tonalStrong,
+    paddingHorizontal: 0,
+    minHeight: 48,
+  },
+  inputShellInvalid: { borderColor: theme.colors.danger },
+  inputShellFlatInvalid: { borderBottomWidth: 2, borderBottomColor: theme.colors.danger },
   inputShellDisabled: { opacity: 0.6 },
   /** Full 44pt target, pulled into the shell's right padding so the box keeps its shape. */
   revealToggle: {
@@ -513,76 +651,86 @@ const styles = StyleSheet.create({
     fontFamily: theme.font.regular,
     fontSize: 16,
   },
-  inputNumeric: { ...tabularNums, fontFamily: theme.font.bold, fontSize: 22, letterSpacing: 0.2 },
+  /** DepositStep2's reference: 24pt ExtraBold, tracked 0.24em so six digits read one by one. */
+  inputNumeric: { ...tabularNums, fontFamily: theme.font.extrabold, fontSize: 24, letterSpacing: 5.5 },
   textArea: {
     minHeight: 132,
-    backgroundColor: theme.colors.surfaceSunken,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceElevated,
+    borderRadius: 16,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm + 4,
+    paddingTop: 14,
+    paddingBottom: 14,
     color: theme.colors.text,
     fontFamily: theme.font.regular,
     fontSize: 15,
-    lineHeight: 21,
+    lineHeight: 23,
   },
   suffix: { color: theme.colors.textFaint },
-  chipsRow: { flexDirection: "row", gap: theme.spacing.sm, marginTop: theme.spacing.sm },
-  /** Four presets share the row, so the shared chip stretches instead of hugging. */
-  quickChip: { flex: 1, alignSelf: "stretch", paddingHorizontal: 6 },
-  methodGrid: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm, marginTop: theme.spacing.xs },
-  methodTile: {
-    flexGrow: 1,
-    flexBasis: "45%",
-    minHeight: 84,
-    paddingVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.sm,
-    borderRadius: theme.radius.xl,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: theme.colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  methodTileActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-  methodText: { color: theme.colors.textMuted },
-  methodTextActive: { color: theme.colors.onPrimary },
-  methodCheck: { position: "absolute", top: 6, right: 6 },
-  helper: { color: theme.colors.textFaint, marginTop: 6 },
-  /** Sits exactly where HelperText would, so a field swapping hint for error does not jump. */
-  fieldError: { color: theme.colors.danger, marginTop: 6 },
-  errorBox: {
+  amountLabel: { color: theme.colors.textMuted },
+  /** The rule under the figure and its unit — the field's only outline. */
+  amountRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing.sm,
-    padding: theme.spacing.sm + 2,
-    borderRadius: theme.radius.lg,
-    backgroundColor: theme.colors.dangerSoft,
-    borderWidth: 1,
-    borderColor: theme.colors.danger + "3D",
+    gap: UNIT_GAP,
+    minHeight: 64,
+    marginTop: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.tonalStrong,
   },
+  amountRowInvalid: { borderBottomWidth: 2, borderBottomColor: theme.colors.danger },
+  amountInput: {
+    ...tabularNums,
+    flex: 1,
+    minWidth: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    color: theme.colors.text,
+    fontFamily: theme.font.black,
+  },
+  amountUnit: { fontSize: UNIT_FONT, lineHeight: 28, color: theme.colors.textFaint },
+  quickGrid: { flexDirection: "row", gap: theme.spacing.sm, marginTop: theme.spacing.md },
+  quickGridWrap: { flexWrap: "wrap" },
+  quickButton: {
+    minHeight: theme.layout.minTouch,
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+    borderRadius: theme.radius.button,
+    backgroundColor: theme.colors.surfaceElevated,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickButtonQuarter: { flex: 1 },
+  /** Two per row: a basis just under half (the 8pt gap takes the rest), then grow to fill. */
+  quickButtonHalf: { flexGrow: 1, flexBasis: "46%" },
+  quickButtonSelected: { backgroundColor: theme.colors.play },
+  quickLabel: { fontSize: 14, color: theme.colors.text, textAlign: "center" },
+  quickLabelSelected: { color: theme.colors.onPlay },
+  helper: { color: theme.colors.textFaint, marginTop: 6 },
+  helperMuted: { color: theme.colors.textMuted },
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.button,
+    backgroundColor: withAlpha(theme.colors.danger, 0.12),
+  },
+  errorIcon: { marginTop: 0 },
   errorText: { flex: 1, color: theme.colors.danger },
   pressed: { opacity: 0.75 },
   successBox: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: theme.spacing.sm,
     paddingBottom: theme.spacing.xl,
   },
   successHalo: {
-    width: 84,
-    height: 84,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.financeSoft,
-    borderWidth: 1,
-    borderColor: theme.colors.finance + "33",
+    backgroundColor: withAlpha(theme.colors.finance, 0.14),
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: theme.spacing.xs,
   },
   center: { textAlign: "center" },
-  successBody: { maxWidth: 320 },
+  successTitle: { marginTop: theme.spacing.lg },
+  successBody: { marginTop: 10, maxWidth: 330, color: theme.colors.textBody },
 });

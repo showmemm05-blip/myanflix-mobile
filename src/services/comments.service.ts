@@ -7,6 +7,10 @@ export const commentsService = {
     return commentsApi.getComments(target, options);
   },
 
+  getReplies(commentId: string, page: number) {
+    return commentsApi.getReplies(commentId, page);
+  },
+
   postComment(target: CommentTarget, input: CreateCommentInput) {
     // Trimming here as well as on the server keeps a body of nothing but
     // whitespace from ever leaving the device as a doomed request.

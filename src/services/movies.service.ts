@@ -20,9 +20,4 @@ export const moviesService = {
     const raw = await moviesApi.getMovieById(id, options);
     return mapMovie(raw);
   },
-
-  async getMostPurchased(options: RequestSignalOptions = {}): Promise<Movie[]> {
-    const raw = await moviesApi.getMostPurchased(options);
-    return raw.map(mapMovie);
-  },
 };

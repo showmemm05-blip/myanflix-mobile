@@ -1,15 +1,23 @@
-import { useCallback } from "react";
-import { FlatList, Pressable, StyleSheet, View, type ListRenderItemInfo } from "react-native";
+import { useCallback, useMemo } from "react";
+import { FlatList, Pressable, StyleSheet, View, useWindowDimensions, type ListRenderItemInfo } from "react-native";
 import { Image } from "expo-image";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { useSheetKeyboardLift } from "@/components/ui/BottomSheet";
-import { theme, withAlpha } from "@/theme";
+import { theme } from "@/theme";
 import type { BookPage } from "@/types/book";
 
-const COLUMNS = 3;
-const THUMB_HEIGHT = 118;
-/** Thumb + caption + row gap — getItemLayout's whole contract. */
-const ROW_HEIGHT = THUMB_HEIGHT + 22 + theme.spacing.sm;
+/** PageReader.dc.html: four thumbs a row, 10pt apart, rows 12pt apart. */
+const COLUMNS = 4;
+const COLUMN_GAP = 10;
+const ROW_GAP = 12;
+/** A scanned page's shape — 82 × 117 on the board. */
+const PAGE_RATIO = 0.7;
+/** The ring around the open page: 2pt of the sheet, then 2pt of crimson — reserved on every thumb so none shifts. */
+const RING = 4;
+/** The folio line under each thumb. */
+const CAPTION = 6 + 18;
+/** The sheet's own side padding. */
+const SHEET_PADDING = theme.layout.screenPadding;
 
 interface Props {
   pages: BookPage[];
@@ -21,13 +29,14 @@ interface Props {
 
 /**
  * The page-book thumbnail grid — the Pages tab of the contents sheet AND the
- * body of the upgraded jump sheet share this one component. A windowed
- * FlatList of expo-image thumbs with folio captions; the open page carries
- * the primary ring and the grid opens scrolled to its row.
+ * body of the jump sheet share this one component. A windowed FlatList of
+ * expo-image thumbs with folio captions; the open page carries the crimson
+ * ring and the grid opens scrolled to its row. Row heights are exact (from
+ * the window width), so getItemLayout — and the initial scroll — stay honest.
  */
 export function PageThumbGrid({ pages, currentIndex, onSelect }: Props) {
   /**
-   * The jump sheet pins its "Jump to page" button in the sheet's footer, which
+   * The jump sheet pins its "Go to page" button in the sheet's footer, which
    * rises by this much to clear the keyboard summoned by the page-number field
    * above the grid — and it rises OVER this list, because a footer is lifted by
    * a transform so it never reflows the body. Without the matching reserve the
@@ -35,6 +44,13 @@ export function PageThumbGrid({ pages, currentIndex, onSelect }: Props) {
    * the contents sheet, which has no field to raise a keyboard with.
    */
   const keyboardLift = useSheetKeyboardLift();
+  const { width } = useWindowDimensions();
+
+  const { thumbHeight, rowHeight } = useMemo(() => {
+    const cell = (width - 2 * SHEET_PADDING - (COLUMNS - 1) * COLUMN_GAP) / COLUMNS;
+    const thumb = Math.round((cell - 2 * RING) / PAGE_RATIO);
+    return { thumbHeight: thumb, rowHeight: thumb + 2 * RING + CAPTION + ROW_GAP };
+  }, [width]);
 
   const renderItem = useCallback(
     ({ item, index }: ListRenderItemInfo<BookPage>) => {
@@ -45,24 +61,28 @@ export function PageThumbGrid({ pages, currentIndex, onSelect }: Props) {
           accessibilityRole="button"
           accessibilityLabel={String(item.pageNumber)}
           accessibilityState={{ selected: current }}
-          style={({ pressed }) => [styles.cell, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.cell, { height: rowHeight }, pressed && styles.pressed]}
         >
-          <View style={[styles.thumb, current && styles.thumbCurrent]}>
-            <Image
-              source={{ uri: item.url }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={120}
-              recyclingKey={item.url}
-              // Page thumbs scroll out of the window and back constantly; the
-              // disk-only default re-decodes each time. See MediaCard.
-              cachePolicy="memory-disk"
-            />
+          <View style={[styles.ring, current && styles.ringCurrent]}>
+            <View style={[styles.thumb, { height: thumbHeight }]}>
+              <Image
+                source={{ uri: item.url }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                transition={120}
+                recyclingKey={item.url}
+                // Page thumbs scroll out of the window and back constantly; the
+                // disk-only default re-decodes each time. See MediaCard.
+                cachePolicy="memory-disk"
+              />
+            </View>
           </View>
           <ThemedText
-            variant="caption"
+            variant="label"
+            weight="bold"
             tabular
-            color={current ? theme.colors.primary : theme.colors.textFaint}
+            allowFontScaling={false}
+            color={current ? theme.colors.link : theme.colors.textMuted}
             style={styles.caption}
           >
             {String(item.pageNumber)}
@@ -70,16 +90,16 @@ export function PageThumbGrid({ pages, currentIndex, onSelect }: Props) {
         </Pressable>
       );
     },
-    [currentIndex, onSelect],
+    [currentIndex, onSelect, rowHeight, thumbHeight],
   );
 
   const getItemLayout = useCallback(
     (_: ArrayLike<BookPage> | null | undefined, index: number) => ({
-      length: ROW_HEIGHT,
-      offset: ROW_HEIGHT * Math.floor(index / COLUMNS),
+      length: rowHeight,
+      offset: rowHeight * Math.floor(index / COLUMNS),
       index,
     }),
-    [],
+    [rowHeight],
   );
 
   return (
@@ -92,9 +112,9 @@ export function PageThumbGrid({ pages, currentIndex, onSelect }: Props) {
       initialScrollIndex={pages.length > 0 ? Math.min(currentIndex, pages.length - 1) : undefined}
       columnWrapperStyle={styles.rowWrap}
       contentContainerStyle={[styles.content, keyboardLift > 0 && { paddingBottom: theme.spacing.lg + keyboardLift }]}
-      initialNumToRender={12}
+      initialNumToRender={16}
       windowSize={5}
-      maxToRenderPerBatch={9}
+      maxToRenderPerBatch={12}
       removeClippedSubviews
       showsVerticalScrollIndicator={false}
     />
@@ -102,29 +122,16 @@ export function PageThumbGrid({ pages, currentIndex, onSelect }: Props) {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: theme.spacing.lg },
-  rowWrap: { gap: theme.spacing.sm },
-  cell: {
-    flex: 1,
-    height: ROW_HEIGHT,
-    paddingBottom: theme.spacing.sm,
-    alignItems: "center",
-    gap: 4,
-  },
+  content: { paddingTop: theme.spacing.xs, paddingBottom: theme.spacing.lg },
+  rowWrap: { gap: COLUMN_GAP },
+  cell: { flex: 1, alignItems: "stretch", paddingBottom: ROW_GAP },
   pressed: { opacity: 0.75 },
+  ring: { padding: 2, borderWidth: 2, borderColor: "transparent", borderRadius: 8 },
+  ringCurrent: { borderColor: theme.colors.primary },
   thumb: {
-    alignSelf: "stretch",
-    height: THUMB_HEIGHT,
-    borderRadius: theme.radius.sm,
+    borderRadius: theme.radius.xs - 1,
     overflow: "hidden",
     backgroundColor: theme.colors.skeleton,
-    borderWidth: 1,
-    borderColor: theme.colors.ring,
   },
-  thumbCurrent: {
-    borderWidth: 2,
-    borderColor: theme.colors.primary,
-    shadowColor: withAlpha(theme.colors.primary, 0.4),
-  },
-  caption: { lineHeight: 18 },
+  caption: { marginTop: 6, lineHeight: 18, textAlign: "center", letterSpacing: 0 },
 });

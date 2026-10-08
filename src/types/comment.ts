@@ -18,8 +18,28 @@ export interface Comment {
   body: string;
   createdAt: string;
   user: CommentAuthor;
+  /** For a top-level comment: its first REPLY_PAGE_SIZE replies, oldest first. */
   replies: Comment[];
+  /** Every visible reply, whether or not it is in `replies`. */
+  replyCount: number;
+  /** `replyCount > replies.length` — `commentsApi.getReplies` has a page to load. */
+  hasMoreReplies: boolean;
 }
+
+/** One page of a comment's replies as `GET /comments/:id/replies` returns it. */
+export interface ReplyPage {
+  items: Comment[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+/**
+ * How many replies a thread read carries under each comment, and the size of
+ * every further page — the server's REPLY_PREVIEW_LIMIT, so page 2 starts
+ * exactly where the preview stopped.
+ */
+export const REPLY_PAGE_SIZE = 20;
 
 /**
  * Which title a thread belongs to — exactly one id of the three. Modelled as

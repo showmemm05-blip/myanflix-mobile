@@ -1,4 +1,4 @@
-import { useCallback, type ComponentProps } from "react";
+import { useCallback, useMemo, type ComponentProps } from "react";
 import { FlatList, StyleSheet, View, type ListRenderItemInfo } from "react-native";
 import { PressableScale } from "@/components/ui/PressableScale";
 import { SectionHeader } from "@/components/ui/SectionHeader";
@@ -9,8 +9,6 @@ import { theme } from "@/theme";
 
 /** Headshot diameter — a face is recognisable at this size, and eight fit a phone width. */
 const AVATAR_SIZE = 64;
-/** A cell is the disc plus a little slack for a name wider than it. */
-const CELL_WIDTH = AVATAR_SIZE + 16;
 
 /**
  * All a face needs. Deliberately the MINIMUM: the search result row
@@ -46,6 +44,11 @@ interface Props<T extends RailPerson> {
   icon?: ComponentProps<typeof SectionHeader>["icon"] | null;
   /** Set false inside an already-padded container (the movie page's spine). */
   inset?: boolean;
+  /**
+   * The disc's diameter. Omitted → 64, what the movie and series pages draw;
+   * the Search screen's People section passes the Marquee board's 84.
+   */
+  avatarSize?: number;
 }
 
 /**
@@ -61,19 +64,22 @@ export function PeopleRail<T extends RailPerson>({
   title,
   icon = "people-outline",
   inset = true,
+  avatarSize = AVATAR_SIZE,
 }: Props<T>) {
   const { t } = useLanguage();
+  // A cell is the disc plus a little slack for a name wider than it.
+  const cellStyle = useMemo(() => [styles.cell, { width: avatarSize + 16 }], [avatarSize]);
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<T>) => (
-      <PressableScale onPress={() => onPress(item)} accessibilityLabel={item.name} style={styles.cell}>
-        <ActorAvatar name={item.name} imageUrl={item.imageUrl} size={AVATAR_SIZE} />
+      <PressableScale onPress={() => onPress(item)} accessibilityLabel={item.name} style={cellStyle}>
+        <ActorAvatar name={item.name} imageUrl={item.imageUrl} size={avatarSize} />
         <ThemedText variant="caption" weight="medium" color={theme.colors.text} numberOfLines={2} style={styles.name}>
           {item.name}
         </ThemedText>
       </PressableScale>
     ),
-    [onPress],
+    [onPress, cellStyle, avatarSize],
   );
 
   return (
@@ -99,6 +105,6 @@ const styles = StyleSheet.create({
   section: { gap: theme.spacing.xs },
   row: { gap: theme.spacing.sm },
   rowInset: { paddingHorizontal: theme.layout.screenPadding },
-  cell: { width: CELL_WIDTH, alignItems: "center", gap: theme.spacing.xs },
+  cell: { alignItems: "center", gap: theme.spacing.xs },
   name: { textAlign: "center", fontSize: 12, lineHeight: 16 },
 });

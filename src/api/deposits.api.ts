@@ -1,6 +1,6 @@
 import { apiClient } from "@/api/client";
 import type { Deposit } from "@/types/deposit";
-import type { PaginatedResponse, PaginationParams, RequestSignalOptions } from "@/types/api";
+import type { PaginatedResponse, RequestListParams, RequestSignalOptions } from "@/types/api";
 
 export const depositsApi = {
   createDeposit(
@@ -19,7 +19,7 @@ export const depositsApi = {
     });
   },
 
-  getMyDeposits(pagination: PaginationParams = {}, options: RequestSignalOptions = {}) {
+  getMyDeposits(pagination: RequestListParams = {}, options: RequestSignalOptions = {}) {
     return apiClient.get<PaginatedResponse<Deposit>>("/deposits/me", { params: pagination, ...options });
   },
 };

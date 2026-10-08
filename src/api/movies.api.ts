@@ -21,8 +21,4 @@ export const moviesApi = {
   getMovieById(id: string, options: RequestSignalOptions = {}) {
     return apiClient.get<BackendMovie>(`/movies/${id}`, options);
   },
-
-  getMostPurchased(options: RequestSignalOptions = {}) {
-    return apiClient.get<BackendMovie[]>("/movies/most-purchased", options);
-  },
 };

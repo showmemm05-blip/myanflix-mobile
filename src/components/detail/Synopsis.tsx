@@ -1,71 +1,47 @@
-import { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
-// Deep import, not the "@expo/vector-icons" root: that barrel statically
-// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { ThemedText } from "@/components/ui/ThemedText";
+import { StyleSheet, View } from "react-native";
+import { ExpandableText } from "@/components/detail/ExpandableText";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 
-/** Below this a description always fits, so the toggle would be noise. */
-const COLLAPSE_THRESHOLD = 180;
+/** Lines shown while collapsed, unless the caller asks for another clamp. */
 const COLLAPSED_LINES = 4;
 
 interface Props {
   text: string;
   /** Heading above the copy — pass `t.movie.synopsis`. */
   title: string;
+  /** Lines shown while collapsed (default 4; the player's film panel draws 3). */
+  collapsedLines?: number;
 }
 
-/** Description block that collapses long copy behind a Show more / Show less toggle. */
-export function Synopsis({ text, title }: Props) {
+/**
+ * A "Synopsis" heading over a description that collapses long copy behind a
+ * Show more / Show less toggle. The copy is the title pages' ExpandableText,
+ * so whether the toggle shows is MEASURED at the real width and text size —
+ * never guessed from a character count, which would clamp a short Burmese
+ * synopsis at 2× text with no way to open it.
+ */
+export function Synopsis({ text, title, collapsedLines = COLLAPSED_LINES }: Props) {
   const { t } = useLanguage();
-  const [expanded, setExpanded] = useState(false);
-  const trimmed = text?.trim() ?? "";
-
-  if (trimmed.length === 0) return null;
-  const collapsible = trimmed.length > COLLAPSE_THRESHOLD;
+  if ((text?.trim() ?? "").length === 0) return null;
 
   return (
-    <View style={styles.container}>
-      <SectionHeader title={title} inset={false} style={styles.header} />
-      <ThemedText
-        variant="body"
-        numberOfLines={collapsible && !expanded ? COLLAPSED_LINES : undefined}
+    <View>
+      <SectionHeader title={title} inset={false} titleLines={2} style={styles.header} />
+      <ExpandableText
+        text={text}
+        collapsedLines={collapsedLines}
+        moreLabel={t.common.showMore}
+        lessLabel={t.common.showLess}
         style={styles.body}
-      >
-        {trimmed}
-      </ThemedText>
-
-      {collapsible && (
-        <Pressable
-          onPress={() => setExpanded((value) => !value)}
-          style={styles.toggle}
-          accessibilityRole="button"
-          accessibilityState={{ expanded }}
-          accessibilityLabel={expanded ? t.common.showLess : t.common.showMore}
-        >
-          <ThemedText variant="label" weight="semibold" style={styles.toggleText}>
-            {expanded ? t.common.showLess : t.common.showMore}
-          </ThemedText>
-          <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={14} color={theme.colors.primary} />
-        </Pressable>
-      )}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { gap: theme.spacing.xs },
-  header: { marginBottom: theme.spacing.xs },
-  body: { color: theme.colors.textMuted },
-  toggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    minHeight: theme.layout.minTouch,
-    alignSelf: "flex-start",
-  },
-  toggleText: { color: theme.colors.primary },
+  /** Player.dc.html: the copy sits 8pt under the 19/26 heading. */
+  header: { marginBottom: theme.spacing.sm },
+  body: { marginTop: 0 },
 });

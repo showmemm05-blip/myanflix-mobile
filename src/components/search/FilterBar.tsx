@@ -1,51 +1,96 @@
-import { Pressable, StyleSheet, View } from "react-native";
+import type { ReactNode } from "react";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
+import type { FilterChip } from "@/components/search/filters";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 
 /*
- * The Media tab's ONE filter control, its neighbour pill, and its one line of
- * feedback. The Filter button sits on the right of the results header and
- * opens the SearchFilters page; the People button sits immediately left of it
- * and opens a list of names — the actors list on Movies and Series, the
- * authors list on Books (its own screen since the People tab was dropped —
- * six tabs overflowed the strip); the summary sits under the tab strip and
- * names what the filters page has applied, with a Clear link beside it. None
- * of them edits a filter itself — the page writes the store, the screen
- * resets it — so all three stay stateless.
+ * The filter controls, Marquee style. The "Sort & filter" pill opens the
+ * Sort & filter sheet. The filter ROW (the Media page's results view and the
+ * search screen) repeats that pill, then one chip per active value — each
+ * with its ✕, removing that value in place — and Clear all. The People pill
+ * is the SEARCH SCREEN's only (its count row, SearchResultsHeader): a list of
+ * names — the actors on Movies and Series, the authors on Books. The Media
+ * page has no People filter (people are reached by search and title pages,
+ * as on Netflix). All of them stay stateless: the caller owns the filters.
  */
 
+/** The visible pill; hitSlop tops each one up to the 44pt target. */
+const PILL_HEIGHT = 34;
+const PILL_SLOP = { top: 5, bottom: 5, left: 0, right: 0 };
+
+/** One pressable 34pt pill — the shape every control in this file shares. */
+function PillPressable({
+  onPress,
+  accessibilityLabel,
+  active,
+  children,
+  compactRight,
+}: {
+  onPress: () => void;
+  accessibilityLabel: string;
+  active?: boolean;
+  children: ReactNode;
+  /** The chips carry a trailing ✕, so their right padding is tighter. */
+  compactRight?: boolean;
+}) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={PILL_SLOP}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={({ pressed }) => [
+        styles.pill,
+        compactRight ? styles.pillChip : styles.pillButton,
+        active ? styles.pillActive : null,
+        pressed && (reduceMotion ? styles.pressedStill : styles.pressed),
+      ]}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 interface FilterButtonProps {
-  /** Active filters on the visible tab — shown as "Filter · 2" once > 0. */
+  /** Active values the pill stands for — drawn as its count badge once > 0. */
   count: number;
   onPress: () => void;
 }
 
-/** The "Filter" / "Filter · 2" pill on the right of the results header. */
+/**
+ * THE one "Sort & filter" pill. While anything is active it is crimson-tinted
+ * and carries a round count badge; the count is part of its spoken label
+ * ("Sort & filter, 2 active"), so the badge itself is not read twice.
+ */
 export function FilterButton({ count, onPress }: FilterButtonProps) {
   const { t } = useLanguage();
-  const label = count > 0 ? `${t.search.filterButton} · ${count}` : t.search.filterButton;
+  const active = count > 0;
+  const ink = active ? theme.colors.link : theme.colors.text;
   return (
-    <Pressable
+    <PillPressable
       onPress={onPress}
-      hitSlop={6}
-      accessibilityRole="button"
-      accessibilityLabel={t.search.filters}
-      style={({ pressed }) => [styles.button, count > 0 && styles.buttonActive, pressed && styles.pressed]}
+      active={active}
+      accessibilityLabel={active ? t.search.sortAndFilterActiveA11y.replace("{n}", String(count)) : t.search.sortAndFilter}
     >
-      <Ionicons name="options-outline" size={15} color={count > 0 ? theme.colors.primary : theme.colors.text} />
-      <ThemedText
-        variant="label"
-        weight="semibold"
-        numberOfLines={1}
-        color={count > 0 ? theme.colors.primary : theme.colors.text}
-      >
-        {label}
+      <Ionicons name="options-outline" size={16} color={ink} />
+      <ThemedText variant="muted" weight="extrabold" numberOfLines={1} color={ink}>
+        {t.search.sortAndFilter}
       </ThemedText>
-    </Pressable>
+      {active ? (
+        <View style={styles.badge}>
+          <ThemedText variant="caption" weight="extrabold" tabular numberOfLines={1} color={theme.colors.onPrimary}>
+            {count}
+          </ThemedText>
+        </View>
+      ) : null}
+    </PillPressable>
   );
 }
 
@@ -54,91 +99,124 @@ interface PeopleButtonProps {
   /**
    * What the pill says and shows. It is CONTEXTUAL: on Movies and Series it is
    * the People button that opens the actors list; on Books it is Authors, and
-   * opens the authors list — a book has an author, not a cast. The caller
-   * supplies both because the caller is the only place that knows which tab is
-   * on screen; the defaults keep it the People button for anyone who passes
-   * neither. The label doubles as the accessibility label, so the two can
-   * never disagree.
+   * opens the authors list — a book has an author, not a cast. The label
+   * doubles as the accessibility label, so the two can never disagree.
    */
   label?: string;
   icon?: keyof typeof Ionicons.glyphMap;
 }
 
-/**
- * The people/authors pill beside the Filter button — the door to whichever
- * list of names the visible tab is about.
- */
+/** The people/authors pill — the door to whichever list of names the tab is about. */
 export function PeopleButton({ onPress, label, icon = "people-outline" }: PeopleButtonProps) {
   const { t } = useLanguage();
   const text = label ?? t.search.people;
   return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={6}
-      accessibilityRole="button"
-      accessibilityLabel={text}
-      /* Deliberately the SAME `button` style as FilterButton above, not a copy
-         of its numbers: the two sit side by side in the results header and
-         have to read as one pair, so a change to the pill has to move both. */
-      style={({ pressed }) => [styles.button, pressed && styles.pressed]}
-    >
-      <Ionicons name={icon} size={15} color={theme.colors.text} />
-      <ThemedText variant="label" weight="semibold" numberOfLines={1} color={theme.colors.text}>
+    <PillPressable onPress={onPress} accessibilityLabel={text}>
+      <Ionicons name={icon} size={16} color={theme.colors.text} />
+      <ThemedText variant="muted" weight="bold" numberOfLines={1} color={theme.colors.text}>
         {text}
       </ThemedText>
-    </Pressable>
+    </PillPressable>
   );
 }
 
-interface FilterSummaryProps {
-  /** One short line — "Action, Comedy · Top rated · 2010s" (see summarizeMovieFilters). */
-  text: string;
+interface FilterRowProps {
+  /** The Sort & filter pill's count. */
+  count: number;
+  /** One per active value — see movieFilterChips / seriesFilterChips. Each removes itself. */
+  chips: readonly FilterChip[];
+  /** The Sort & filter pill: the sheet. */
+  onEdit: () => void;
+  /** Clear all: every value the chips stand for. */
   onClear: () => void;
 }
 
 /**
- * The caption under the tab strip while any filter is active: the summary on
- * the left, "Clear" on the right. The screen drops the row entirely when the
- * summary is null, so this never renders an empty line.
+ * The filter row — above a Media results grid, and under the search screen's
+ * scope pills: the Sort & filter pill, then — while anything is active — a
+ * hairline, one chip per value (its ✕ removes just that value) and Clear
+ * all. One sideways rail, so a long list of values (or long Burmese labels)
+ * scrolls instead of being cut.
  */
-export function FilterSummary({ text, onClear }: FilterSummaryProps) {
+export function FilterRow({ count, chips, onEdit, onClear }: FilterRowProps) {
   const { t } = useLanguage();
   return (
-    <View style={styles.summaryRow}>
-      <ThemedText variant="caption" numberOfLines={1} style={styles.summaryText}>
-        {text}
-      </ThemedText>
-      <Pressable onPress={onClear} hitSlop={8} accessibilityRole="button" style={styles.clear}>
-        <ThemedText variant="caption" weight="semibold" color={theme.colors.primary}>
-          {t.search.clearFilters}
-        </ThemedText>
-      </Pressable>
-    </View>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.row}
+      keyboardShouldPersistTaps="handled"
+      style={styles.rowScroll}
+    >
+      <FilterButton count={count} onPress={onEdit} />
+      {chips.length > 0 ? (
+        <>
+          <View style={styles.divider} />
+          {chips.map((chip) => (
+            <PillPressable
+              key={chip.key}
+              onPress={chip.onRemove}
+              compactRight
+              accessibilityLabel={t.search.removeFilterA11y.replace("{label}", chip.label)}
+            >
+              <ThemedText variant="muted" weight="semibold" numberOfLines={1} color={theme.colors.text}>
+                {chip.label}
+              </ThemedText>
+              <Ionicons name="close" size={14} color={theme.colors.textMuted} />
+            </PillPressable>
+          ))}
+          <Pressable
+            onPress={onClear}
+            accessibilityRole="button"
+            accessibilityLabel={t.search.clearFiltersA11y}
+            style={({ pressed }) => [styles.clear, pressed && styles.pressedStill]}
+          >
+            <ThemedText variant="muted" weight="extrabold" numberOfLines={1} color={theme.colors.link}>
+              {t.search.clearAll}
+            </ThemedText>
+          </Pressable>
+        </>
+      ) : null}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  button: {
+  pill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    height: 30,
-    paddingHorizontal: 12,
-    borderRadius: theme.radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    minHeight: PILL_HEIGHT,
+    borderRadius: PILL_HEIGHT / 2,
     backgroundColor: theme.colors.surfaceElevated,
   },
-  buttonActive: { borderColor: theme.colors.primary },
-  pressed: { opacity: 0.7 },
-  summaryRow: {
-    flexDirection: "row",
+  pillButton: { paddingLeft: 12, paddingRight: 14 },
+  pillChip: { gap: theme.spacing.xs, paddingLeft: 14, paddingRight: 10 },
+  /** Crimson-soft under link ink — "something is filtering this list". */
+  pillActive: { backgroundColor: theme.colors.primarySoft },
+  /** The count: a crimson pill that grows with the text (2× type never clips it). */
+  badge: {
+    minWidth: 20,
+    minHeight: 20,
+    paddingHorizontal: 6,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.primary,
+  },
+  pressed: { transform: [{ scale: 0.96 }] },
+  pressedStill: { opacity: 0.7 },
+  rowScroll: { flexGrow: 0 },
+  row: {
     alignItems: "center",
     gap: theme.spacing.sm,
+    minHeight: theme.layout.minTouch,
     paddingHorizontal: theme.layout.screenPadding,
-    paddingTop: theme.spacing.xs,
   },
-  summaryText: { flex: 1 },
-  /** The link's slack is vertical only, so the summary keeps the row's width. */
-  clear: { minHeight: 32, justifyContent: "center", paddingLeft: theme.spacing.xs },
+  divider: { width: 1, height: 22, backgroundColor: theme.colors.tonalStrong },
+  clear: {
+    minHeight: theme.layout.minTouch,
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing.sm,
+  },
 });

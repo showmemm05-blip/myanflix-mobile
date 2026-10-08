@@ -140,7 +140,7 @@ function markStyle(
         const raw = attr(mark, "href");
         if (typeof raw === "string" && SAFE_LINK.test(raw)) {
           href = raw;
-          style.color = theme.colors.primary;
+          style.color = ctx.colors.link;
           style.textDecorationLine = style.textDecorationLine === "line-through" ? "underline line-through" : "underline";
         }
         break;

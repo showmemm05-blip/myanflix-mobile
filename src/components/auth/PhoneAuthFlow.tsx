@@ -1,36 +1,38 @@
 import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
-import Animated, {
-  Easing,
-  Extrapolation,
-  interpolate,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withTiming,
-  type SharedValue,
-} from "react-native-reanimated";
-// Deep import, not the "@expo/vector-icons" root: that barrel statically
-// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { StyleSheet, View } from "react-native";
 import { useAuth } from "@/hooks/useAuth";
 import { useLanguage } from "@/localization/LanguageProvider";
 import type { TranslationShape } from "@/localization/translations";
-import { ApiError, errorMessage } from "@/utils/errors";
-import { AuthTicket } from "@/components/auth/AuthScreenShell";
+import { ApiError, errorMessage, isSmsUnavailable } from "@/utils/errors";
+import { AuthHero } from "@/components/auth/AuthHero";
 import { AuthField } from "@/components/auth/AuthField";
-import { OtpChannelPicker } from "@/components/auth/OtpChannelPicker";
+import {
+  AuthButton,
+  AuthDivider,
+  AuthError,
+  AuthLink,
+  AuthNote,
+  NumberChip,
+  Rise,
+  StepRail,
+} from "@/components/auth/AuthParts";
 import { OtpInput } from "@/components/auth/OtpInput";
-import { Button } from "@/components/ui/Button";
-import { FadeInView } from "@/components/ui/FadeInView";
+import { OtpMethodPicker } from "@/components/auth/OtpMethodPicker";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { theme } from "@/theme";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
-type Step = "phone" | "password" | "otp";
+/**
+ * "method" is the "Get your code" step (owner decision 2026-10-01): a code is
+ * never requested automatically — only when the user taps a method there.
+ */
+type Step = "phone" | "password" | "method" | "otp";
 
-const STEP_ORDER: readonly Step[] = ["phone", "password", "otp"];
+const STEP_ORDER: readonly Step[] = ["phone", "password", "method", "otp"];
+
+/** Which field an error is about — it takes the danger ring. Null: the method rows, or nothing in particular. */
+type ErrorField = "phone" | "password" | "confirm" | "code" | null;
 
 interface PhoneAuthFlowProps {
   subtitle: string;
@@ -53,14 +55,22 @@ function isStepTokenRefused(err: unknown): boolean {
  * POST /auth/otp/request's own refusals (backend otp.service.ts), in the
  * user's language instead of the server's English — matched on status +
  * wording, as the forgot-password screen does: 60 s between two sign-in
- * codes, and 8 codes per number per hour, reset codes included. Anything else
+ * codes, and 8 codes per number per hour, reset codes included. A 503 "SMS
+ * service is temporarily unavailable" means the SMS gateway phone could not
+ * take the code (offline, or the day's SMS cap is used up); no code was kept,
+ * so asking again shortly is the cure (matched on its exact wording, see
+ * utils/errors.ts). No connection (status 0) and the HTTP throttle (429) get
+ * the same translated lines the forgot-password screen shows. Anything else
  * keeps `errorMessage`'s rule.
  */
 function describeSendCodeError(err: unknown, t: TranslationShape, fallback: string): string {
+  if (err instanceof ApiError && err.status === 0) return t.common.networkError;
+  if (err instanceof ApiError && err.status === 429) return t.auth.forgotPassword.rateLimited;
   if (err instanceof ApiError && err.status === 409) {
     if (/wait before requesting/i.test(err.message)) return t.auth.otp.waitForCode;
     if (/too many code requests/i.test(err.message)) return t.auth.otp.tooManyCodes;
   }
+  if (isSmsUnavailable(err)) return t.auth.otp.smsUnavailable;
   return errorMessage(err, fallback);
 }
 
@@ -94,7 +104,13 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
   const [stepToken, setStepToken] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ message: string; field: ErrorField } | null>(null);
+  const error = failure?.message ?? null;
+  const errorField = failure?.field ?? null;
+  /** Every message shows directly under what it is about; `field` says which input takes the ring. */
+  const setError = (message: string | null, field: ErrorField = null) => {
+    setFailure(message === null ? null : { message, field });
+  };
   const [cooldown, setCooldown] = useState(0);
   const cooldownInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -127,7 +143,7 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
 
   const handleSubmitPhone = async () => {
     if (!phone.trim()) {
-      setError(t.auth.phone.validationError);
+      setError(t.auth.phone.validationError, "phone");
       return;
     }
     setError(null);
@@ -139,7 +155,7 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
       setIsNewAccount(!exists);
       setStep("password");
     } catch (err) {
-      setError(errorMessage(err, t.auth.phone.genericError));
+      setError(errorMessage(err, t.auth.phone.genericError), "phone");
     } finally {
       setIsSubmitting(false);
     }
@@ -147,7 +163,7 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
 
   const handleSubmitExistingPassword = async () => {
     if (!password) {
-      setError(t.auth.password.validationError);
+      setError(t.auth.password.validationError, "password");
       return;
     }
     setError(null);
@@ -162,26 +178,45 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
         setStep("otp");
         return;
       }
-      await sendCode();
+      // Never request a code here — the user picks how to get it first.
+      setStep("method");
     } catch (err) {
-      setError(describeSendCodeError(err, t, t.auth.password.genericError));
+      setError(describeSendCodeError(err, t, t.auth.password.genericError), "password");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleCreatePassword = async () => {
+  const handleCreatePassword = () => {
     if (password.length < 8) {
-      setError(t.auth.password.createValidationError);
+      setError(t.auth.password.createValidationError, "password");
       return;
     }
     if (password !== confirmPassword) {
-      setError(t.auth.password.mismatchError);
+      setError(t.auth.password.mismatchError, "confirm");
       return;
     }
     setError(null);
-    setIsSubmitting(true);
     setPendingPassword(password);
+    // Never request a code here — the user picks how to get it first.
+    setStep("method");
+  };
+
+  /**
+   * "Get code by SMS" on the method step — the same request as before, and
+   * the code step opens only once it succeeded; a refusal stays on this step.
+   * Inside the resend cooldown the code already requested is still good and a
+   * new request would only be refused (409), so go straight back to it, as
+   * the website does — nobody gets stuck here after "Choose another method".
+   */
+  const handleRequestSms = async () => {
+    if (isSubmitting) return;
+    setError(null);
+    if (cooldown > 0) {
+      setStep("otp");
+      return;
+    }
+    setIsSubmitting(true);
     try {
       await sendCode();
     } catch (err) {
@@ -189,6 +224,18 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  /** Code step → method step. Requests nothing; the cooldown keeps running. */
+  const handleChooseAnotherMethod = () => {
+    setError(null);
+    setStep("method");
+  };
+
+  /** Method step → password step. The typed password is kept. */
+  const handleBackToPassword = () => {
+    setError(null);
+    setStep("password");
   };
 
   const handleResend = async () => {
@@ -206,7 +253,7 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
 
   const handleSubmitCode = async () => {
     if (code.length !== 6) {
-      setError(t.auth.otp.validationError);
+      setError(t.auth.otp.validationError, "code");
       return;
     }
     setError(null);
@@ -229,10 +276,10 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
         setStep("password");
         setPassword("");
         setStepToken(null);
-        setError(t.auth.password.stepExpired);
+        setError(t.auth.password.stepExpired, "password");
         return;
       }
-      setError(errorMessage(err, t.auth.otp.genericError));
+      setError(errorMessage(err, t.auth.otp.genericError), "code");
     } finally {
       setIsSubmitting(false);
     }
@@ -252,143 +299,101 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
 
   /* --- presentation only below this line --- */
 
+  const title =
+    step === "otp"
+      ? t.auth.otp.title
+      : step === "method"
+        ? t.auth.method.title
+        : step === "password" && isNewAccount
+          ? t.auth.signup.title
+          : subtitle;
+
   const hint =
     step === "otp"
       ? t.auth.otp.subtitle.replace("{phone}", phone)
-      : step === "password"
-        ? (isNewAccount ? t.auth.password.newAccountHint : t.auth.password.existingAccountHint).replace(
-            "{phone}",
-            phone,
-          )
-        : null;
+      : step === "method"
+        ? t.auth.method.subtitle
+        : step === "password"
+          ? (isNewAccount ? t.auth.password.newAccountHint : t.auth.password.existingAccountHint).replace(
+              "{phone}",
+              phone,
+            )
+          : null;
 
   /*
-   * The ticket stub — below the tear, on EVERY step. The top half is what the
-   * user must do; the stub is how it reaches them, plus whatever this step has
-   * to admit. Rendering it unconditionally is the point: the OTP step's honest
-   * "nothing is delivered yet" and a future "Viber isn't available for this
-   * number" land in the same pixels, so the card won't reflow the day delivery
-   * is really built.
+   * Login.dc.html / LoginCode.dc.html. The artwork is tall on the phone step
+   * and settles to its shorter height for every later step; the rail and the
+   * step's title sit on its bottom edge. Under it, on the page itself: the
+   * hint and the number chip (from the password step on), then the step's
+   * fields, its error directly under them, the commit button, a hairline,
+   * and below the hairline the step's ways out — the same split the ticket's
+   * tear used to make, minus the card.
    */
-  const stub =
-    step === "otp" ? (
-      <>
-        <OtpChannelPicker />
-        <AuthLink
-          label={
-            cooldown > 0 ? t.auth.otp.resendCountdown.replace("{n}", String(cooldown)) : t.auth.otp.resend
-          }
-          icon={cooldown > 0 ? "time-outline" : "refresh-outline"}
-          onPress={handleResend}
-          disabled={isSubmitting || cooldown > 0}
-          tone={cooldown > 0 ? "muted" : "primary"}
-          tabular={cooldown > 0}
-        />
-      </>
-    ) : step === "password" && !isNewAccount ? (
-      // Out of the top half so the submit button is the last thing above the
-      // tear, and so this link gets a full-width row instead of sharing one.
-      <AuthLink
-        label={t.auth.password.forgotLink}
-        onPress={() => onForgotPassword(phone)}
-        disabled={isSubmitting}
-        tone="primary"
-      />
-    ) : (
-      <ThemedText variant="caption" color={theme.colors.textMuted} numberOfLines={3}>
-        {step === "password" ? t.auth.password.stubNote : t.auth.phone.stubNote}
-      </ThemedText>
-    );
-
-  /*
-   * A function of `compact`, not a ready-made tree. AuthTicket is the ONE
-   * subscriber to the density boolean (see AuthScreenShell) and hands it in
-   * here; reading it with a hook of our own would put a second subscription
-   * on the whole form subtree, and AuthField / OtpInput / Button are plain
-   * function components with nothing to stop the re-render cascading through
-   * them.
-   */
-  const content = (compact: boolean) => (
+  return (
     <>
-      <StepRail step={step} />
-
-      {/*
-       * minHeight is load-bearing, not padding: without it the fields below
-       * shift 16–40pt every time the hint changes length between steps, and a
-       * ticket that twitches stops reading as an object. It may GROW past it
-       * (Burmese runs ~50% longer) — it may never shrink, and the hint carries
-       * no numberOfLines so it is free to wrap.
-       */}
-      <View style={compact ? styles.headerBlockCompact : styles.headerBlock}>
+      <AuthHero size={step === "phone" ? "tall" : "short"}>
+        <StepRail
+          index={STEP_ORDER.indexOf(step)}
+          count={STEP_ORDER.length}
+          width={120}
+          accessibilityLabel={t.auth.steps.signIn}
+        />
         {/* A number the system does not know is signing UP, and the title
             says so from the password step on — the phone step cannot know
-            yet, which is what the stub note under it is for. */}
-        <ThemedText variant="title">
-          {step === "otp" ? t.auth.otp.title : step === "password" && isNewAccount ? t.auth.signup.title : subtitle}
+            yet, which is what the note under its hairline is for. */}
+        <ThemedText variant="display" accessibilityRole="header" style={styles.title}>
+          {title}
         </ThemedText>
-        {hint && <ThemedText variant="caption">{hint}</ThemedText>}
-      </View>
+      </AuthHero>
 
-      {step !== "phone" && (
-        <IdentityChip
-          phone={phone}
-          onPress={handleChangePhone}
-          disabled={isSubmitting}
-          accessibilityLabel={`${phone}. ${t.auth.password.changePhone}`}
-        />
-      )}
-
-      {/*
-       * Deliberately NOT given reserved space. The slot collapses when there
-       * is no error, so the card jumps ~46pt when one appears — but reserving
-       * it would cost that 46pt of blank card on every step of a small phone,
-       * and movement at the instant an error arrives is informative rather
-       * than noise. The header's minHeight already kills the routine drift.
-       */}
-      {error && (
-        <View style={styles.error} accessibilityLiveRegion="polite">
-          <Ionicons name="alert-circle" size={18} color={theme.colors.danger} />
-          <ThemedText variant="caption" style={styles.errorText} numberOfLines={3}>
-            {error}
+      <View style={styles.page}>
+        {hint ? (
+          <ThemedText variant="body" color={theme.colors.textMuted} style={styles.hint}>
+            {hint}
           </ThemedText>
-        </View>
-      )}
+        ) : null}
 
-      {/*
-       * `from="none"`, not "bottom": FadeInView's "bottom" path springs
-       * (FadeInDown…springify), and the overshoot-and-settle bounce is exactly
-       * what this app stripped out of its sheets for reading as toy-like.
-       * The step rail carries the sense of direction instead.
-       */}
-      <FadeInView key={step} from="none" duration={220} style={styles.stepBlock}>
+        {step !== "phone" && (
+          <View style={styles.chip}>
+            <NumberChip
+              phone={phone}
+              onPress={handleChangePhone}
+              disabled={isSubmitting}
+              accessibilityLabel={`${phone}. ${t.auth.password.changePhone}`}
+            />
+          </View>
+        )}
+
         {step === "phone" && (
-          <>
+          <Rise key="phone" style={styles.stepTight}>
             <AuthField
               label={t.auth.phone.label}
               icon="call-outline"
               placeholder={t.auth.phone.placeholder}
               keyboardType="phone-pad"
               autoComplete="tel"
+              numeric
               value={phone}
               onChangeText={setPhone}
               editable={!isSubmitting}
-              invalid={!!error}
+              invalid={errorField === "phone"}
               returnKeyType="go"
               onSubmitEditing={handleSubmitPhone}
             />
-            <Button
+            <AuthError message={error} style={styles.error} />
+            <AuthButton
               title={t.auth.phone.continueButton}
               onPress={handleSubmitPhone}
               loading={isSubmitting}
-              disabled={isSubmitting}
-              size="lg"
-              fullWidth
+              style={styles.commit}
             />
-          </>
+            <AuthDivider />
+            <AuthNote>{t.auth.phone.stubNote}</AuthNote>
+          </Rise>
         )}
 
         {step === "password" && isNewAccount && (
-          <>
+          <Rise key="create" style={styles.stepTight}>
             <AuthField
               label={t.auth.password.createLabel}
               icon="lock-closed-outline"
@@ -399,33 +404,38 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
               value={password}
               onChangeText={setPassword}
               editable={!isSubmitting}
+              invalid={errorField === "password"}
             />
-            <AuthField
-              label={t.auth.password.confirmLabel}
-              icon="shield-checkmark-outline"
-              placeholder={t.auth.password.confirmPlaceholder}
-              secureTextEntry
-              revealable
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              editable={!isSubmitting}
-              returnKeyType="go"
-              onSubmitEditing={handleCreatePassword}
-            />
-            <Button
+            <View style={styles.nextField}>
+              <AuthField
+                label={t.auth.password.confirmLabel}
+                icon="shield-checkmark-outline"
+                placeholder={t.auth.password.confirmPlaceholder}
+                secureTextEntry
+                revealable
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                editable={!isSubmitting}
+                invalid={errorField === "confirm"}
+                returnKeyType="go"
+                onSubmitEditing={handleCreatePassword}
+              />
+            </View>
+            <AuthError message={error} style={styles.error} />
+            <AuthButton
               title={t.auth.password.createSubmit}
               onPress={handleCreatePassword}
               loading={isSubmitting}
-              disabled={isSubmitting}
-              size="lg"
-              fullWidth
+              style={styles.commit}
             />
-          </>
+            <AuthDivider />
+            <AuthNote>{t.auth.password.stubNote}</AuthNote>
+          </Rise>
         )}
 
         {step === "password" && !isNewAccount && (
-          <>
+          <Rise key="password" style={styles.stepTight}>
             <AuthField
               label={t.auth.password.existingLabel}
               icon="lock-closed-outline"
@@ -436,25 +446,48 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
               value={password}
               onChangeText={setPassword}
               editable={!isSubmitting}
-              invalid={!!error}
+              invalid={errorField === "password"}
               returnKeyType="go"
               onSubmitEditing={handleSubmitExistingPassword}
             />
-            <Button
+            <AuthError message={error} style={styles.error} />
+            <AuthButton
               title={t.auth.password.submit}
               onPress={handleSubmitExistingPassword}
               loading={isSubmitting}
-              disabled={isSubmitting}
-              size="lg"
-              fullWidth
+              style={styles.commit}
             />
-          </>
+            <AuthDivider />
+            <View style={styles.linksTight}>
+              <AuthLink
+                label={t.auth.password.forgotLink}
+                onPress={() => onForgotPassword(phone)}
+                disabled={isSubmitting}
+              />
+            </View>
+          </Rise>
+        )}
+
+        {step === "method" && (
+          <Rise key="method" style={styles.stepLoose}>
+            <OtpMethodPicker onSms={handleRequestSms} loading={isSubmitting} />
+            <AuthError message={error} style={styles.error} />
+            <AuthDivider />
+            <View style={styles.links}>
+              <AuthLink
+                label={t.common.back}
+                icon="chevron-back"
+                tone="plain"
+                onPress={handleBackToPassword}
+                disabled={isSubmitting}
+              />
+            </View>
+          </Rise>
         )}
 
         {step === "otp" && (
-          <>
-            {/* The step title moved into the header block, so the label that
-                used to sit here would now repeat it word for word. */}
+          <Rise key="otp" style={styles.stepLoose}>
+            {/* The step title says what to type; the cells' name is spoken only. */}
             <OtpInput
               value={code}
               onChangeText={setCode}
@@ -463,198 +496,55 @@ export function PhoneAuthFlow({ subtitle, onForgotPassword, initialPhone }: Phon
               keyboardType="number-pad"
               autoComplete="one-time-code"
               placeholder={t.auth.otp.placeholder}
+              invalid={errorField === "code"}
+              invalidKey={failure}
               onSubmitEditing={handleSubmitCode}
             />
-            <Button
+            <AuthError message={error} style={styles.error} />
+            <AuthButton
               title={t.auth.otp.submit}
               onPress={handleSubmitCode}
               loading={isSubmitting}
-              disabled={isSubmitting}
-              size="lg"
-              fullWidth
+              style={styles.commit}
             />
-          </>
+            <AuthDivider />
+            <View style={styles.links}>
+              <AuthLink
+                label={
+                  cooldown > 0 ? t.auth.otp.resendCountdown.replace("{n}", String(cooldown)) : t.auth.otp.resend
+                }
+                icon={cooldown > 0 ? "time-outline" : "refresh-outline"}
+                onPress={handleResend}
+                disabled={isSubmitting || cooldown > 0}
+                tone={cooldown > 0 ? "muted" : "link"}
+                tabular={cooldown > 0}
+              />
+              <AuthLink
+                label={t.auth.method.chooseAnother}
+                icon="options-outline"
+                onPress={handleChooseAnotherMethod}
+                disabled={isSubmitting}
+              />
+            </View>
+          </Rise>
         )}
-      </FadeInView>
+      </View>
     </>
-  );
-
-  return <AuthTicket stub={stub}>{content}</AuthTicket>;
-}
-
-/* ------------------------------------------------------------------ */
-
-/** Three bars showing how far through phone → password → OTP the user is. */
-function StepRail({ step }: { step: Step }) {
-  const index = STEP_ORDER.indexOf(step);
-  const reduceMotion = useReducedMotion();
-  const progress = useSharedValue(index);
-
-  useEffect(() => {
-    progress.value = withTiming(index, {
-      duration: reduceMotion ? 0 : 200,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [index, progress, reduceMotion]);
-
-  return (
-    <View
-      style={styles.rail}
-      accessibilityRole="progressbar"
-      accessibilityValue={{ min: 1, max: STEP_ORDER.length, now: index + 1 }}
-    >
-      {STEP_ORDER.map((name, i) => (
-        <RailSegment key={name} index={i} progress={progress} />
-      ))}
-    </View>
-  );
-}
-
-/**
- * A violet fill laid over the track, revealed by OPACITY. Opacity is a
- * UI-thread property and touches no layout; animating the segment's width or
- * backgroundColor instead would cost a layout pass or a JS-thread frame on
- * every step change.
- */
-function RailSegment({ index, progress }: { index: number; progress: SharedValue<number> }) {
-  const fillStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.value, [index - 1, index], [0, 1], Extrapolation.CLAMP),
-  }));
-
-  return (
-    <View style={styles.railSegment}>
-      <Animated.View style={[styles.railFill, fillStyle]} />
-    </View>
-  );
-}
-
-interface IdentityChipProps {
-  phone: string;
-  onPress: () => void;
-  disabled?: boolean;
-  accessibilityLabel: string;
-}
-
-/**
- * The number under edit, as a tappable pill — it replaces both "Change phone
- * number" links and the `{phone}` token the hints used to carry.
- *
- * Why it beats the link it replaces: that link shared one row with the resend
- * countdown, both clipped to a single line. In Burmese those are ~20 and ~25
- * glyph clusters and BOTH truncated in a 305pt row. Here the affordance to
- * change the number IS the number, and resend gets a full-width row in the
- * stub, so neither is ever squeezed.
- */
-function IdentityChip({ phone, onPress, disabled, accessibilityLabel }: IdentityChipProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      // 32pt pill + hitSlop = a 44pt target. A 44pt-TALL pill would dominate
-      // the header block it sits under.
-      hitSlop={{ top: 6, bottom: 6, left: 4, right: 8 }}
-      style={({ pressed }) => [styles.chip, pressed && !disabled && styles.chipPressed]}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled: !!disabled }}
-    >
-      <Ionicons name="call-outline" size={14} color={theme.colors.textFaint} />
-      <ThemedText variant="caption" tabular numberOfLines={1}>
-        {phone}
-      </ThemedText>
-      <Ionicons name="swap-horizontal-outline" size={14} color={theme.colors.primary} />
-    </Pressable>
-  );
-}
-
-interface AuthLinkProps {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  icon?: keyof typeof Ionicons.glyphMap;
-  tone?: "muted" | "primary";
-  tabular?: boolean;
-}
-
-/**
- * Secondary auth action — always a full 44pt row, never a bare line of text.
- * Every one of these now lives in the stub, one per row: the start/end
- * alignment variants existed only for the two-up row that clipped its Burmese.
- */
-function AuthLink({ label, onPress, disabled, icon, tone = "muted", tabular }: AuthLinkProps) {
-  const color = disabled
-    ? theme.colors.textFaint
-    : tone === "primary"
-      ? theme.colors.primary
-      : theme.colors.textMuted;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [styles.link, pressed && !disabled && styles.linkPressed]}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
-    >
-      {icon && <Ionicons name={icon} size={15} color={color} />}
-      <ThemedText variant="caption" weight="semibold" color={color} tabular={tabular} numberOfLines={1}>
-        {label}
-      </ThemedText>
-    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  // The floor the hint is free to grow past — never a maxHeight.
-  headerBlock: { gap: 4, minHeight: 100 },
-  headerBlockCompact: { gap: 4, minHeight: 84 },
-  stepBlock: { gap: theme.spacing.md },
-
-  rail: { flexDirection: "row", gap: 6 },
-  railSegment: {
-    flex: 1,
-    height: 3,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.border,
-    overflow: "hidden",
-  },
-  railFill: { ...StyleSheet.absoluteFill, backgroundColor: theme.colors.primary },
-
-  chip: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    alignItems: "center",
-    height: 32,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.surfaceSunken,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingLeft: 12,
-    paddingRight: 10,
-    gap: 6,
-  },
-  chipPressed: { opacity: 0.7 },
-
-  error: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    padding: theme.spacing.sm + 2,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.danger + "40",
-    backgroundColor: theme.colors.dangerSoft,
-  },
-  errorText: { flex: 1, color: theme.colors.danger },
-
-  link: {
-    minHeight: theme.layout.minTouch,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingHorizontal: theme.spacing.sm,
-  },
-  linkPressed: { opacity: 0.6 },
+  title: { marginTop: theme.spacing.md },
+  page: { paddingHorizontal: theme.layout.screenPadding },
+  hint: { marginTop: 6 },
+  chip: { marginTop: 12 },
+  /** Phone and password steps: the label sits 8pt under the art (or the chip). */
+  stepTight: { paddingTop: theme.spacing.sm },
+  /** Method and code steps: 20pt under the chip. */
+  stepLoose: { marginTop: 20 },
+  nextField: { marginTop: theme.spacing.md },
+  error: { marginTop: 12 },
+  commit: { marginTop: 20 },
+  linksTight: { marginTop: theme.spacing.sm },
+  links: { marginTop: 12 },
 });

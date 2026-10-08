@@ -1,11 +1,12 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useMemo, type ReactElement } from "react";
 import { FlatList, StyleSheet, View, type ListRenderItem } from "react-native";
 import type { Ionicons } from "@expo/vector-icons";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { MediaCard, MediaCardSkeleton, useRailCardWidth, type MediaCardProps } from "@/components/common/MediaCard";
 import { theme } from "@/theme";
 
-const GAP = 12;
+/** Marquee rails: 10pt between cards. */
+const GAP = 10;
 /** The rail's leading content inset — item 0 starts this far in. */
 const EDGE = theme.layout.screenPadding;
 const SKELETON_COUNT = 4;
@@ -13,7 +14,7 @@ const SKELETON_COUNT = 4;
 export interface MediaRailItem
   extends Pick<
     MediaCardProps,
-    "title" | "posterUrl" | "coverUrl" | "accessType" | "rating" | "meta" | "progress" | "cornerLabel"
+    "title" | "posterUrl" | "coverUrl" | "accessType" | "rating" | "meta" | "progress" | "cornerLabel" | "isNew"
   > {
   /** Stable list key — the record id. */
   key: string;
@@ -33,6 +34,15 @@ interface Props {
   seeAllLabel?: string;
   /** Renders placeholder cards instead of hiding the rail while data loads. */
   loading?: boolean;
+  /** One quiet line under the title. */
+  subtitle?: string;
+  /**
+   * Fixed card width. Defaults to the shared rail width (useRailCardWidth);
+   * the title pages pass the boards' 112pt so three posters and a peek show.
+   */
+  cardWidth?: number;
+  /** A cell after the last card — Browse's "See all" tile. Pass a stable element. */
+  endTile?: ReactElement | null;
 }
 
 const keyExtractor = (item: MediaRailItem) => item.key;
@@ -55,6 +65,7 @@ const RailCard = memo(function RailCard({ item, width }: { item: MediaRailItem; 
       meta={item.meta}
       progress={item.progress}
       cornerLabel={item.cornerLabel}
+      isNew={item.isNew}
       onPress={item.onPress}
     />
   );
@@ -65,8 +76,21 @@ const RailCard = memo(function RailCard({ item, width }: { item: MediaRailItem; 
  * Home, Search and the detail screens. Cards sit at ~36% of the screen so two
  * and a bit posters show at once and the next card peeks in to invite the swipe.
  */
-export function MediaRail({ title, items, eyebrow, icon, accent, onSeeAll, seeAllLabel, loading }: Props) {
-  const cardWidth = useRailCardWidth();
+export function MediaRail({
+  title,
+  items,
+  eyebrow,
+  icon,
+  accent,
+  onSeeAll,
+  seeAllLabel,
+  loading,
+  subtitle,
+  cardWidth: fixedWidth,
+  endTile,
+}: Props) {
+  const railWidth = useRailCardWidth();
+  const cardWidth = fixedWidth ?? railWidth;
 
   const renderItem = useCallback<ListRenderItem<MediaRailItem>>(
     ({ item }) => <RailCard item={item} width={cardWidth} />,
@@ -87,18 +111,25 @@ export function MediaRail({ title, items, eyebrow, icon, accent, onSeeAll, seeAl
     [cardWidth],
   );
 
+  // FlatList compares the footer by identity — rebuilt only when the tile changes.
+  const footer = useMemo(() => (endTile ? <View style={styles.endTile}>{endTile}</View> : null), [endTile]);
+
   if (!loading && items.length === 0) return null;
 
   return (
     <View style={styles.container}>
-      <SectionHeader
-        title={title}
-        eyebrow={eyebrow}
-        icon={icon}
-        accent={accent}
-        onSeeAll={onSeeAll}
-        seeAllLabel={seeAllLabel}
-      />
+      {/* An empty title drops the heading — a rail under its own banner (Browse). */}
+      {title ? (
+        <SectionHeader
+          title={title}
+          subtitle={subtitle}
+          eyebrow={eyebrow}
+          icon={icon}
+          accent={accent}
+          onSeeAll={onSeeAll}
+          seeAllLabel={seeAllLabel}
+        />
+      ) : null}
 
       {loading && items.length === 0 ? (
         <View style={styles.skeletonRow}>
@@ -122,6 +153,7 @@ export function MediaRail({ title, items, eyebrow, icon, accent, onSeeAll, seeAl
           windowSize={5}
           renderItem={renderItem}
           getItemLayout={getItemLayout}
+          ListFooterComponent={footer}
         />
       )}
     </View>
@@ -129,8 +161,10 @@ export function MediaRail({ title, items, eyebrow, icon, accent, onSeeAll, seeAl
 }
 
 const styles = StyleSheet.create({
-  container: { gap: theme.spacing.xs },
+  /** SectionHeader already keeps the board's 14pt above the cards. */
+  container: {},
   listContent: { paddingHorizontal: EDGE, paddingBottom: theme.spacing.xs },
+  endTile: { marginLeft: GAP },
   skeletonRow: { flexDirection: "row", gap: GAP, paddingHorizontal: EDGE, overflow: "hidden" },
   separator: { width: GAP },
 });

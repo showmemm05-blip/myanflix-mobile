@@ -39,6 +39,13 @@ interface Props {
   stageHeight: number;
   /** Safe-area padding — non-zero only in fullscreen, where the stage is edge-to-edge. */
   edgeInsets: { bottom: number; left: number; right: number };
+  /**
+   * How far up from the stage's bottom edge the control bar reaches while it
+   * shows, as PlayerControls measured it (safe area included) in the CURRENT
+   * layout; 0 until that layout's bar has been measured. The lifted caption
+   * clears it by CONTROLS_GAP.
+   */
+  controlsClearance?: number;
 }
 
 /**
@@ -85,6 +92,19 @@ const RESTING = { stage: 0.05, min: 12, max: 40 };
  */
 const LIFTED = { stage: 0.16, min: 96, max: 120 };
 
+/**
+ * Marquee rebuilt the control bar (2026-10-02): portrait is now one 44pt row
+ * (clock · seek line · fullscreen) about 48pt up, and fullscreen is a seek row
+ * over a row of labelled controls that WRAPS for long Burmese labels or large
+ * text, so its height is no longer a constant. The 96pt floor above was
+ * measured against the old ~89pt bar; with a measurement in hand the floor is
+ * the bar's real top plus this gap instead — portrait stops lifting the
+ * caption into the play button for nothing, and a wrapped fullscreen bar
+ * still never covers the line being spoken. The 96pt rule stays the fallback
+ * for the first frames, before the bar has reported its size.
+ */
+const CONTROLS_GAP = 8;
+
 /** CSS `ease-out` is exactly this curve; the duration is the web's 300ms. */
 const LIFT_DURATION_MS = 300;
 const EASE_OUT = Easing.bezier(0, 0, 0.58, 1);
@@ -115,6 +135,7 @@ export const SubtitleOverlay = memo(function SubtitleOverlay({
   stageWidth,
   stageHeight,
   edgeInsets,
+  controlsClearance = 0,
 }: Props) {
   const reduceMotion = useReducedMotion();
 
@@ -132,7 +153,10 @@ export const SubtitleOverlay = memo(function SubtitleOverlay({
   const maxWidth = Math.min((stageWidth - sidePadding * 2) * 0.92, fontSize * 33);
 
   const resting = clamp(stageHeight * RESTING.stage, RESTING.min, RESTING.max) + edgeInsets.bottom;
-  const lifted = clamp(stageHeight * LIFTED.stage, LIFTED.min, LIFTED.max) + edgeInsets.bottom;
+  const lifted =
+    controlsClearance > 0
+      ? Math.max(controlsClearance + CONTROLS_GAP, Math.min(stageHeight * LIFTED.stage, LIFTED.max) + edgeInsets.bottom)
+      : clamp(stageHeight * LIFTED.stage, LIFTED.min, LIFTED.max) + edgeInsets.bottom;
 
   // `bottom` stays put and the lift is a transform so the animation can run on
   // the UI thread; the web animates `bottom` itself, which has no equivalent.

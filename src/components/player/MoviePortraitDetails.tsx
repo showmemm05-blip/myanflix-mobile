@@ -1,9 +1,13 @@
 import { memo, useEffect, useRef } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
+// Deep import, not the "@expo/vector-icons" root: that barrel statically
+// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { Pill } from "@/components/ui/Pill";
-import { IconButton } from "@/components/ui/IconButton";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { PressableScale } from "@/components/ui/PressableScale";
+import { FadeInView } from "@/components/ui/FadeInView";
 import { Chip } from "@/components/common/Chip";
 import { Synopsis } from "@/components/detail/Synopsis";
 import { InfoGrid } from "@/components/detail/InfoGrid";
@@ -30,11 +34,11 @@ interface Props {
 }
 
 /**
- * Everything under the video in portrait for a standalone film: the title and
- * its meta pills, favourite + share, the facts the pills do not cover, the
- * category chips, the synopsis, a rail of same-category titles and the comment
- * thread. The same pieces MovieDetails is built from, so the two screens read
- * as one app.
+ * Everything under the video in portrait for a standalone film
+ * (Player.dc.html, "movie"): the title and its meta line, Favorites + Share,
+ * the category labels, the synopsis, the facts, a rail of same-category titles
+ * and the comment thread. The same pieces MovieDetails is built from, so the
+ * two screens read as one app.
  *
  * Memoized because the player re-renders four times a second off the playback
  * tick (VideoPlayer's `timeUpdateEventInterval` is 0.25s), and every prop this
@@ -53,6 +57,7 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
   bottomInset,
 }: Props) {
   const { t } = useLanguage();
+  const reduceMotion = useReducedMotion();
   const scrollRef = useRef<ScrollView>(null);
 
   /**
@@ -66,13 +71,29 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
   useEffect(() => {
     if (shownIdRef.current === movie.id) return;
     shownIdRef.current = movie.id;
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
-  }, [movie.id]);
+    scrollRef.current?.scrollTo({ y: 0, animated: !reduceMotion });
+  }, [movie.id, reduceMotion]);
 
-  // null when the runtime was never measured — the Pill is dropped rather than reading "0m".
+  // null when the runtime was never measured — dropped rather than reading "0m".
   const runtime = formatDuration(movie.duration);
+  const metaParts = [String(movie.releaseYear), runtime, movie.genre].filter(
+    (part): part is string => !!part && part.trim().length > 0,
+  );
+  /**
+   * The meta line is read as ONE element: "Rating, 8.4, 2024, 1h 52m, Drama".
+   * Read piece by piece, iOS VoiceOver stopped on the star glyph and on every
+   * "·" separator (importantForAccessibility is Android-only), and the bare
+   * "8.4" never said what it was.
+   */
+  const ratingText = movie.rating > 0 ? movie.rating.toFixed(1) : null;
+  const metaA11yLabel = [
+    ratingText ? t.player.controlState.replace("{label}", t.movie.rating).replace("{value}", ratingText) : null,
+    ...metaParts,
+  ]
+    .filter((part): part is string => !!part)
+    .join(t.player.listSeparator);
 
-  // Only what the pills above do not already say. Every one of these is
+  // Only what the meta line does not already say. Every one of these is
   // nullable metadata the admin backfills over time, so an absent value drops
   // the row outright — a well reading "null" or standing empty is worse than
   // no well at all.
@@ -99,82 +120,106 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
       <KeyboardLiftScrollView
         ref={scrollRef}
         style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingBottom: bottomInset + theme.spacing.xl }]}
+        contentContainerStyle={{ paddingBottom: bottomInset + theme.spacing.xl }}
         showsVerticalScrollIndicator={false}
         // Without this the first tap on "Post" only dismisses the keyboard.
         keyboardShouldPersistTaps="handled"
       >
-        <ThemedText variant="title" numberOfLines={2}>
-          {movie.title}
-        </ThemedText>
+        <FadeInView from="bottom" style={styles.column}>
+          <ThemedText variant="title" accessibilityRole="header">
+            {movie.title}
+          </ThemedText>
 
-        <View style={styles.meta}>
-          {movie.rating > 0 && (
-            <Pill tone="premium">
-              {"★ "}
-              {movie.rating.toFixed(1)}
-            </Pill>
-          )}
-          <Pill tone="neutral">{String(movie.releaseYear)}</Pill>
-          {runtime && <Pill tone="neutral">{runtime}</Pill>}
-          <Pill tone="neutral">{movie.genre}</Pill>
-        </View>
-
-        {/* The same two controls as MovieDetails' CTA row, minus Watch — the
-            film is already playing. */}
-        <View style={styles.actions}>
-          <IconButton
-            icon={isFavorite ? "heart" : "heart-outline"}
-            variant={isFavorite ? "soft" : "outline"}
-            size="lg"
-            color={isFavorite ? theme.colors.primary : undefined}
-            accessibilityLabel={isFavorite ? t.movie.removeFromFavorites : t.movie.addToFavorites}
-            onPress={onToggleFavorite}
-          />
-          <IconButton
-            icon="share-outline"
-            variant="outline"
-            size="lg"
-            accessibilityLabel={t.movie.share}
-            onPress={onShare}
-          />
-        </View>
-
-        {facts.length > 0 && (
-          <View style={styles.facts}>
-            <SectionHeader title={t.movie.details} inset={false} />
-            <InfoGrid items={facts} />
-          </View>
-        )}
-
-        {/* Plain labels, on purpose: CategoryDetail is unreachable in this app
-            (an open product decision), and a chip that looks tappable and goes
-            nowhere is worse than one that does not invite the tap. Outline,
-            neutral, small — how the website's player shows them. */}
-        {movie.categories.length > 0 && (
-          <View style={styles.chips}>
-            {movie.categories.map((category) => (
-              <Chip key={category.id} label={category.name} tone="neutral" size="sm" />
+          <View style={styles.meta} accessible accessibilityRole="text" accessibilityLabel={metaA11yLabel}>
+            {ratingText && (
+              <View style={styles.rating}>
+                <Ionicons name="star" size={13} color={theme.colors.premium} />
+                <ThemedText variant="caption" weight="extrabold" tabular color={theme.colors.premium}>
+                  {ratingText}
+                </ThemedText>
+              </View>
+            )}
+            {metaParts.map((part, index) => (
+              <View key={`${index}-${part}`} style={styles.metaItem}>
+                {index > 0 ? (
+                  <ThemedText
+                    variant="caption"
+                    color={theme.colors.textDecor}
+                    importantForAccessibility="no"
+                    accessibilityElementsHidden
+                  >
+                    ·
+                  </ThemedText>
+                ) : null}
+                <ThemedText variant="caption" tabular color={theme.colors.textMuted}>
+                  {part}
+                </ThemedText>
+              </View>
             ))}
           </View>
-        )}
 
-        <Synopsis text={movie.description} title={t.movie.synopsis} />
+          {/* The same two controls as MovieDetails' action row, minus Play —
+              the film is already playing. */}
+          <View style={styles.actions}>
+            <PressableScale
+              onPress={onToggleFavorite}
+              accessibilityLabel={isFavorite ? t.movie.removeFromFavorites : t.movie.addToFavorites}
+              style={styles.action}
+            >
+              <Ionicons
+                name={isFavorite ? "heart" : "heart-outline"}
+                size={20}
+                color={isFavorite ? theme.colors.primary : theme.colors.text}
+              />
+              <ThemedText weight="bold" style={styles.actionLabel}>
+                {isFavorite ? t.movie.removeFromFavorites : t.movie.addToFavorites}
+              </ThemedText>
+            </PressableScale>
+            <PressableScale onPress={onShare} accessibilityLabel={t.movie.share} style={styles.action}>
+              <Ionicons name="share-outline" size={20} color={theme.colors.text} />
+              <ThemedText weight="bold" style={styles.actionLabel}>
+                {t.movie.share}
+              </ThemedText>
+            </PressableScale>
+          </View>
 
-        {/* Pulled back out to the screen edge: the rail carries its own leading
-            inset, and the section header its own, so inside this padded column
-            both would be doubled. Renders nothing while the list is empty. */}
+          {/* Plain labels, on purpose: CategoryDetail is not reached from the
+              player (AREA-NOTES), and a chip that looks tappable and goes
+              nowhere is worse than one that does not invite the tap. */}
+          {movie.categories.length > 0 && (
+            <View style={styles.chips}>
+              {movie.categories.map((category) => (
+                <Chip key={category.id} label={category.name} tone="neutral" labelLines={2} />
+              ))}
+            </View>
+          )}
+
+          <View style={styles.section}>
+            <Synopsis text={movie.description} title={t.movie.synopsis} collapsedLines={3} />
+          </View>
+
+          {facts.length > 0 && (
+            <View style={styles.section}>
+              {/* The header's own 14pt bottom margin is the board's dt/dd offset. */}
+              <SectionHeader title={t.movie.details} inset={false} titleLines={2} />
+              <InfoGrid items={facts} variant="plain" />
+            </View>
+          )}
+        </FadeInView>
+
+        {/* Out at the screen edge: the rail carries its own leading inset and
+            the section header its own. Renders nothing while the list is empty. */}
         <View style={styles.rail}>
           <MovieRow title={t.player.recommended} movies={similarMovies} onPressMovie={onPlaySimilar} />
         </View>
 
-        {/* Pulled out to the screen edge for the same reason as the rail: the
-            section carries its own horizontal padding. Keyed on the id because a
-            recommended title plays IN PLACE — without the key the thread would
-            keep the previous film's half-typed draft and open reply box while
-            its queries re-pointed at the new one. MovieDetails never needs this:
-            it is a fresh screen per movie. Only the id crosses this line, a
-            stable string, so the playback tick still stops at this component. */}
+        {/* The section carries its own horizontal padding. Keyed on the id
+            because a recommended title plays IN PLACE — without the key the
+            thread would keep the previous film's half-typed draft and open
+            reply box while its queries re-pointed at the new one. MovieDetails
+            never needs this: it is a fresh screen per movie. Only the id
+            crosses this line, a stable string, so the playback tick still
+            stops at this component. */}
         <View style={styles.comments}>
           <CommentsSection key={movie.id} movieId={movie.id} />
         </View>
@@ -185,14 +230,33 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
 
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
-  content: {
-    padding: theme.layout.screenPadding,
-    gap: theme.spacing.md,
+  column: { paddingTop: 20, paddingHorizontal: theme.layout.screenPadding },
+  meta: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    columnGap: 10,
+    rowGap: 6,
+    marginTop: theme.spacing.sm,
   },
-  meta: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: theme.spacing.sm },
-  actions: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
-  facts: { gap: theme.spacing.sm },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm },
-  rail: { marginHorizontal: -theme.layout.screenPadding, marginTop: theme.spacing.sm },
-  comments: { marginHorizontal: -theme.layout.screenPadding, marginTop: theme.spacing.sm },
+  rating: { flexDirection: "row", alignItems: "center", gap: 4 },
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 10 },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: theme.spacing.md },
+  action: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    minHeight: 48,
+    paddingLeft: 14,
+    paddingRight: 18,
+    paddingVertical: 10,
+    borderRadius: theme.radius.button,
+    backgroundColor: theme.colors.tonalStrong,
+    maxWidth: "100%",
+  },
+  actionLabel: { fontSize: 15, flexShrink: 1 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.sm, marginTop: theme.spacing.md },
+  section: { marginTop: 28 },
+  rail: { marginTop: 36 },
+  comments: { marginTop: 36 },
 });

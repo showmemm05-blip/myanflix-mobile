@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { Pressable, type AccessibilityRole } from "react-native";
 
 interface Props {
@@ -20,7 +26,11 @@ interface Props {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-/** The single press affordance for cards, tiles and artwork. */
+/**
+ * The single press affordance for cards, tiles and artwork. With the OS
+ * "reduce motion" setting on, the spring scale is skipped and only the
+ * `dimOnPress` opacity remains, so a press still reads without movement.
+ */
 export function PressableScale({
   children,
   onPress,
@@ -33,6 +43,7 @@ export function PressableScale({
   accessibilityLabel,
   style,
 }: Props) {
+  const reduceMotion = useReducedMotion();
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }], opacity: opacity.value }));
@@ -47,11 +58,12 @@ export function PressableScale({
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
       onPressIn={() => {
-        scale.value = withSpring(activeScale, { damping: 15, stiffness: 300 });
+        if (!reduceMotion) scale.value = withSpring(activeScale, { damping: 15, stiffness: 300 });
         if (dimOnPress) opacity.value = withTiming(0.86, { duration: 120 });
       }}
       onPressOut={() => {
-        scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+        // Unconditional reset: reduce motion may have been switched on mid-press.
+        scale.value = reduceMotion ? 1 : withSpring(1, { damping: 15, stiffness: 300 });
         if (dimOnPress) opacity.value = withTiming(1, { duration: 160 });
       }}
     >

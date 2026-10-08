@@ -4,13 +4,20 @@ import { Pressable, View, StyleSheet, type StyleProp, type ViewStyle } from "rea
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { theme, withAlpha } from "@/theme";
+import { theme } from "@/theme";
 
 interface Props {
   title: string;
   onSeeAll?: () => void;
   seeAllLabel?: string;
-  /** Small uppercase eyebrow above the title. */
+  /**
+   * Ink of the "See all" link. The boards differ by area, so the caller says:
+   * "link" (default) — crimson-as-text, as Profile and Wallet draw it;
+   * "text" — white, as Search draws it;
+   * "muted" — #B3B3BD, as Books and BookDetail draw it.
+   */
+  seeAllTone?: "link" | "text" | "muted";
+  /** Small quiet line above the title ("The shelf"). */
   eyebrow?: string;
   /** One quiet line under the title. */
   subtitle?: string;
@@ -23,9 +30,12 @@ interface Props {
   titleLines?: number;
   /** Same, for the subtitle. Defaults to 2. */
   subtitleLines?: number;
-  /** Leading accent icon rendered in a tinted tile. */
+  /** Leading glyph, drawn plain beside the title (no tile). */
   icon?: keyof typeof Ionicons.glyphMap;
-  /** Colour of the accent rule / icon tile — defaults to violet. */
+  /**
+   * Role colour for the leading glyph and the eyebrow. Unset, both stay
+   * neutral — Marquee headings carry no colour of their own.
+   */
   accent?: string;
   /** Arbitrary right-hand accessory (used instead of the see-all link). */
   accessory?: ReactNode;
@@ -34,20 +44,34 @@ interface Props {
   style?: StyleProp<ViewStyle>;
 }
 
+const SEE_ALL_INK = {
+  link: theme.colors.link,
+  text: theme.colors.text,
+  muted: theme.colors.textMuted,
+} as const;
+
+/** A role colour used as WORDS: crimson reads as `link` (crimson text is only 4.1:1). */
+function textInk(color: string): string {
+  return color === theme.colors.primary || color === theme.colors.brand ? theme.colors.link : color;
+}
+
 /**
- * The one heading used above every rail, grid and grouped list. A short violet
- * rule on the left ties sections together down a long scroll.
+ * The one heading used above every rail, grid and grouped list — Marquee's
+ * section type (19/26, extra-bold) with an optional quiet eyebrow above and a
+ * "See all" on the right (crimson-text unless `seeAllTone` says otherwise).
+ * No rule, no tile, no border.
  */
 export function SectionHeader({
   title,
   onSeeAll,
   seeAllLabel = "See all",
+  seeAllTone = "link",
   eyebrow,
   subtitle,
   titleLines = 1,
   subtitleLines = 2,
   icon,
-  accent = theme.colors.primary,
+  accent,
   accessory,
   inset = true,
   style,
@@ -55,29 +79,23 @@ export function SectionHeader({
   return (
     <View style={[styles.container, inset && styles.inset, style]}>
       <View style={styles.left}>
-        {icon ? (
-          <View
-            style={[
-              styles.iconTile,
-              { backgroundColor: withAlpha(accent, 0.12), borderColor: withAlpha(accent, 0.2) },
-            ]}
-          >
-            <Ionicons name={icon} size={16} color={accent} />
-          </View>
-        ) : (
-          <View style={[styles.rule, { backgroundColor: accent }]} />
-        )}
+        {icon ? <Ionicons name={icon} size={18} color={accent ?? theme.colors.textMuted} /> : null}
         <View style={styles.titleBlock}>
           {eyebrow && (
-            <ThemedText variant="overline" numberOfLines={1} style={{ color: accent }}>
-              {eyebrow.toUpperCase()}
+            <ThemedText
+              variant="caption"
+              weight="semibold"
+              numberOfLines={1}
+              color={accent ? textInk(accent) : theme.colors.textFaint}
+            >
+              {eyebrow}
             </ThemedText>
           )}
-          <ThemedText variant="section" numberOfLines={titleLines}>
+          <ThemedText variant="section" numberOfLines={titleLines} accessibilityRole="header">
             {title}
           </ThemedText>
           {subtitle && (
-            <ThemedText variant="caption" numberOfLines={subtitleLines}>
+            <ThemedText variant="caption" numberOfLines={subtitleLines} color={theme.colors.textFaint}>
               {subtitle}
             </ThemedText>
           )}
@@ -86,11 +104,17 @@ export function SectionHeader({
 
       {accessory ??
         (onSeeAll ? (
-          <Pressable onPress={onSeeAll} style={styles.seeAllButton} hitSlop={8} accessibilityRole="button" accessibilityLabel={seeAllLabel}>
-            <ThemedText variant="caption" weight="semibold" style={styles.seeAll}>
+          <Pressable
+            onPress={onSeeAll}
+            style={({ pressed }) => [styles.seeAllButton, pressed && styles.pressed]}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={seeAllLabel}
+          >
+            <ThemedText variant="muted" weight="extrabold" color={SEE_ALL_INK[seeAllTone]}>
               {seeAllLabel}
             </ThemedText>
-            <Ionicons name="chevron-forward" size={14} color={theme.colors.primary} />
+            <Ionicons name="chevron-forward" size={14} color={SEE_ALL_INK[seeAllTone]} />
           </Pressable>
         ) : null)}
     </View>
@@ -103,19 +127,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: theme.spacing.sm,
-    marginBottom: theme.spacing.sm,
+    marginBottom: 14,
   },
   inset: { paddingHorizontal: theme.layout.screenPadding },
   left: { flex: 1, flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
-  rule: { width: 3, height: 18, borderRadius: theme.radius.pill },
-  iconTile: {
-    width: 30,
-    height: 30,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   titleBlock: { flex: 1, gap: 2 },
   seeAllButton: {
     flexDirection: "row",
@@ -125,5 +140,5 @@ const styles = StyleSheet.create({
     paddingLeft: theme.spacing.sm,
     justifyContent: "flex-end",
   },
-  seeAll: { color: theme.colors.primary },
+  pressed: { opacity: 0.7 },
 });

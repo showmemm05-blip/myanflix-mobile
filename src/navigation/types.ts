@@ -9,8 +9,8 @@ export type AuthStackParamList = {
 
 /**
  * The media detail screens, registered in EVERY tab stack that can open one —
- * HomeStackNavigator, SearchStackNavigator and LibraryStackNavigator each
- * register these same five routes (the comment in HomeStackNavigator carries
+ * HomeStackNavigator, SearchStackNavigator and ProfileStackNavigator (the
+ * root "Profile" screen's own stack) each register these same six routes (the comment in HomeStackNavigator carries
  * the full rationale; keep the three copies in sync).
  *
  * WHY the duplication is deliberate: a detail page belongs to the tab that
@@ -28,7 +28,12 @@ export type MediaDetailParamList = {
   MovieDetails: { movieId: string };
   SeriesDetails: { seriesId: string };
   CategoryDetail: { categoryId: string };
-  /** A person's page — their photo and everything they are in. Opened from the Search screen's People rail. */
+  /**
+   * Every category (GET /categories) — banners, shelves and tiles that open
+   * CategoryDetail. No params: it always shows the whole taxonomy.
+   */
+  Browse: undefined;
+  /** A person's page — their photo and everything they are in. Opened from the search screen's People rail. */
   ActorDetails: { actorId: string };
   Subscribe: undefined;
 };
@@ -38,15 +43,31 @@ export type HomeStackParamList = MediaDetailParamList & {
 };
 
 export type SearchStackParamList = MediaDetailParamList & {
-  Search: { initialTab?: "movies" | "series" | "books" | "music" } | undefined;
+  /**
+   * The Media tab's ROOT (screens/Media — the route keeps its old name so
+   * every existing navigation still lands): the hub page — the "Media" bar,
+   * the Movies / Series / Books / Music chips and the current chip's hub.
+   * `initialTab` opens (or, when the tab is already open, switches to) a
+   * chip — Home's Film / Series / Book / Music lanes and the search screen's
+   * "See all" send it; "all" opens Movies (the Media tab has no All chip).
+   */
+  Search: { initialTab?: "all" | "movies" | "series" | "books" | "music" } | undefined;
+  /**
+   * The search screen (screens/Search/Search.tsx), pushed over the Media
+   * root by its search button: the field, the All / Movies / Series / Books
+   * scope pills, suggestions, recents and the results. `scope` picks the pill
+   * it opens on (the root passes its current chip); without it, All.
+   */
+  MediaSearch: { scope?: "all" | "movies" | "series" | "books" } | undefined;
   /**
    * The full-screen filters page. It edits a draft of the shared
    * searchFiltersStore and commits on "Show results"; the params only say
    * WHICH tab's filters and what term the count should include — the filter
-   * values themselves never travel through navigation.
+   * values themselves never travel through navigation. It pops back to
+   * whichever screen opened it: a hub's "All …" Filter pill on the Media
+   * root, or the search screen's results.
    */
   SearchFilters: { tab: "movies" | "series"; term: string };
-  BooksCatalog: undefined;
   BookDetails: { bookId: string };
   /**
    * Everyone in the catalogue — the People button in the results header pushes
@@ -69,19 +90,27 @@ export type SearchStackParamList = MediaDetailParamList & {
   AuthorDetails: { authorId: string };
 };
 
-export type LibraryStackParamList = MediaDetailParamList & {
-  LibraryOverview: undefined;
+/**
+ * The stack behind the ROOT "Profile" screen (opened from the top bars'
+ * avatar — Profile is not a tab; owner, 2026-10-07). Its first page is the
+ * Profile page, which carries the "Your library" group; the pages that group
+ * opens (they were the Library tab's) push onto this stack, so back from them
+ * returns to Profile, and back from Profile leaves to the tabs underneath.
+ */
+export type ProfileStackParamList = MediaDetailParamList & {
+  ProfileOverview: undefined;
   WatchHistory: undefined;
   Favorites: undefined;
   DownloadCachePlaceholder: undefined;
 };
 
-export type SettingsStackParamList = {
-  Settings: undefined;
-};
-
 export type WalletStackParamList = {
-  Wallet: undefined;
+  /**
+   * `openDeposit` opens the Deposit sheet on arrival — set by Subscribe's
+   * "Add money" (insufficient balance). Optional, so every existing
+   * `{ screen: "Wallet" }` navigation is unchanged.
+   */
+  Wallet: { openDeposit?: boolean } | undefined;
   Transactions: undefined;
 };
 
@@ -89,8 +118,6 @@ export type MainTabParamList = {
   HomeTab: NavigatorScreenParams<HomeStackParamList>;
   SearchTab: NavigatorScreenParams<SearchStackParamList>;
   WalletTab: NavigatorScreenParams<WalletStackParamList>;
-  LibraryTab: NavigatorScreenParams<LibraryStackParamList>;
-  SettingsTab: NavigatorScreenParams<SettingsStackParamList>;
 };
 
 export type RootStackParamList = {
@@ -108,7 +135,12 @@ export type RootStackParamList = {
    */
   BookReader: { bookId: string; editionId?: string; chapterId?: string; sectionId?: string; pageNumber?: number };
   Notifications: undefined;
-  Profile: undefined;
+  /**
+   * The Profile page and the pages its "Your library" group opens (see
+   * ProfileStackParamList). No params needed: `navigate("Profile")` opens the
+   * Profile page itself.
+   */
+  Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
 };
 
 declare global {

@@ -3,17 +3,15 @@ import { FlatList, StyleSheet, View } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { GamePlate } from "@/components/common/GamePlate";
-import { Pill } from "@/components/ui/Pill";
 import { PressableScale } from "@/components/ui/PressableScale";
-import { SectionHeader } from "@/components/ui/SectionHeader";
 import { ThemedText } from "@/components/ui/ThemedText";
+import { ArcadeArt } from "@/components/arcade/ArcadeArt";
 import { ArcadeBadge } from "@/components/arcade/ArcadeBadge";
-import { FreeTag } from "@/components/arcade/FreeTag";
-import { SectionRule } from "@/components/arcade/SectionRule";
-import { SlugText } from "@/components/arcade/SlugText";
-import { ANNOUNCED_LANES, discoverGames, isFreeGame, type Lane } from "@/data/arcade";
-import { PLATE_PALETTES, formatKyat, type Game, type PlatePalette } from "@/data/games";
+import { ArcadePrice, priceLabel } from "@/components/arcade/ArcadePrice";
+import { ArcadeSection } from "@/components/arcade/ArcadeSection";
+import { ANNOUNCED_LANES, discoverGames, type Lane } from "@/data/arcade";
+import type { Game } from "@/data/games";
+import { useHomeLayout } from "@/hooks/useHomeLayout";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 
@@ -21,11 +19,18 @@ interface Props {
   onPressGame: () => void;
 }
 
-const CARD_WIDTH = 180;
-const GAP = 12;
+/** Main.dc.html: 128×192 posters on a 10pt gap. */
+const CARD_WIDTH = 128;
+const POSTER_HEIGHT = 192;
+const GAP = 10;
 
-/** Desaturated navy plate for the announced-lane teasers — no game identity. */
-const TEASER_PALETTE: PlatePalette = { hueA: "#3a3f55", hueB: "#242838" };
+/**
+ * The title set in the art is a logotype in a fixed 108pt column (128 minus
+ * the 10pt insets). The widest title word, EMBERFALL, is ~79pt at 14pt black,
+ * so above ~1.35× text it no longer fits one line and would break mid-word.
+ * The spoken label carries the title at any text size.
+ */
+const POSTER_TITLE_MAX_SCALE = 1.3;
 
 type DiscoverItem = { kind: "game"; game: Game } | { kind: "lane"; lane: Lane };
 
@@ -37,61 +42,84 @@ const ITEMS: DiscoverItem[] = [
 const keyExtractor = (item: DiscoverItem) =>
   item.kind === "game" ? item.game.id : `lane-${item.lane.id}`;
 
-/** Fixed 180pt cells on a 12pt gap, inset by the screen padding — exact offsets. */
-const getItemLayout = (_: ArrayLike<DiscoverItem> | null | undefined, index: number) => ({
-  length: CARD_WIDTH,
-  offset: theme.layout.screenPadding + (CARD_WIDTH + GAP) * index,
-  index,
-});
-
 /**
- * The whole shelf, newest first, as a snapping horizontal rail — followed by
- * one non-pressable teaser tile per announced lane (anime, podcast, live).
+ * The whole shelf, newest first, as a snapping rail of posters — followed by
+ * one non-pressable "Soon" teaser per announced lane (anime, podcast, live).
  */
 export function StoreDiscover({ onPressGame }: Props) {
   const { t } = useLanguage();
+  const layout = useHomeLayout();
+  const gutter = layout.gutter;
+
+  /** Fixed 128pt cells on a 10pt gap, inset by the gutter — exact offsets. */
+  const getItemLayout = useCallback(
+    (_: ArrayLike<DiscoverItem> | null | undefined, index: number) => ({
+      length: CARD_WIDTH,
+      offset: gutter + (CARD_WIDTH + GAP) * index,
+      index,
+    }),
+    [gutter],
+  );
 
   const renderItem = useCallback(
     ({ item }: { item: DiscoverItem }) => {
       if (item.kind === "lane") {
         const { lane } = item;
         return (
-          <View style={styles.card}>
-            <GamePlate palette={TEASER_PALETTE} radius="lg" scrim={false} dimmed style={styles.plate}>
-              <View style={styles.teaserContent}>
-                <Ionicons name={lane.icon} size={22} color={theme.colors.textFaint} />
-                <ThemedText variant="caption" color={theme.colors.textMuted}>
-                  {t.arcade.lanes[lane.id]}
-                </ThemedText>
-                <Pill tone="neutral">{t.arcade.state.soon}</Pill>
-              </View>
-            </GamePlate>
+          <View
+            style={[styles.card, styles.teaser]}
+            accessible
+            accessibilityLabel={`${t.arcade.lanes[lane.id]}, ${t.arcade.state.soon}`}
+          >
+            <Ionicons name={lane.icon} size={26} color={theme.colors.textDecor} />
+            <ThemedText variant="muted" weight="bold" color={theme.colors.textMuted} style={styles.center}>
+              {t.arcade.lanes[lane.id]}
+            </ThemedText>
+            <View style={styles.soonChip}>
+              <ThemedText variant="label" weight="bold" color={theme.colors.textMuted} style={styles.chipLabel}>
+                {t.arcade.state.soon}
+              </ThemedText>
+            </View>
           </View>
         );
       }
 
       const { game } = item;
+      const price = priceLabel(game, t.arcade.price.free);
+      const label = [
+        game.title,
+        game.genre,
+        String(game.releaseYear),
+        game.badge ? t.arcade.badge[game.badge] : null,
+        price,
+      ]
+        .filter(Boolean)
+        .join(", ");
+
       return (
-        <PressableScale onPress={onPressGame} accessibilityLabel={game.title} style={styles.card}>
-          <GamePlate palette={PLATE_PALETTES[game.id]} radius="lg" style={styles.plate}>
-            {game.badge && <ArcadeBadge kind={game.badge} style={styles.badge} />}
-          </GamePlate>
-          <ThemedText variant="caption" weight="medium" numberOfLines={1} color={theme.colors.text} style={styles.title}>
-            {game.title}
-          </ThemedText>
-          <View style={styles.metaRow}>
-            <View style={styles.metaLeft}>
-              <ThemedText variant="caption" color={theme.colors.textMuted} numberOfLines={1}>
-                {game.genre}
-              </ThemedText>
-              <SlugText>{String(game.releaseYear)}</SlugText>
-            </View>
-            {isFreeGame(game) ? (
-              <FreeTag />
-            ) : game.priceMMK !== null ? (
-              <SlugText color={theme.colors.text}>{formatKyat(game.priceMMK)}</SlugText>
+        <PressableScale onPress={onPressGame} accessibilityLabel={label} style={styles.card}>
+          <View style={styles.poster}>
+            <ArcadeArt gameId={game.id} format="poster" band />
+            <ThemedText weight="black" maxFontSizeMultiplier={POSTER_TITLE_MAX_SCALE} style={styles.posterTitle}>
+              {game.title}
+            </ThemedText>
+            {game.badge === "new" ? (
+              <View style={styles.newTab}>
+                <ThemedText variant="overline" color={theme.colors.onPrimary} style={styles.chipLabel}>
+                  {t.arcade.badge.new}
+                </ThemedText>
+              </View>
+            ) : game.badge ? (
+              <ArcadeBadge kind={game.badge} style={styles.badge} />
             ) : null}
           </View>
+          <ThemedText variant="caption" weight="regular" color={theme.colors.textMuted} style={styles.meta}>
+            {`${game.genre} · `}
+            <ThemedText variant="caption" weight="regular" color={theme.colors.textMuted} tabular>
+              {String(game.releaseYear)}
+            </ThemedText>
+          </ThemedText>
+          <ArcadePrice game={game} size="sm" />
         </PressableScale>
       );
     },
@@ -99,8 +127,7 @@ export function StoreDiscover({ onPressGame }: Props) {
   );
 
   return (
-    <SectionRule>
-      <SectionHeader eyebrow={t.arcade.discover.kicker} title={t.arcade.discover.title} />
+    <ArcadeSection eyebrow={t.arcade.discover.kicker} title={t.arcade.discover.title} gutter={gutter}>
       <FlatList
         data={ITEMS}
         keyExtractor={keyExtractor}
@@ -108,50 +135,72 @@ export function StoreDiscover({ onPressGame }: Props) {
         renderItem={renderItem}
         horizontal
         showsHorizontalScrollIndicator={false}
+        // Snap so a poster always comes to rest on the page gutter.
         snapToInterval={CARD_WIDTH + GAP}
         decelerationRate="fast"
-        contentContainerStyle={styles.rail}
+        contentContainerStyle={[styles.rail, { paddingHorizontal: gutter }]}
         // This rail sits below the fold inside Home's ScrollView, so without
-        // batching all 15 SVG plates mount at first paint. The exact offsets
+        // batching all 15 SVG scenes mount at first paint. The exact offsets
         // above mean the rest arrive on a flick with no measurement pass.
         initialNumToRender={3}
         maxToRenderPerBatch={4}
         windowSize={5}
       />
-    </SectionRule>
+    </ArcadeSection>
   );
 }
 
 const styles = StyleSheet.create({
-  rail: {
-    paddingHorizontal: theme.layout.screenPadding,
-    gap: GAP,
-  },
+  rail: { gap: GAP, alignItems: "flex-start" },
   card: { width: CARD_WIDTH },
-  plate: { aspectRatio: 16 / 9 },
-  badge: {
+  poster: {
+    height: POSTER_HEIGHT,
+    borderRadius: theme.radius.card,
+    overflow: "hidden",
+  },
+  /** 14/15 black capitals in the art's dark band — titles stay Latin in both languages. */
+  posterTitle: {
     position: "absolute",
-    top: theme.spacing.sm,
-    left: theme.spacing.sm,
+    left: 10,
+    right: 10,
+    bottom: 12,
+    fontSize: 14,
+    lineHeight: 15,
+    letterSpacing: -0.28,
+    textTransform: "uppercase",
+    color: theme.colors.text,
   },
-  title: { marginTop: theme.spacing.sm },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing.sm,
-    marginTop: 2,
+  /** The crimson NEW tab, flush to the poster's left edge. */
+  newTab: {
+    position: "absolute",
+    top: 10,
+    left: 0,
+    minHeight: 20,
+    justifyContent: "center",
+    paddingHorizontal: 7,
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4,
+    backgroundColor: theme.colors.primary,
   },
-  metaLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    flexShrink: 1,
-  },
-  teaserContent: {
-    ...StyleSheet.absoluteFill,
+  badge: { position: "absolute", top: 8, left: 8 },
+  meta: { marginTop: 10 },
+  /** Translated chip words: no tracking. */
+  chipLabel: { letterSpacing: 0 },
+  teaser: {
+    height: POSTER_HEIGHT,
+    borderRadius: theme.radius.card,
+    backgroundColor: theme.colors.surface,
     alignItems: "center",
     justifyContent: "center",
-    gap: theme.spacing.xs,
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+  },
+  center: { textAlign: "center" },
+  soonChip: {
+    minHeight: 24,
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: theme.colors.surfaceElevated,
   },
 });

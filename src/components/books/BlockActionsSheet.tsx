@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { SheetForm, SheetTextArea } from "@/components/wallet/SheetForm";
 import { HIGHLIGHT_COLORS } from "@/components/books/readerThemes";
+import { useStackedActions } from "@/components/books/useStackedActions";
 import { useLanguage } from "@/localization/LanguageProvider";
 import {
   NOTE_MAX,
@@ -54,6 +55,7 @@ export function BlockActionsSheet({ visible, onClose, editionId, chapterId, bloc
           (row) => row.editionId === editionId && row.chapterId === chapterId && row.blockIndex === blockIndex,
         );
 
+  const stacked = useStackedActions();
   const [noteDraft, setNoteDraft] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -138,78 +140,105 @@ export function BlockActionsSheet({ visible, onClose, editionId, chapterId, bloc
           so they stay in the scroll flow. SheetForm still keeps the note field
           clear of the keyboard — a Modal never resizes for one. */}
       <SheetForm contentStyle={styles.body}>
-        <ThemedText variant="caption" color={theme.colors.textMuted} numberOfLines={3}>
-          {blockText}
-        </ThemedText>
+        {/* The paragraph, quoted against a rail in its highlight colour. */}
+        <View
+          style={[
+            styles.quote,
+            { borderLeftColor: highlight ? HIGHLIGHT_COLORS[highlight.color] : theme.colors.borderStrong },
+          ]}
+        >
+          <ThemedText variant="muted" color={theme.colors.textBody} numberOfLines={3}>
+            {blockText}
+          </ThemedText>
+        </View>
 
         {/* -------- highlight colours -------- */}
-        <ThemedText variant="label" color={theme.colors.text}>
-          {r.highlight}
-        </ThemedText>
-        <View style={styles.colorRow}>
-          {COLOR_ORDER.map((color) => {
-            const active = highlight?.color === color;
-            return (
-              <Pressable
-                key={color}
-                onPress={() => pickColor(color)}
-                accessibilityRole="button"
-                accessibilityLabel={colorLabels[color]}
-                accessibilityState={{ selected: active }}
-                style={({ pressed }) => [styles.colorHit, pressed && styles.pressed]}
-              >
-                <View
-                  style={[
-                    styles.colorDot,
-                    { backgroundColor: withAlpha(HIGHLIGHT_COLORS[color], 0.9) },
-                    active && styles.colorDotActive,
-                  ]}
+        <View style={styles.group}>
+          <ThemedText variant="overline">{r.highlight.toUpperCase()}</ThemedText>
+          <View style={styles.colorRow}>
+            {COLOR_ORDER.map((color) => {
+              const active = highlight?.color === color;
+              return (
+                <Pressable
+                  key={color}
+                  onPress={() => pickColor(color)}
+                  accessibilityRole="button"
+                  accessibilityLabel={colorLabels[color]}
+                  accessibilityState={{ selected: active }}
+                  style={({ pressed }) => [styles.colorHit, pressed && styles.pressed]}
                 >
-                  {active && <Ionicons name="checkmark" size={16} color="#ffffff" />}
-                </View>
-              </Pressable>
-            );
-          })}
+                  <View style={[styles.colorRing, active && styles.colorRingActive]}>
+                    <View style={[styles.colorDot, { backgroundColor: withAlpha(HIGHLIGHT_COLORS[color], 0.9) }]}>
+                      {active && <Ionicons name="checkmark" size={16} color={theme.colors.text} />}
+                    </View>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
         {/* -------- note (a highlight with words) -------- */}
-        <ThemedText variant="label" color={theme.colors.text}>
-          {highlight?.note ? r.editNote : r.addNote}
-        </ThemedText>
-        <SheetTextArea
-          value={noteDraft}
-          onChangeText={setNoteDraft}
-          placeholder={r.notePlaceholder}
-          accessibilityLabel={r.note}
-          maxLength={NOTE_MAX}
-          style={styles.note}
-        />
+        <View style={styles.group}>
+          <ThemedText variant="overline">{(highlight?.note ? r.editNote : r.addNote).toUpperCase()}</ThemedText>
+          <SheetTextArea
+            value={noteDraft}
+            onChangeText={setNoteDraft}
+            placeholder={r.notePlaceholder}
+            accessibilityLabel={r.note}
+            maxLength={NOTE_MAX}
+            style={styles.note}
+          />
+        </View>
         {noteDirty && <Button title={r.saveNote} onPress={saveNote} size="md" />}
 
         {/* -------- copy / remove -------- */}
-        <Button
-          title={copied ? r.copied : r.copyParagraph}
-          icon={copied ? "checkmark" : "copy-outline"}
-          variant="outline"
-          onPress={copyParagraph}
-        />
-        {highlight && (
-          <Button title={r.removeHighlight} icon="trash-outline" variant="ghost" onPress={remove} />
-        )}
+        <View style={[styles.actions, stacked && styles.actionsStacked]}>
+          <Button
+            title={copied ? r.copied : r.copyParagraph}
+            icon={copied ? "checkmark" : "copy-outline"}
+            variant="secondary"
+            onPress={copyParagraph}
+            style={!stacked && styles.action}
+          />
+          {highlight && (
+            <Button
+              title={r.removeHighlight}
+              icon="trash-outline"
+              variant="ghost"
+              color={theme.colors.danger}
+              onPress={remove}
+              style={!stacked && styles.action}
+            />
+          )}
+        </View>
       </SheetForm>
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  body: { gap: theme.spacing.md },
-  colorRow: { flexDirection: "row", gap: theme.spacing.sm },
+  body: { gap: 20 },
+  quote: { borderLeftWidth: 3, paddingLeft: 12 },
+  group: { gap: theme.spacing.sm },
+  colorRow: { flexDirection: "row", gap: 12 },
   colorHit: {
     width: theme.layout.minTouch,
     height: theme.layout.minTouch,
     alignItems: "center",
     justifyContent: "center",
   },
+  /** The selected colour's ring: 3pt of the sheet, then 2pt of white (BookReader.dc.html). */
+  colorRing: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 2,
+    borderColor: "transparent",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  colorRingActive: { borderColor: theme.colors.text },
   colorDot: {
     width: 32,
     height: 32,
@@ -217,11 +246,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  colorDotActive: {
-    borderWidth: 2,
-    borderColor: theme.colors.text,
-  },
   pressed: { opacity: 0.75 },
   /** A note is a sentence, not a paragraph — shorter than the feedback box. */
-  note: { minHeight: 96 },
+  note: { minHeight: 88 },
+  actions: { flexDirection: "row", gap: 10 },
+  actionsStacked: { flexDirection: "column" },
+  action: { flexGrow: 1, flexBasis: 0 },
 });

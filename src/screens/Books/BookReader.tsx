@@ -1,19 +1,21 @@
 import { useEffect, useMemo } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { ThemedText } from "@/components/ui/ThemedText";
 import { ChapterReader } from "@/screens/Books/ChapterReader";
 import { PageReader } from "@/screens/Books/PageReader";
 import { useReaderFonts } from "@/components/books/readerFonts";
+import { READER_THEMES } from "@/components/books/readerThemes";
+import { Skeleton } from "@/components/common/Skeleton";
 import { useBook, useChapters, useReadingProgress } from "@/hooks/useBooks";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { useAuthStore } from "@/store/authStore";
 import { useReaderAnnotationsStore } from "@/store/readerAnnotationsStore";
 import { useReaderPrefsStore } from "@/store/readerPrefsStore";
 import { pickEdition } from "@/utils/bookLanguages";
-import { theme } from "@/theme";
+import { theme, withAlpha } from "@/theme";
 import type { RootStackParamList } from "@/navigation/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "BookReader">;
@@ -140,12 +142,9 @@ export function BookReaderScreen({ route, navigation }: Props) {
   }
 
   if (!book || !edition || !chaptersQuery.isSuccess || !progressSettled) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-        <ThemedText variant="caption">{t.common.loading}</ThemedText>
-      </View>
-    );
+    // Marquee: loading is a skeleton, never a spinner — a page being set, in
+    // the reader's own page colour so the reader does not flash in after it.
+    return <ReaderOpeningSkeleton label={t.common.loading} />;
   }
 
   if (chapters.length === 0 || !initialChapterId) {
@@ -183,7 +182,37 @@ export function BookReaderScreen({ route, navigation }: Props) {
   );
 }
 
+/** The opening of a chapter, still being set: overline, title, then lines of text. */
+function ReaderOpeningSkeleton({ label }: { label: string }) {
+  const insets = useSafeAreaInsets();
+  const readerTheme = useReaderPrefsStore((s) => s.readerTheme);
+  const colors = READER_THEMES[readerTheme];
+  const ink = { backgroundColor: withAlpha(colors.ink, 0.1) };
+  return (
+    <View
+      style={[styles.page, { backgroundColor: colors.bg, paddingTop: insets.top + 96 }]}
+      accessible
+      accessibilityLabel={label}
+      accessibilityState={{ busy: true }}
+    >
+      <View style={styles.opening}>
+        <Skeleton width={80} height={11} radius="xs" style={ink} />
+        <Skeleton width={200} height={26} radius="sm" style={ink} />
+        <Skeleton width={56} height={12} radius="xs" style={ink} />
+      </View>
+      <View style={styles.lines}>
+        {Array.from({ length: 9 }).map((_, index) => (
+          <Skeleton key={index} height={14} radius="xs" width={index % 4 === 3 ? "62%" : "100%"} style={ink} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  page: { flex: 1, paddingHorizontal: 20 },
+  opening: { alignItems: "center", gap: theme.spacing.sm },
+  lines: { gap: theme.spacing.md, marginTop: 34 },
   center: {
     flex: 1,
     backgroundColor: theme.colors.background,

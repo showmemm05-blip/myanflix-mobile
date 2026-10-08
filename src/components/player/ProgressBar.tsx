@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { PanResponder, View, StyleSheet, type LayoutChangeEvent } from "react-native";
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import { PanResponder, View, StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from "react-native";
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { ThemedText } from "@/components/ui/ThemedText";
+import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 import { clamp, formatTime } from "@/utils/format";
 
@@ -12,10 +13,17 @@ interface Props {
   onSeek: (seconds: number) => void;
 }
 
-const TRACK_HEIGHT = 5;
-const THUMB_SIZE = 16;
-/** Vertical slack around the 5pt track so the bar is a comfortable drag target. */
-const TOUCH_PADDING = 16;
+/** Marquee seek line: a 4pt track, crimson played, white-at-45% buffered. */
+const TRACK_HEIGHT = 4;
+/** The white thumb at rest; it swells while dragged. */
+const THUMB_SIZE = 14;
+/**
+ * Vertical slack around the 4pt track, so the bar is a full 44pt drag target
+ * (4 + 20 + 20) even where the boards draw its row shorter.
+ */
+const TOUCH_PADDING = 20;
+/** What a screen reader's swipe up/down moves — the same 10s the skip buttons use. */
+const A11Y_STEP_SECONDS = 10;
 
 /**
  * Played / buffered / unplayed scrub bar. Buffered comes straight from
@@ -26,6 +34,8 @@ const TOUCH_PADDING = 16;
  * on first render and reads duration/onSeek through refs.
  */
 export function ProgressBar({ durationSeconds, positionSeconds, bufferedSeconds, onSeek }: Props) {
+  const { t } = useLanguage();
+  const reduceMotion = useReducedMotion();
   const [trackWidth, setTrackWidth] = useState(0);
   const [dragPosition, setDragPosition] = useState<number | null>(null);
   const trackWidthRef = useRef(0);
@@ -50,9 +60,15 @@ export function ProgressBar({ durationSeconds, positionSeconds, bufferedSeconds,
 
   useEffect(() => {
     const dragging = dragPosition !== null;
-    thumbScale.value = withSpring(dragging ? 1.7 : 1, { damping: 14, stiffness: 260 });
-    bubbleOpacity.value = withTiming(dragging ? 1 : 0, { duration: 140 });
-  }, [dragPosition, thumbScale, bubbleOpacity]);
+    // Reduce motion: the thumb still grows and the bubble still shows — they
+    // say "you are scrubbing" — they just arrive without travelling.
+    thumbScale.value = reduceMotion
+      ? dragging
+        ? 1.7
+        : 1
+      : withSpring(dragging ? 1.7 : 1, { damping: 14, stiffness: 260 });
+    bubbleOpacity.value = reduceMotion ? (dragging ? 1 : 0) : withTiming(dragging ? 1 : 0, { duration: 140 });
+  }, [dragPosition, thumbScale, bubbleOpacity, reduceMotion]);
 
   const thumbAnimatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: thumbScale.value }] }));
   const bubbleAnimatedStyle = useAnimatedStyle(() => ({ opacity: bubbleOpacity.value }));
@@ -86,13 +102,47 @@ export function ProgressBar({ durationSeconds, positionSeconds, bufferedSeconds,
   const pct = (seconds: number) => (durationSeconds > 0 ? Math.min(100, (seconds / durationSeconds) * 100) : 0);
   const bubbleLeft = trackWidth > 0 ? (pct(displayedPosition) / 100) * trackWidth : 0;
 
+  /**
+   * The SPOKEN position, held on the same 10s grid a screen-reader swipe moves
+   * by. This bar re-renders four times a second off the playback tick; a value
+   * that changed every second made TalkBack re-read "18:41 of 46:12",
+   * "18:42 of 46:12"… for as long as the seek line had focus. On the grid it
+   * changes at most once per 10s of playback, and every swipe still lands on a
+   * new value, so the step the viewer took is always heard.
+   */
+  const spokenSeconds = Math.floor(Math.max(0, positionSeconds) / A11Y_STEP_SECONDS) * A11Y_STEP_SECONDS;
+
+  /** Swipe up / down with a screen reader: the same seek a drag ends in. */
+  const handleAccessibilityAction = (event: AccessibilityActionEvent) => {
+    if (durationSeconds <= 0) return;
+    const delta = event.nativeEvent.actionName === "increment" ? A11Y_STEP_SECONDS : -A11Y_STEP_SECONDS;
+    onSeek(clamp(positionSeconds + delta, 0, durationSeconds));
+  };
+
   return (
-    <View style={styles.hitArea} onLayout={handleLayout} {...panResponder.panHandlers}>
+    <View
+      style={styles.hitArea}
+      onLayout={handleLayout}
+      accessible
+      accessibilityRole="adjustable"
+      accessibilityLabel={t.player.seek}
+      accessibilityValue={{
+        min: 0,
+        max: Math.max(0, Math.round(durationSeconds)),
+        now: spokenSeconds,
+        text: t.player.seekValue
+          .replace("{position}", formatTime(spokenSeconds))
+          .replace("{duration}", formatTime(durationSeconds)),
+      }}
+      accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+      onAccessibilityAction={handleAccessibilityAction}
+      {...panResponder.panHandlers}
+    >
       <Animated.View
         style={[styles.bubble, { transform: [{ translateX: bubbleLeft }] }, bubbleAnimatedStyle]}
         pointerEvents="none"
       >
-        <ThemedText variant="caption" weight="bold" tabular>
+        <ThemedText variant="caption" weight="extrabold" tabular color={theme.colors.text} maxFontSizeMultiplier={1.6}>
           {formatTime(displayedPosition)}
         </ThemedText>
       </Animated.View>
@@ -117,11 +167,11 @@ const styles = StyleSheet.create({
   track: {
     height: TRACK_HEIGHT,
     borderRadius: TRACK_HEIGHT / 2,
-    backgroundColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(255,255,255,0.24)",
     overflow: "visible",
   },
   fill: { position: "absolute", top: 0, bottom: 0, borderRadius: TRACK_HEIGHT / 2 },
-  buffered: { backgroundColor: "rgba(255,255,255,0.42)" },
+  buffered: { backgroundColor: "rgba(255,255,255,0.45)" },
   played: { backgroundColor: theme.colors.primary },
   thumb: {
     position: "absolute",
@@ -129,22 +179,24 @@ const styles = StyleSheet.create({
     width: THUMB_SIZE,
     height: THUMB_SIZE,
     borderRadius: THUMB_SIZE / 2,
-    backgroundColor: theme.colors.primary,
+    backgroundColor: theme.colors.play,
     marginLeft: -THUMB_SIZE / 2,
-    borderWidth: 2,
-    borderColor: theme.colors.onPrimary,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 3,
+    elevation: 3,
   },
+  // Above the touch slack, so the bubble never sits on the line it describes.
   bubble: {
     position: "absolute",
-    top: 0,
-    left: -26,
-    minWidth: 52,
+    top: -6,
+    left: -28,
+    minWidth: 56,
     alignItems: "center",
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.scrim,
-    borderWidth: 1,
-    borderColor: theme.colors.ring,
+    backgroundColor: theme.colors.artBadge,
   },
 });

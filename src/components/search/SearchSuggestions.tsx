@@ -20,10 +20,16 @@ interface Props {
   visible: boolean;
   /** Which catalogue to list; `null` on Music, where there is nothing to list. */
   kind: SuggestKind | null;
-  /** The search field's outer view — measured to find its bottom edge. */
+  /** The view the panel hangs under — the screen's tab strip. */
   anchorRef: RefObject<View | null>;
+  /** Higher views to hang under when the tabs leave too little room (hint line, then field). */
+  fallbackAnchorRefs?: ReadonlyArray<RefObject<View | null>>;
+  /** Bumped by the screen whenever the anchor may have moved, so the panel re-measures. */
+  anchorKey?: number;
   /** The screen's root view — the panel's own coordinate space. */
   containerRef: RefObject<View | null>;
+  /** A tap on the dim behind the panel: the screen closes it and drops the keyboard. */
+  onDismiss?: () => void;
   /** The screen closes the panel, records the search and navigates. */
   onSelectMovie: (movie: Movie) => void;
   onSelectSeries: (series: SeriesListItem) => void;
@@ -56,7 +62,10 @@ export function SearchSuggestions({
   visible,
   kind,
   anchorRef,
+  fallbackAnchorRefs,
+  anchorKey,
   containerRef,
+  onDismiss,
   onSelectMovie,
   onSelectSeries,
   onSelectBook,
@@ -68,7 +77,10 @@ export function SearchSuggestions({
         term={term}
         visible={visible && kind === "movies"}
         anchorRef={anchorRef}
+        fallbackAnchorRefs={fallbackAnchorRefs}
+        anchorKey={anchorKey}
         containerRef={containerRef}
+        onDismiss={onDismiss}
         onSelect={onSelectMovie}
         onSeeAll={onSeeAll}
       />
@@ -76,7 +88,10 @@ export function SearchSuggestions({
         term={term}
         visible={visible && kind === "series"}
         anchorRef={anchorRef}
+        fallbackAnchorRefs={fallbackAnchorRefs}
+        anchorKey={anchorKey}
         containerRef={containerRef}
+        onDismiss={onDismiss}
         onSelect={onSelectSeries}
         onSeeAll={onSeeAll}
       />
@@ -84,7 +99,10 @@ export function SearchSuggestions({
         term={term}
         visible={visible && kind === "books"}
         anchorRef={anchorRef}
+        fallbackAnchorRefs={fallbackAnchorRefs}
+        anchorKey={anchorKey}
         containerRef={containerRef}
+        onDismiss={onDismiss}
         onSelect={onSelectBook}
         onSeeAll={onSeeAll}
       />

@@ -1,10 +1,11 @@
 import { useCallback, useState } from "react";
-import { StyleSheet, TextInput, View } from "react-native";
+import { StyleSheet, TextInput, View, useWindowDimensions } from "react-native";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { Button } from "@/components/ui/Button";
 import { PageThumbGrid } from "@/components/books/PageThumbGrid";
+import { useStackedActions } from "@/components/books/useStackedActions";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { theme } from "@/theme";
+import { tabularNums, theme } from "@/theme";
 import type { BookPage } from "@/types/book";
 
 interface Props {
@@ -17,7 +18,9 @@ interface Props {
 }
 
 /**
- * Jump to page: number pad + first/last + thumbnail grid.
+ * Jump to page (PageReader.dc.html "jump"): the 56pt number field, First /
+ * Last page, the crimson "Go to page" commit pinned at the foot — and the
+ * thumbnail grid between them, kept from before Marquee.
  *
  * Lifted out of PageReader, which already owns three list layouts, a zoom
  * model and a chrome timer. The typed number lives here because nothing
@@ -29,6 +32,8 @@ export function JumpToPageSheet({ visible, onClose, pages, currentIndex, onGoToP
   const { t } = useLanguage();
   const r = t.books.reader;
   const [jumpText, setJumpText] = useState("");
+  const { height: windowHeight } = useWindowDimensions();
+  const stacked = useStackedActions();
 
   const submitJump = useCallback(() => {
     const target = parseInt(jumpText, 10);
@@ -55,8 +60,8 @@ export function JumpToPageSheet({ visible, onClose, pages, currentIndex, onGoToP
       onClose={onClose}
       title={r.jumpToPage}
       showClose
-      snapHeight={560}
-      footer={<Button title={r.jumpToPage} fullWidth onPress={submitJump} />}
+      snapHeight={Math.round(windowHeight * 0.7)}
+      footer={<Button title={r.jumpToPage} size="lg" fullWidth onPress={submitJump} />}
     >
       <TextInput
         style={styles.jumpInput}
@@ -65,23 +70,17 @@ export function JumpToPageSheet({ visible, onClose, pages, currentIndex, onGoToP
         keyboardType="number-pad"
         placeholder={`1 – ${pages.length}`}
         placeholderTextColor={theme.colors.textFaint}
+        selectionColor={theme.colors.primary}
         accessibilityLabel={r.jumpToPage}
         onSubmitEditing={submitJump}
       />
-      <View style={styles.jumpQuickRow}>
-        <Button
-          title={r.firstPage}
-          icon="play-back-outline"
-          variant="outline"
-          onPress={() => jumpTo(0)}
-          style={styles.jumpQuick}
-        />
+      <View style={[styles.jumpQuickRow, stacked && styles.jumpQuickStacked]}>
+        <Button title={r.firstPage} variant="secondary" onPress={() => jumpTo(0)} style={!stacked && styles.jumpQuick} />
         <Button
           title={r.lastPage}
-          trailingIcon="play-forward-outline"
-          variant="outline"
+          variant="secondary"
           onPress={() => jumpTo(pages.length - 1)}
-          style={styles.jumpQuick}
+          style={!stacked && styles.jumpQuick}
         />
       </View>
       <View style={styles.jumpGrid}>
@@ -92,24 +91,24 @@ export function JumpToPageSheet({ visible, onClose, pages, currentIndex, onGoToP
 }
 
 const styles = StyleSheet.create({
+  /** Marquee's field: 56pt, radius 16, the raised fill, a 20pt bold tabular number. */
   jumpInput: {
-    minHeight: theme.layout.minTouch,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    minHeight: 56,
+    borderRadius: 16,
     backgroundColor: theme.colors.surfaceElevated,
     color: theme.colors.text,
-    paddingHorizontal: theme.spacing.md,
-    fontSize: 16,
-    fontFamily: theme.font.regular,
-    textAlign: "center",
+    paddingHorizontal: 18,
+    fontSize: 20,
+    fontFamily: theme.font.bold,
+    ...tabularNums,
   },
   jumpQuickRow: {
     flexDirection: "row",
-    gap: theme.spacing.sm,
-    marginTop: theme.spacing.sm,
-    marginBottom: theme.spacing.sm,
+    gap: 10,
+    marginTop: 12,
+    marginBottom: theme.spacing.md,
   },
-  jumpQuick: { flex: 1 },
+  jumpQuickStacked: { flexDirection: "column" },
+  jumpQuick: { flexGrow: 1, flexBasis: 0 },
   jumpGrid: { flex: 1 },
 });

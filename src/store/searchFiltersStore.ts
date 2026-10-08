@@ -24,9 +24,11 @@ function resolve<T>(next: Updater<T>, prev: T): T {
 
 /**
  * THE filter state of the Media tab — one object per filterable tab, shared
- * by the Search screen (which sends it to the backend) and the SearchFilters
- * page (which edits a draft and commits it here on "Show results"). Nothing
- * travels through navigation params, so the two can never disagree.
+ * by the Media root's Movies / Series results views and the search screen
+ * (which send it to the backend), the Categories overlay (the genre or
+ * category), the Sort & filter sheet and the SearchFilters page (which edit
+ * a draft and commit it here). Nothing travels through navigation params, so
+ * they can never disagree.
  *
  * Not persisted, on purpose: filters are a question about THIS visit, and a
  * cold start should open on the plain catalogue.

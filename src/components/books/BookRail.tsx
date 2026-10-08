@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, type ReactNode } from "react";
 import { FlatList, StyleSheet, View, useWindowDimensions, type ListRenderItem } from "react-native";
 import type { Ionicons } from "@expo/vector-icons";
 import { SectionHeader } from "@/components/ui/SectionHeader";
@@ -6,35 +6,39 @@ import { BookCard, BookCardSkeleton } from "@/components/books/BookCard";
 import { theme } from "@/theme";
 import type { Book } from "@/types/book";
 
-/** Same stride gap MediaRail uses, so card edges line up down the scroll. */
+/** Books.dc.html: 12pt between covers on a shelf. */
 const GAP = 12;
 /** The rail's leading content inset — item 0 starts this far in. */
 const EDGE = theme.layout.screenPadding;
 const SKELETON_COUNT = 4;
 
 /**
- * Books sit NARROWER than the poster rails above them. A 5:7 cover at the same
- * width as a 2:3 poster is visibly shorter, so the web makes its book cards
- * ~0.9 of its movie cards; this is MediaCard's `useRailCardWidth` (36% / 160)
- * with that same factor applied. The practical effect is about three books
- * peeking where two-and-a-bit posters do, which is what a shelf should look like.
+ * A shelf cover is 116pt on the 390pt board — about 30% of the width, so
+ * three books and the edge of a fourth show, which is what says "scroll me".
+ * Clamped on tablets so a cover never turns into a hero.
  */
-function useBookRailCardWidth(): number {
+export function useBookRailCardWidth(): number {
   const { width } = useWindowDimensions();
-  return Math.round(Math.min(width * 0.32, 140));
+  return Math.round(Math.min(width * 0.3, 140));
 }
 
 interface Props {
   title: string;
   books: Book[];
   onPressBook: (book: Book) => void;
-  /** Small uppercase line above the title — the medium, as on the web. */
+  /** Small quiet line above the title. */
   eyebrow?: string;
   icon?: keyof typeof Ionicons.glyphMap;
   onSeeAll?: () => void;
   seeAllLabel?: string;
   /** Renders placeholder cards instead of hiding the rail while data loads. */
   loading?: boolean;
+  /**
+   * Replaces the section heading with the caller's own block (the Books
+   * screen's category banner). `title` still names nothing visible then, so
+   * the caller's header must carry the heading itself.
+   */
+  header?: ReactNode;
 }
 
 const keyExtractor = (book: Book) => book.id;
@@ -68,23 +72,14 @@ const RailCard = memo(function RailCard({
 
 /**
  * A horizontally scrolling shelf of BOOKS — the books sibling of MediaRail,
- * not a variant of it.
+ * not a variant of it (a 5:7 cover is not a 2:3 poster, so card width, snap
+ * stride and getItemLayout all differ). The fling copies MediaRail's — snap
+ * to the first card, fast deceleration — so it feels the same.
  *
- * MediaRail is poster-shaped at every level: its item type is built from
- * MediaCardProps, its cells and skeletons are MediaCards, and its card width,
- * snap stride and getItemLayout are all measured for a 2:3 poster. It is also
- * shared with Home and the detail screens, so widening it with a renderItem
- * escape hatch would be a refactor far larger than this shelf. This follows
- * the rule the web's own MediaRail states: the shelf is common, the objects on
- * it are not. Everything about the scrolling — snap interval, deceleration,
- * batch sizes — is copied from MediaRail deliberately, so the fling feels the
- * same as the rails above it.
- *
- * Renders nothing when there is nothing to show, which doubles as the web's
- * `books.length > 0 &&` guard: a guest (or a books outage) simply has no shelf
- * rather than an error where a shelf should be.
+ * Renders nothing when there is nothing to show, so a guest (or a books
+ * outage) simply has no shelf rather than an error where a shelf should be.
  */
-export function BookRail({ title, books, onPressBook, eyebrow, icon, onSeeAll, seeAllLabel, loading }: Props) {
+export function BookRail({ title, books, onPressBook, eyebrow, icon, onSeeAll, seeAllLabel, loading, header }: Props) {
   const cardWidth = useBookRailCardWidth();
 
   const renderItem = useCallback<ListRenderItem<Book>>(
@@ -109,14 +104,18 @@ export function BookRail({ title, books, onPressBook, eyebrow, icon, onSeeAll, s
   if (!loading && books.length === 0) return null;
 
   return (
-    <View style={styles.container}>
-      <SectionHeader
-        title={title}
-        eyebrow={eyebrow}
-        icon={icon}
-        onSeeAll={onSeeAll}
-        seeAllLabel={seeAllLabel}
-      />
+    <View>
+      {header ?? (
+        <SectionHeader
+          title={title}
+          eyebrow={eyebrow}
+          icon={icon}
+          onSeeAll={onSeeAll}
+          seeAllLabel={seeAllLabel}
+          // Books.dc.html / BookDetail.dc.html draw "See all" in the quiet grey.
+          seeAllTone="muted"
+        />
+      )}
 
       {loading && books.length === 0 ? (
         <View style={styles.skeletonRow}>
@@ -147,10 +146,7 @@ export function BookRail({ title, books, onPressBook, eyebrow, icon, onSeeAll, s
 }
 
 const styles = StyleSheet.create({
-  container: { gap: theme.spacing.xs },
-  // The vertical padding is not cosmetic: the cards now cast a real drop
-  // shadow, and a contentContainer sized exactly to the card would crop it.
-  listContent: { paddingHorizontal: EDGE, paddingTop: 2, paddingBottom: theme.spacing.sm },
+  listContent: { paddingHorizontal: EDGE },
   skeletonRow: { flexDirection: "row", gap: GAP, paddingHorizontal: EDGE, overflow: "hidden" },
   separator: { width: GAP },
 });

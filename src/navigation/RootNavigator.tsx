@@ -6,7 +6,7 @@ import { MainTabNavigator } from "@/navigation/MainTabNavigator";
 import { PlayerScreen } from "@/screens/Player/Player";
 import { BookReaderScreen } from "@/screens/Books/BookReader";
 import { NotificationsScreen } from "@/screens/Notifications/Notifications";
-import { ProfileOverviewScreen } from "@/screens/Profile/ProfileOverview";
+import { ProfileStackNavigator } from "@/navigation/ProfileStackNavigator";
 import { useRealtimeWallet } from "@/hooks/useRealtimeWallet";
 import { useAuthStore } from "@/store/authStore";
 import { hydrateReaderPrefs } from "@/store/readerPrefsStore";
@@ -67,7 +67,13 @@ export function RootNavigator() {
           />
           <Stack.Screen name="BookReader" component={BookReaderScreen} options={{ presentation: "fullScreenModal" }} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
-          <Stack.Screen name="Profile" component={ProfileOverviewScreen} />
+          {/* Opened from the avatar in the top bars, above the tabs, with the
+              stack's usual push (owner, 2026-10-07: Profile is back to how it
+              was, not a tab). It mounts a small stack whose first page is the
+              Profile page, so the pages its "Your library" group opens —
+              Favorites, Watch History, Downloads and the title pages under
+              them — push on top of Profile and Back returns to it. */}
+          <Stack.Screen name="Profile" component={ProfileStackNavigator} />
         </>
       ) : sessionUnreachable ? (
         // A saved session the server could not be asked about yet — kept,

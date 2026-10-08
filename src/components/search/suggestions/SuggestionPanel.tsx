@@ -18,8 +18,8 @@ import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
 import { ROW_HEIGHT, THUMB_HEIGHT, styles as rowStyles } from "@/components/search/suggestions/SuggestionRow";
 
-/** Rows visible before the list scrolls; the other three are a flick away. */
-const MAX_VISIBLE_ROWS = 5;
+/** Rows visible before the list scrolls (the board's ~259pt); the rest are a flick away. */
+const MAX_VISIBLE_ROWS = 4;
 /** Under two rows there is nothing worth floating — the grid below has it all. */
 const MIN_PANEL_HEIGHT = 2 * ROW_HEIGHT;
 /** Padding inside the panel's clipped box. */
@@ -30,8 +30,17 @@ const PANEL_PADDING = theme.spacing.xs + 2;
  * panel overruns the keyboard on a small phone by exactly the difference.
  */
 const FOOTER_HEIGHT = theme.layout.minTouch + 1;
-/** Mirrors the web panel's `mt-2` — the panel hangs off the field, not on it. */
+/**
+ * What an anchor must leave free to be worth keeping: two whole rows plus the
+ * "See all" footer. The tab strip (the board's anchor) sits ~80-90pt lower
+ * than the field, so on a short phone with the keyboard up it can leave a
+ * sliver, or nothing — the panel then hangs from a higher fallback instead.
+ */
+const COMFORT_HEIGHT = 2 * ROW_HEIGHT + PANEL_PADDING * 2 + FOOTER_HEIGHT;
+/** The panel hangs 8pt below its anchor (the tab strip), not on it. */
 const ANCHOR_GAP = theme.spacing.sm;
+/** The Marquee board's dim over the content behind an open panel. */
+const SCRIM_COLOR = "rgba(8,8,11,0.6)";
 
 /**
  * The same decelerating curve the bottom sheet enters on, for the same reason:
@@ -46,6 +55,12 @@ const EXIT_DURATION_MS = 140;
 /** How far it drops into place, and lifts back out. */
 const TRAVEL = 6;
 
+/** An anchor's bottom edge: in the screen root's coordinates, and in the window's. */
+interface AnchorBox {
+  top: number;
+  windowBottom: number;
+}
+
 /** The slice of a React Query result the panel actually renders states from. */
 export interface SuggestionQueryState {
   isPending: boolean;
@@ -57,10 +72,33 @@ export interface SuggestionQueryState {
 interface Props {
   /** Focused, long enough, and on the tab this kind belongs to. */
   visible: boolean;
-  /** The search field's outer view — measured to find its bottom edge. */
+  /**
+   * The view the panel hangs under — measured to find its bottom edge. The
+   * Search screen passes its TAB STRIP (the Marquee board), so the tabs stay
+   * tappable and the hint line under the field stays visible while typing.
+   */
   anchorRef: RefObject<View | null>;
+  /**
+   * Higher views to hang under instead, in order of preference (the screen
+   * passes the hint line, then the field). Used only when `anchorRef` leaves
+   * less than two rows and the footer above the keyboard — short phones, big
+   * text — so the suggestions never vanish where the old field-anchored panel
+   * still fitted. Must be a stable array: it is an effect dependency.
+   */
+  fallbackAnchorRefs?: ReadonlyArray<RefObject<View | null>>;
+  /**
+   * Changes whenever the anchor may have moved (the screen bumps it from the
+   * anchor's onLayout), so the panel re-measures instead of hanging at a
+   * stale position when the hint line under the field appears or goes.
+   */
+  anchorKey?: number;
   /** The screen's root view — the panel's own coordinate space. */
   containerRef: RefObject<View | null>;
+  /**
+   * A tap on the dimmed content behind the panel. The screen closes the panel
+   * and puts the keyboard away; omitted, the dim simply lets taps through.
+   */
+  onDismiss?: () => void;
   /**
    * The DEBOUNCED term the rows answer — never the raw keystroke, which could
    * label the footer with a term the list has not caught up to yet.
@@ -87,8 +125,12 @@ interface Props {
 }
 
 /**
- * The suggestion panel that hangs off the search field — the box, the motion
- * and every state, with the rows supplied by whichever kind is on screen.
+ * The suggestion panel that hangs under the search screen's tab strip (the
+ * Marquee board: the tabs stay tappable while typing) over a dim of the
+ * content behind it — the box, the motion and every state, with the rows
+ * supplied by whichever kind is on screen. When the tabs sit too low to leave
+ * room above the keyboard, it hangs from a higher fallback (the hint line,
+ * then the field) instead of disappearing.
  *
  * It answers a narrower question than the grid beneath it: "which of these is
  * the one I mean?" So each kind fetches its own small page on a short debounce.
@@ -104,7 +146,10 @@ interface Props {
 export function SuggestionPanel({
   visible,
   anchorRef,
+  fallbackAnchorRefs,
+  anchorKey,
   containerRef,
+  onDismiss,
   term,
   accessibilityLabel,
   emptyLabel,
@@ -148,33 +193,47 @@ export function SuggestionPanel({
   const keyboardInset = useKeyboardInset(mounted);
 
   /**
-   * Where the field's bottom edge is — once in the screen root's coordinates
-   * (the panel's own space) and once in the window's (to budget the height
-   * against the keyboard). Re-measured when the keyboard or the window changes
-   * and never while closed; the field itself does not move as the user types.
+   * Where each candidate anchor's bottom edge is — the preferred one first,
+   * then the fallbacks — once in the screen root's coordinates (the panel's
+   * own space) and once in the window's (to budget the height against the
+   * keyboard). Re-measured when the keyboard, the window or the anchors'
+   * layout changes, and never while closed. A fallback that is not on screen
+   * (the hint line comes and goes) is skipped, keeping the order.
    */
-  const [anchor, setAnchor] = useState<{ top: number; windowBottom: number } | null>(null);
+  const [anchors, setAnchors] = useState<AnchorBox[] | null>(null);
   useEffect(() => {
     if (!mounted) return;
-    const field = anchorRef.current;
     const root = containerRef.current;
-    if (!field || !root) return;
+    const primary = anchorRef.current;
+    if (!primary || !root) return;
+    const views = [primary, ...(fallbackAnchorRefs ?? []).map((ref) => ref.current)].filter(
+      (view): view is View => view != null,
+    );
     let cancelled = false;
-    field.measureInWindow((_x, y, _width, height) => {
-      root.measureInWindow((_rootX, rootY) => {
-        if (cancelled) return;
-        setAnchor({ top: y + height - rootY, windowBottom: y + height });
+    root.measureInWindow((_rootX, rootY) => {
+      const boxes: (AnchorBox | null)[] = views.map(() => null);
+      let remaining = views.length;
+      views.forEach((view, index) => {
+        view.measureInWindow((_x, y, _width, height) => {
+          // A zero box is a view not laid out yet — never something to hang from.
+          boxes[index] = height > 0 ? { top: y + height - rootY, windowBottom: y + height } : null;
+          remaining -= 1;
+          if (remaining === 0 && !cancelled) {
+            setAnchors(boxes.filter((box): box is AnchorBox => box != null));
+          }
+        });
       });
     });
     return () => {
       cancelled = true;
     };
-  }, [mounted, anchorRef, containerRef, keyboardInset, windowHeight]);
+  }, [mounted, anchorRef, fallbackAnchorRefs, anchorKey, containerRef, keyboardInset, windowHeight]);
 
   const panelStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
     transform: [{ translateY: -TRAVEL + progress.value * TRAVEL }],
   }));
+  const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
   const { isError, isPending, isFetching, refetch } = state;
   /**
@@ -189,13 +248,25 @@ export function SuggestionPanel({
   const footerVisible = !isPending && !isError && itemCount > 0;
 
   /**
-   * What is left between the field and the keyboard. On a small phone with the
-   * keyboard up this is two rows, not five — hence a computed cap rather than a
+   * What is left between an anchor and the keyboard. On a small phone with the
+   * keyboard up this is two rows, not four — hence a computed cap rather than a
    * fixed height, and nothing at all rather than a sliver.
+   *
+   * WHICH anchor: the first (tab strip, then hint line, then field) that
+   * leaves two whole rows and the footer. When none does, the highest one —
+   * the field, which always leaves the most — so the panel shows wherever the
+   * old field-anchored panel did, covering the tabs rather than vanishing.
    */
-  const available = anchor
-    ? windowHeight - anchor.windowBottom - ANCHOR_GAP - keyboardInset - theme.spacing.md
-    : 0;
+  const spaceUnder = (box: AnchorBox) =>
+    windowHeight - box.windowBottom - ANCHOR_GAP - keyboardInset - theme.spacing.md;
+  const anchor = anchors
+    ? (anchors.find((box) => spaceUnder(box) >= COMFORT_HEIGHT) ??
+      anchors.reduce<AnchorBox | null>(
+        (best, box) => (best == null || spaceUnder(box) > spaceUnder(best) ? box : best),
+        null,
+      ))
+    : null;
+  const available = anchor ? spaceUnder(anchor) : 0;
   const listMaxHeight = Math.min(
     MAX_VISIBLE_ROWS * ROW_HEIGHT,
     available - PANEL_PADDING * 2 - (footerVisible ? FOOTER_HEIGHT : 0),
@@ -213,79 +284,101 @@ export function SuggestionPanel({
   if (!mounted || !anchor || available < MIN_PANEL_HEIGHT) return null;
 
   return (
-    <Animated.View
-      // A fading-out panel must not eat a tap meant for the grid underneath.
-      pointerEvents={visible ? "auto" : "none"}
-      accessibilityLabel={accessibilityLabel}
-      style={[styles.panel, { top: anchor.top + ANCHOR_GAP }, panelStyle]}
-    >
-      {/* Two views, not one: the outer carries the opaque fill and the shadow
-          (Android's elevation needs a fill to cast anything), the inner carries
-          `overflow: hidden` — on iOS that flag clips a layer's own shadow away,
-          so the two can never share a view. */}
-      <View style={styles.clip}>
-        {isError ? (
-          <View style={styles.state}>
-            <ThemedText variant="caption" numberOfLines={2} style={styles.stateText}>
-              {t.search.suggestError}
-            </ThemedText>
-            <Pressable onPress={() => refetch()} hitSlop={10} accessibilityRole="button">
-              <ThemedText variant="caption" weight="semibold" color={theme.colors.primary}>
-                {t.common.retry}
+    <>
+      {/* The dim behind the panel (the board's 60% wash), from the anchor's
+          bottom edge down. A tap on it closes the panel — the dim says the
+          content behind is not what is being answered right now. Not a
+          screen-reader stop: the keyboard's own dismiss is that path. */}
+      <Animated.View
+        pointerEvents={visible && onDismiss ? "auto" : "none"}
+        style={[styles.scrim, { top: anchor.top }, scrimStyle]}
+      >
+        <Pressable
+          onPress={onDismiss}
+          accessible={false}
+          importantForAccessibility="no"
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+      <Animated.View
+        // A fading-out panel must not eat a tap meant for the grid underneath.
+        pointerEvents={visible ? "auto" : "none"}
+        accessibilityLabel={accessibilityLabel}
+        style={[styles.panel, { top: anchor.top + ANCHOR_GAP }, panelStyle]}
+      >
+        {/* Two views, not one: the outer carries the opaque fill and the shadow
+            (Android's elevation needs a fill to cast anything), the inner carries
+            `overflow: hidden` — on iOS that flag clips a layer's own shadow away,
+            so the two can never share a view. */}
+        <View style={styles.clip}>
+          {isError ? (
+            <View style={[styles.state, styles.errorState]} accessibilityRole="alert">
+              <ThemedText variant="muted" color={theme.colors.textMuted} numberOfLines={3} style={styles.stateText}>
+                {t.search.suggestError}
               </ThemedText>
-            </Pressable>
-          </View>
-        ) : isPending ? (
-          <SuggestionSkeletons count={skeletonCount} thumbWidth={thumbWidth} />
-        ) : itemCount === 0 ? (
-          <View style={styles.state}>
-            <ThemedText variant="caption" numberOfLines={2} style={styles.stateText}>
-              {emptyLabel}
-            </ThemedText>
-          </View>
-        ) : (
-          <ScrollView
-            style={[{ maxHeight: listMaxHeight }, isFetching && styles.refetching]}
-            // A row press must land on the FIRST touch with the keyboard up.
-            // The prop only applies to the scroll ancestors of the tapped view,
-            // so the grid's own copy does nothing for these rows.
-            keyboardShouldPersistTaps="handled"
-            // Flicking through the suggestions is reading, not dismissing —
-            // taking the keyboard away here would close the panel mid-scroll.
-            keyboardDismissMode="none"
-            showsVerticalScrollIndicator={false}
-          >
-            {children}
-          </ScrollView>
-        )}
-
-        {footerVisible ? (
-          /* It names the DEBOUNCED term, the one the rows above it actually
-             answer — never the raw keystroke, which could label the row with a
-             term the list has not caught up to yet. The wording is shared by
-             all three kinds because it says "results", not "movies". */
-          <Pressable
-            onPress={onSeeAll}
-            accessibilityRole="button"
-            accessibilityLabel={t.search.seeAllResults.replace("{term}", term)}
-            // Same tint as a suggestion row, for the same reason: a 44pt row
-            // that scales reads as the panel wobbling.
-            style={({ pressed }) => [styles.footer, pressed && rowStyles.rowPressed]}
-          >
-            <ThemedText
-              variant="caption"
-              weight="semibold"
-              color={theme.colors.primary}
-              numberOfLines={1}
-              style={styles.footerLabel}
+              <Pressable
+                onPress={() => refetch()}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.retry, pressed && rowStyles.rowPressed]}
+              >
+                <ThemedText variant="muted" weight="extrabold" color={theme.colors.link}>
+                  {t.common.retry}
+                </ThemedText>
+              </Pressable>
+            </View>
+          ) : isPending ? (
+            <SuggestionSkeletons count={skeletonCount} thumbWidth={thumbWidth} />
+          ) : itemCount === 0 ? (
+            <View style={[styles.state, styles.emptyState]}>
+              <Ionicons name="search" size={20} color={theme.colors.textFaint} />
+              <ThemedText variant="muted" color={theme.colors.textMuted} numberOfLines={3} style={styles.stateText}>
+                {emptyLabel}
+              </ThemedText>
+            </View>
+          ) : (
+            <ScrollView
+              style={[{ maxHeight: listMaxHeight }, isFetching && styles.refetching]}
+              // A row press must land on the FIRST touch with the keyboard up.
+              // The prop only applies to the scroll ancestors of the tapped view,
+              // so the grid's own copy does nothing for these rows.
+              keyboardShouldPersistTaps="handled"
+              // Flicking through the suggestions is reading, not dismissing —
+              // taking the keyboard away here would close the panel mid-scroll.
+              keyboardDismissMode="none"
+              showsVerticalScrollIndicator={false}
             >
-              {t.search.seeAllResults.replace("{term}", term)}
-            </ThemedText>
-            <Ionicons name="arrow-forward" size={16} color={theme.colors.primary} />
-          </Pressable>
-        ) : null}
-      </View>
-    </Animated.View>
+              {children}
+            </ScrollView>
+          )}
+
+          {footerVisible ? (
+            /* It names the DEBOUNCED term, the one the rows above it actually
+               answer — never the raw keystroke, which could label the row with a
+               term the list has not caught up to yet. The wording is shared by
+               all three kinds because it says "results", not "movies". */
+            <Pressable
+              onPress={onSeeAll}
+              accessibilityRole="button"
+              accessibilityLabel={t.search.seeAllResults.replace("{term}", term)}
+              // Same tint as a suggestion row, for the same reason: a 44pt row
+              // that scales reads as the panel wobbling.
+              style={({ pressed }) => [styles.footer, pressed && rowStyles.rowPressed]}
+            >
+              <ThemedText
+                variant="muted"
+                weight="bold"
+                color={theme.colors.link}
+                numberOfLines={1}
+                style={styles.footerLabel}
+              >
+                {t.search.seeAllResults.replace("{term}", term)}
+              </ThemedText>
+              <Ionicons name="arrow-forward" size={16} color={theme.colors.link} />
+            </Pressable>
+          ) : null}
+        </View>
+      </Animated.View>
+    </>
   );
 }
 
@@ -307,22 +400,30 @@ function SuggestionSkeletons({ count, thumbWidth }: { count: number; thumbWidth:
 }
 
 const styles = StyleSheet.create({
+  scrim: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: SCRIM_COLOR,
+    zIndex: 19,
+  },
   panel: {
     position: "absolute",
     // The screen's own padding, so the panel is exactly as wide as the field.
     left: theme.layout.screenPadding,
     right: theme.layout.screenPadding,
-    borderRadius: theme.radius.xl,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: theme.colors.borderStrong,
-    backgroundColor: theme.colors.popover,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
     ...theme.shadow.lg,
     // Paint order settles it on iOS; Android needs the elevation above the
     // cards below (MediaCard carries shadow.sm, elevation 3) and the zIndex to
     // stay in front of siblings that are laid out after it.
     zIndex: 20,
   },
-  clip: { borderRadius: theme.radius.xl, overflow: "hidden", padding: PANEL_PADDING },
+  clip: { borderRadius: 16, overflow: "hidden", padding: PANEL_PADDING },
   /** A refetch dims the held-over rows instead of replacing them. */
   refetching: { opacity: 0.7 },
   state: {
@@ -334,6 +435,14 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
   },
   stateText: { flexShrink: 1 },
+  emptyState: { justifyContent: "flex-start", gap: 12, paddingHorizontal: 10, paddingVertical: 14 },
+  errorState: { paddingVertical: theme.spacing.xs, paddingRight: 0, paddingLeft: 10 },
+  retry: {
+    minHeight: theme.layout.minTouch,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.md,
+  },
   /** A control, so it carries the full touch target — FOOTER_HEIGHT agrees. */
   footer: {
     flexDirection: "row",
@@ -342,7 +451,7 @@ const styles = StyleSheet.create({
     minHeight: theme.layout.minTouch,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
-    paddingHorizontal: theme.spacing.sm + theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
   },
   footerLabel: { flex: 1 },
 });

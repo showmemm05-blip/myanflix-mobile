@@ -2,16 +2,14 @@ import { StyleSheet, View } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { GamePlate } from "@/components/common/GamePlate";
 import { PressableScale } from "@/components/ui/PressableScale";
-import { SectionHeader } from "@/components/ui/SectionHeader";
 import { ThemedText } from "@/components/ui/ThemedText";
+import { ArcadeArt } from "@/components/arcade/ArcadeArt";
 import { ArcadeBadge } from "@/components/arcade/ArcadeBadge";
-import { FreeTag } from "@/components/arcade/FreeTag";
-import { SectionRule } from "@/components/arcade/SectionRule";
-import { SlugText } from "@/components/arcade/SlugText";
-import { featuredGames, isFreeGame } from "@/data/arcade";
-import { PLATE_PALETTES, formatKyat, type Game } from "@/data/games";
+import { ArcadePrice, priceLabel } from "@/components/arcade/ArcadePrice";
+import { ArcadeSection } from "@/components/arcade/ArcadeSection";
+import { featuredGames } from "@/data/arcade";
+import type { Game } from "@/data/games";
 import { useHomeLayout } from "@/hooks/useHomeLayout";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
@@ -20,45 +18,71 @@ interface Props {
   onPressGame: () => void;
 }
 
-function FeaturedCard({ game, width, onPress }: { game: Game; width: number | "100%"; onPress: () => void }) {
+/**
+ * The title set in the art is a logotype, not body copy (the spoken label
+ * carries it). At 2× the catalogue's widest word, EMBERFALL, is ~253pt at 22pt
+ * black, which still fits the 260pt column of a 320pt phone; past that (the
+ * iOS accessibility sizes) it would break mid-word, so it stops growing here.
+ */
+const ART_TITLE_MAX_SCALE = 2;
+
+/** "·" between meta values — decoration only. */
+function Sep() {
   return (
-    <PressableScale
-      onPress={onPress}
-      accessibilityLabel={game.title}
-      style={width === "100%" ? styles.cardFull : { width }}
-    >
-      <GamePlate palette={PLATE_PALETTES[game.id]} radius="xl" style={styles.plate}>
+    <ThemedText variant="caption" color={theme.colors.textDecor} importantForAccessibility="no">
+      ·
+    </ThemedText>
+  );
+}
+
+function FeaturedCard({ game, width, onPress }: { game: Game; width: number | "100%"; onPress: () => void }) {
+  const { t } = useLanguage();
+  const price = priceLabel(game, t.arcade.price.free);
+  // One spoken sentence for the whole card: title, genre, platforms, rating, price.
+  const label = [
+    game.title,
+    game.genre,
+    game.platforms.join(", "),
+    game.rating !== null ? t.arcade.a11y.rated.replace("{rating}", game.rating.toFixed(1)) : null,
+    price,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <PressableScale onPress={onPress} accessibilityLabel={label} style={{ width }}>
+      <View style={styles.art}>
+        <ArcadeArt gameId={game.id} format="landscape" band />
+        {/* Game titles stay Latin in both languages, so the art may set them in capitals. */}
+        <ThemedText weight="black" maxFontSizeMultiplier={ART_TITLE_MAX_SCALE} style={styles.artTitle}>
+          {game.title}
+        </ThemedText>
         {game.badge && <ArcadeBadge kind={game.badge} style={styles.badge} />}
+      </View>
 
-        <View style={styles.overlay}>
-          <View style={styles.titleColumn}>
-            <ThemedText variant="body" weight="semibold" numberOfLines={1}>
-              {game.title}
-            </ThemedText>
-            <View style={styles.metaRow}>
-              <ThemedText variant="caption" color={theme.colors.textMuted}>
-                {game.genre}
-              </ThemedText>
-              <ThemedText variant="caption" color={theme.colors.textFaint}>
-                ·
-              </ThemedText>
-              <SlugText>{game.platforms.join(" · ")}</SlugText>
-              {game.rating !== null && (
-                <>
-                  <Ionicons name="star" size={10} color={theme.colors.premium} />
-                  <SlugText>{game.rating.toFixed(1)}</SlugText>
-                </>
-              )}
-            </View>
-          </View>
-
-          {isFreeGame(game) ? (
-            <FreeTag />
-          ) : game.priceMMK !== null ? (
-            <SlugText color={theme.colors.text}>{formatKyat(game.priceMMK)}</SlugText>
-          ) : null}
+      <View style={styles.metaRow}>
+        <View style={styles.meta}>
+          <ThemedText variant="caption" weight="regular" color={theme.colors.textMuted}>
+            {game.genre}
+          </ThemedText>
+          <Sep />
+          <ThemedText variant="caption" weight="regular" color={theme.colors.textMuted}>
+            {game.platforms.join(" · ")}
+          </ThemedText>
+          {game.rating !== null && (
+            <>
+              <Sep />
+              <View style={styles.rating}>
+                <Ionicons name="star" size={12} color={theme.colors.premium} />
+                <ThemedText variant="caption" weight="regular" color={theme.colors.textBody} tabular>
+                  {game.rating.toFixed(1)}
+                </ThemedText>
+              </View>
+            </>
+          )}
         </View>
-      </GamePlate>
+        <ArcadePrice game={game} size="md" />
+      </View>
     </PressableScale>
   );
 }
@@ -69,45 +93,65 @@ export function StoreFeatured({ onPressGame }: Props) {
   const layout = useHomeLayout();
 
   const cardWidth: number | "100%" = layout.isWide
-    ? (layout.width - layout.gutter * 2 - theme.spacing.md) / 2
+    ? (layout.width - layout.gutter * 2 - GRID_GAP) / 2
     : "100%";
 
   return (
-    <SectionRule>
-      <SectionHeader eyebrow={t.arcade.featured.kicker} title={t.arcade.featured.title} />
+    <ArcadeSection
+      eyebrow={t.arcade.featured.kicker}
+      title={t.arcade.featured.title}
+      spacing={28}
+      gutter={layout.gutter}
+    >
       <View style={[styles.grid, { paddingHorizontal: layout.gutter }]}>
         {featuredGames.map((game) => (
           <FeaturedCard key={game.id} game={game} width={cardWidth} onPress={onPressGame} />
         ))}
       </View>
-    </SectionRule>
+    </ArcadeSection>
   );
 }
+
+const GRID_GAP = 16;
 
 const styles = StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: theme.spacing.md,
+    columnGap: GRID_GAP,
+    rowGap: 20,
   },
-  cardFull: { width: "100%" },
-  plate: { aspectRatio: 16 / 9 },
-  badge: {
-    position: "absolute",
-    top: theme.spacing.sm,
-    left: theme.spacing.sm,
+  art: {
+    aspectRatio: 16 / 9,
+    borderRadius: theme.radius.lg,
+    overflow: "hidden",
   },
-  overlay: {
+  /** 22/23 black, tight, in capitals — set into the art's dark band. */
+  artTitle: {
     position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
+    left: 14,
+    right: 14,
+    bottom: 13,
+    fontSize: 22,
+    lineHeight: 23,
+    letterSpacing: -0.44,
+    textTransform: "uppercase",
+    color: theme.colors.text,
+  },
+  badge: { position: "absolute", top: 10, left: 10 },
+  metaRow: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    gap: theme.spacing.sm,
-    padding: theme.spacing.md,
+    gap: 12,
+    marginTop: theme.spacing.sm,
   },
-  titleColumn: { flex: 1, gap: 2 },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  meta: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    columnGap: 6,
+  },
+  rating: { flexDirection: "row", alignItems: "center", gap: 3 },
 });

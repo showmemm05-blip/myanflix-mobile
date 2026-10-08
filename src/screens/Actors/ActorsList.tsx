@@ -1,42 +1,46 @@
-import { useCallback, useMemo } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  RefreshControl,
-  StyleSheet,
-  TextInput,
-  View,
-  type ListRenderItemInfo,
-} from "react-native";
-// Deep import, not the "@expo/vector-icons" root: that barrel statically
-// require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { memo, useCallback, useMemo } from "react";
+import { FlatList, RefreshControl, StyleSheet, View, type ListRenderItemInfo } from "react-native";
+import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import { useAnimatedRef } from "react-native-reanimated";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PressableScale } from "@/components/ui/PressableScale";
+import { SearchField } from "@/components/ui/SearchField";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { TopBar } from "@/components/layout/TopBar";
-import { ActorAvatar } from "@/components/common/ActorAvatar";
+import {
+  GLASS_BAR_ROW,
+  GlassBarBackground,
+  GlassScrollFeed,
+  GlassTarget,
+  useGlassBar,
+} from "@/components/layout/GlassBar";
+import { personInitials } from "@/components/common/ActorAvatar";
 import { ListFooterSpinner } from "@/components/common/ListFooterSpinner";
-import { ActorGridSkeleton } from "@/components/actors/ActorGridSkeleton";
+import { Skeleton } from "@/components/common/Skeleton";
 import { useActorsInfinite } from "@/hooks/useActors";
 import { flattenPages } from "@/hooks/pagination";
-import { usePosterGrid } from "@/hooks/usePosterGrid";
+import { usePosterGrid, type PosterGridLayout } from "@/hooks/usePosterGrid";
 import { useSearchTerm } from "@/hooks/useSearchTerm";
+import { useDockClearance } from "@/hooks/useDockClearance";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { actorCreditsCaption } from "@/utils/actorCredits";
-import { theme } from "@/theme";
+import { theme, withAlpha } from "@/theme";
 import type { SearchStackParamList } from "@/navigation/types";
 import type { ActorListItem } from "@/api/actors.api";
 
 type Props = NativeStackScreenProps<SearchStackParamList, "ActorsList">;
 
+/** Actors.dc.html: a 110 × 138 portrait card — the cell's width, this ratio. */
+const CARD_RATIO = 138 / 110;
+/** Air between the bar and the count line over the grid. */
+const GRID_TOP = 12;
 /**
- * The headshot diameter. Larger than the People rail's 64 because a cell gets
- * a third of the width rather than a slot in a scrolling row — at 72 a face is
- * recognisable and three still fit a phone comfortably.
+ * The bar's height under the inset before it is measured: the control row,
+ * the large title (8 + 40 + 8) and the search block (16 + 48 + 8).
  */
-const PERSON_AVATAR_SIZE = 72;
+const BAR_ROWS_ESTIMATE = GLASS_BAR_ROW + 56 + 72;
 
 function RowSeparator() {
   return <View style={styles.rowGap} />;
@@ -45,13 +49,87 @@ function RowSeparator() {
 const keyExtractor = (item: ActorListItem) => item.id;
 
 /**
- * Everyone in the catalogue — an endless alphabetical grid of faces with its
- * own search field, the sibling of BooksCatalog.
+ * One person (Actors.dc.html): a portrait card — their photo when the
+ * catalogue has one, big initials on the avatar tone otherwise — then the
+ * name (two lines, never an ellipsis on one) and the credits caption, worded
+ * by `actorCreditsCaption`, the same helper the actor page's hero uses. Both
+ * counts are the backend's, already on every row, so a cell costs nothing.
+ */
+const PersonCard = memo(function PersonCard({
+  person,
+  width,
+  credits,
+  onPress,
+}: {
+  person: ActorListItem;
+  width: number;
+  credits: string;
+  onPress: (person: ActorListItem) => void;
+}) {
+  const height = Math.round(width * CARD_RATIO);
+  return (
+    <PressableScale
+      onPress={() => onPress(person)}
+      dimOnPress
+      accessibilityLabel={`${person.name}, ${credits}`}
+      style={{ width }}
+    >
+      <View style={[styles.portrait, { height }]}>
+        {person.imageUrl ? (
+          <Image
+            source={{ uri: person.imageUrl }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={180}
+            cachePolicy="memory-disk"
+            accessible={false}
+          />
+        ) : (
+          <ThemedText weight="black" color={theme.colors.onAvatar} style={styles.initials} allowFontScaling={false}>
+            {personInitials(person.name)}
+          </ThemedText>
+        )}
+        <LinearGradient
+          colors={[withAlpha(theme.colors.background, 0), withAlpha(theme.colors.background, 0.45)]}
+          style={styles.portraitScrim}
+          pointerEvents="none"
+        />
+      </View>
+      <ThemedText variant="muted" weight="bold" color={theme.colors.text} numberOfLines={2} style={styles.name}>
+        {person.name}
+      </ThemedText>
+      <ThemedText variant="label" weight="regular" tabular color={theme.colors.textFaint} style={styles.credits}>
+        {credits}
+      </ThemedText>
+    </PressableScale>
+  );
+});
+
+function PeopleGridSkeleton({ grid }: { grid: PosterGridLayout }) {
+  const height = Math.round(grid.cellWidth * CARD_RATIO);
+  return (
+    <View style={styles.skeleton} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Skeleton width={96} height={13} radius="xs" style={styles.skeletonCount} />
+      <View style={[styles.skeletonGrid, { gap: grid.gap }]}>
+        {Array.from({ length: grid.columns * 3 }).map((_, index) => (
+          <View key={index} style={{ width: grid.cellWidth }}>
+            <Skeleton width={grid.cellWidth} height={height} radius="lg" />
+            <Skeleton width="76%" height={13} radius="xs" style={styles.skeletonLine} />
+            <Skeleton width="55%" height={11} radius="xs" style={styles.skeletonLineTight} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Everyone in the catalogue — an endless alphabetical grid of people with its
+ * own search field, the sibling of the authors list (Actors.dc.html).
  *
  * It was a sixth tab of the Media screen for one round; six tabs overflowed
  * the strip, so the owner moved the list here and reaches it from the People
- * button in the results header instead. Nothing about the list itself changed:
- * same paged query, same cells, same empties.
+ * button in the results header instead. Same paged query, same empties.
  *
  * Debounced (useSearchTerm) unlike the Media screen, which freezes its grid
  * until a term is committed — there is nothing to protect here, no filters and
@@ -60,10 +138,15 @@ const keyExtractor = (item: ActorListItem) => item.id;
  */
 export function ActorsListScreen({ navigation }: Props) {
   const { t } = useLanguage();
-  // "default" is the three-column browse density — a 72pt disc with a name and
-  // a film count under it wants a third of the width, not the half a spacious
-  // poster grid hands out.
+  // "default" is the three-column browse density — the board's three 110pt
+  // cards on a phone.
   const grid = usePosterGrid();
+  const dockClearance = useDockClearance();
+  // The glass bar (components/layout/GlassBar): the title and the search field
+  // float over the grid, transparent at the top, frosted once faces scroll
+  // under them.
+  const glass = useGlassBar(BAR_ROWS_ESTIMATE);
+  const listRef = useAnimatedRef<FlatList<ActorListItem>>();
   const {
     term: searchText,
     setTerm: setSearchText,
@@ -79,7 +162,7 @@ export function ActorsListScreen({ navigation }: Props) {
   // firing a request that matches half the catalogue.
   const peopleQuery = useActorsInfinite(effectiveTerm);
   const people = useMemo(() => flattenPages(peopleQuery.data?.pages), [peopleQuery.data]);
-  const isSearching = isDebouncing || peopleQuery.isFetching;
+  const isSearching = isDebouncing || (peopleQuery.isFetching && !peopleQuery.isFetchingNextPage);
   const total = peopleQuery.data?.pages[0]?.total;
 
   /**
@@ -105,34 +188,9 @@ export function ActorsListScreen({ navigation }: Props) {
   );
 
   const cellWidth = grid.cellWidth;
-  /**
-   * One cell: the round headshot the rail and the actor page draw, the name
-   * under it, and the person's credits as a caption — `actorCreditsCaption`,
-   * the same helper the actor page's hero uses, so "1 movie · 1 series" is
-   * worded identically in both places. Both counts are the backend's, already
-   * on every row, so a cell costs no extra request.
-   */
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<ActorListItem>) => (
-      <PressableScale
-        onPress={() => goToActor(item)}
-        accessibilityLabel={item.name}
-        style={[styles.personCell, { width: cellWidth }]}
-      >
-        <ActorAvatar name={item.name} imageUrl={item.imageUrl} size={PERSON_AVATAR_SIZE} />
-        <ThemedText
-          variant="caption"
-          weight="medium"
-          color={theme.colors.text}
-          numberOfLines={2}
-          style={styles.personName}
-        >
-          {item.name}
-        </ThemedText>
-        <ThemedText variant="caption" numberOfLines={1} tabular style={styles.personCount}>
-          {actorCreditsCaption(t, item)}
-        </ThemedText>
-      </PressableScale>
+      <PersonCard person={item} width={cellWidth} credits={actorCreditsCaption(t, item)} onPress={goToActor} />
     ),
     [cellWidth, goToActor, t],
   );
@@ -141,7 +199,7 @@ export function ActorsListScreen({ navigation }: Props) {
   const listHeader = useMemo(
     () => (
       <View style={styles.countRow}>
-        <ThemedText variant="caption" numberOfLines={1}>
+        <ThemedText variant="caption" tabular color={theme.colors.textFaint} accessibilityLiveRegion="polite">
           {countLabel ?? ""}
         </ThemedText>
       </View>
@@ -150,7 +208,7 @@ export function ActorsListScreen({ navigation }: Props) {
   );
   /**
    * FlatList compares `ListFooterComponent` by identity, so the element only
-   * moves when the spinner should appear or go.
+   * moves when the dots should appear or go.
    */
   const listFooter = useMemo(
     () => <ListFooterSpinner visible={peopleQuery.isFetchingNextPage} />,
@@ -160,138 +218,152 @@ export function ActorsListScreen({ navigation }: Props) {
       the cell width it was measured from. */
   const rowStyle = useMemo(() => [styles.gridRow, { gap: grid.gap }], [grid.gap]);
 
+  // Every state starts under the floating bar; the grid scrolls up beneath it.
+  const underBar = [styles.state, { paddingTop: glass.barHeight }];
+
   return (
     <View style={styles.container}>
-      <TopBar title={t.search.people} large onBack={() => navigation.goBack()} backAccessibilityLabel={t.common.back}>
-        <View style={styles.headerBlock}>
-          <View style={styles.searchBar}>
-            {/* Leading glyph doubles as the progress indicator — same idiom as
-                BooksCatalog and the Media screen's own field. */}
-            <View style={styles.searchGlyph}>
-              {isSearching ? (
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-              ) : (
-                <Ionicons name="search" size={18} color={theme.colors.textFaint} />
-              )}
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder={t.search.placeholderPeople}
-              placeholderTextColor={theme.colors.textFaint}
-              value={searchText}
-              onChangeText={setSearchText}
-              returnKeyType="search"
-              autoCorrect={false}
+      <GlassTarget targetRef={glass.blurTarget}>
+        {peopleQuery.isLoading ? (
+          <View style={underBar}>
+            <PeopleGridSkeleton grid={grid} />
+          </View>
+        ) : peopleQuery.isError ? (
+          <View style={underBar}>
+            <EmptyState
+              title={t.search.errorTitle}
+              message={t.common.somethingWentWrong}
+              icon="cloud-offline-outline"
+              tone={theme.colors.danger}
+              actionLabel={t.common.retry}
+              onAction={() => peopleQuery.refetch()}
             />
-            {searchText.length > 0 && (
-              <PressableScale onPress={clearSearch} style={styles.clearButton} accessibilityLabel={t.common.clear}>
-                <Ionicons name="close-circle" size={18} color={theme.colors.textFaint} />
-              </PressableScale>
+          </View>
+        ) : people.length === 0 ? (
+          /* Two different facts, two different sentences. With a term the
+             catalogue simply has nobody by that name, and the way out is to drop
+             the term. Without one the screen is empty because the catalogue is,
+             which no action of the user's can fix, so that one offers none. */
+          <View style={underBar}>
+            {effectiveTerm ? (
+              <EmptyState
+                title={t.search.noResultsTitle}
+                message={t.search.noPeopleBody.replace("{term}", effectiveTerm)}
+                icon="search-outline"
+                actionLabel={t.search.clearField}
+                onAction={clearSearch}
+              />
+            ) : (
+              <EmptyState title={t.search.peopleEmptyTitle} message={t.search.peopleEmptyBody} icon="people-outline" />
             )}
           </View>
+        ) : (
+          <>
+            <FlatList
+              ref={listRef}
+              // RN cannot change `numColumns` in place — the list has to remount
+              // when a rotation re-flows the grid.
+              key={`actors-grid-${grid.columns}`}
+              data={people}
+              numColumns={grid.columns}
+              keyExtractor={keyExtractor}
+              contentContainerStyle={{ paddingTop: glass.barHeight + GRID_TOP, paddingBottom: dockClearance }}
+              columnWrapperStyle={rowStyle}
+              ItemSeparatorComponent={RowSeparator}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+              renderItem={renderItem}
+              ListHeaderComponent={listHeader}
+              ListFooterComponent={listFooter}
+              onEndReachedThreshold={0.6}
+              onEndReached={() => {
+                if (peopleQuery.hasNextPage && !peopleQuery.isFetchingNextPage) peopleQuery.fetchNextPage();
+              }}
+              refreshControl={
+                <RefreshControl
+                  refreshing={peopleQuery.isRefetching && !peopleQuery.isFetchingNextPage}
+                  onRefresh={() => peopleQuery.refetch()}
+                  tintColor={theme.colors.primary}
+                  colors={[theme.colors.primary]}
+                  progressBackgroundColor={theme.colors.surface}
+                  progressViewOffset={glass.barHeight}
+                />
+              }
+              initialNumToRender={grid.columns * 4}
+              maxToRenderPerBatch={grid.columns * 4}
+              windowSize={5}
+              removeClippedSubviews
+              scrollEventThrottle={16}
+            />
+            <GlassScrollFeed scrollRef={listRef} scrollY={glass.scrollY} />
+          </>
+        )}
+      </GlassTarget>
+
+      <GlassBarBackground scrollY={glass.scrollY} height={glass.barHeight} blurTarget={glass.blurTarget} />
+      <TopBar
+        title={t.search.people}
+        large
+        floating
+        touchThrough
+        onLayout={glass.onBarLayout}
+        onBack={() => navigation.goBack()}
+        backAccessibilityLabel={t.common.back}
+      >
+        <View style={styles.headerBlock} pointerEvents="box-none">
+          <SearchField
+            value={searchText}
+            onChangeText={setSearchText}
+            // Results follow the typing here; return only puts the keyboard away.
+            onSubmit={() => {}}
+            onClear={clearSearch}
+            loading={isSearching && searchText.length > 0}
+            placeholder={t.search.placeholderPeople}
+            accessibilityLabel={t.search.placeholderPeople}
+            clearAccessibilityLabel={t.common.clear}
+          />
         </View>
       </TopBar>
-
-      {peopleQuery.isLoading ? (
-        <ActorGridSkeleton grid={grid} avatar={PERSON_AVATAR_SIZE} />
-      ) : peopleQuery.isError ? (
-        <EmptyState
-          title={t.search.errorTitle}
-          message={t.common.somethingWentWrong}
-          icon="cloud-offline-outline"
-          tone={theme.colors.danger}
-          actionLabel={t.common.retry}
-          onAction={() => peopleQuery.refetch()}
-        />
-      ) : people.length === 0 ? (
-        /* Two different facts, two different sentences. With a term the
-           catalogue simply has nobody by that name, and the way out is to drop
-           the term. Without one the screen is empty because the catalogue is,
-           which no action of the user's can fix, so that one offers none. */
-        effectiveTerm ? (
-          <EmptyState
-            title={t.search.noResultsTitle}
-            message={t.search.noPeopleBody.replace("{term}", effectiveTerm)}
-            icon="search-outline"
-            actionLabel={t.search.clearField}
-            onAction={clearSearch}
-          />
-        ) : (
-          <EmptyState title={t.search.peopleEmptyTitle} message={t.search.peopleEmptyBody} icon="people-outline" />
-        )
-      ) : (
-        <FlatList
-          // RN cannot change `numColumns` in place — the list has to remount
-          // when a rotation re-flows the grid.
-          key={`actors-grid-${grid.columns}`}
-          data={people}
-          numColumns={grid.columns}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={styles.gridContent}
-          columnWrapperStyle={rowStyle}
-          ItemSeparatorComponent={RowSeparator}
-          keyboardDismissMode="on-drag"
-          keyboardShouldPersistTaps="handled"
-          renderItem={renderItem}
-          ListHeaderComponent={listHeader}
-          ListFooterComponent={listFooter}
-          onEndReachedThreshold={0.6}
-          onEndReached={() => {
-            if (peopleQuery.hasNextPage && !peopleQuery.isFetchingNextPage) peopleQuery.fetchNextPage();
-          }}
-          refreshControl={
-            <RefreshControl
-              refreshing={peopleQuery.isRefetching && !peopleQuery.isFetchingNextPage}
-              onRefresh={() => peopleQuery.refetch()}
-              tintColor={theme.colors.primary}
-              colors={[theme.colors.primary]}
-              progressBackgroundColor={theme.colors.surface}
-            />
-          }
-          initialNumToRender={grid.columns * 4}
-          maxToRenderPerBatch={grid.columns * 4}
-          windowSize={5}
-          removeClippedSubviews
-        />
-      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  headerBlock: { paddingHorizontal: theme.layout.screenPadding, paddingBottom: theme.spacing.sm },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    minHeight: theme.layout.minTouch,
-    backgroundColor: theme.colors.surfaceElevated,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: theme.spacing.md,
-  },
-  input: {
-    flex: 1,
-    color: theme.colors.text,
-    paddingVertical: 11,
-    fontSize: 15,
-    fontFamily: theme.font.regular,
-  },
-  searchGlyph: { width: 20, height: 20, alignItems: "center", justifyContent: "center" },
-  clearButton: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
-  rowGap: { height: theme.spacing.lg },
+  headerBlock: { paddingHorizontal: theme.layout.screenPadding, paddingTop: theme.spacing.md, paddingBottom: theme.spacing.sm },
+  rowGap: { height: 20 },
   /** Keeps its height whether or not the count is known, so the grid never jumps. */
   countRow: {
     minHeight: 24,
     justifyContent: "center",
     paddingHorizontal: theme.layout.screenPadding,
-    paddingBottom: theme.spacing.xs,
+    paddingBottom: 14,
   },
-  gridContent: { paddingTop: theme.spacing.md, paddingBottom: theme.layout.tabBarClearance },
+  /** A non-list state (loading, error, empty) fills the page under the bar. */
+  state: { flex: 1 },
   gridRow: { paddingHorizontal: theme.layout.screenPadding },
-  personCell: { alignItems: "center", gap: theme.spacing.xs },
-  personName: { textAlign: "center", fontSize: 12, lineHeight: 16 },
-  personCount: { textAlign: "center", color: theme.colors.textMuted, fontSize: 11 },
+  portrait: {
+    width: "100%",
+    borderRadius: theme.radius.lg,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.avatar,
+  },
+  /** A Burmese initial needs the taller line — never clipped at the top. */
+  initials: { fontSize: 40, lineHeight: 56 },
+  portraitScrim: { position: "absolute", left: 0, right: 0, bottom: 0, height: 40 },
+  name: { marginTop: theme.spacing.sm },
+  credits: { marginTop: 2, letterSpacing: 0 },
+  skeleton: { paddingTop: 22 },
+  skeletonCount: { marginHorizontal: theme.layout.screenPadding },
+  skeletonGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: 20,
+    marginTop: 16,
+    paddingHorizontal: theme.layout.screenPadding,
+  },
+  skeletonLine: { marginTop: 12 },
+  skeletonLineTight: { marginTop: 8 },
 });

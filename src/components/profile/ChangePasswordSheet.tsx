@@ -1,15 +1,19 @@
 import { useRef, useState } from "react";
-import { StyleSheet, View, type TextInput } from "react-native";
-import { Button } from "@/components/ui/Button";
+import { ScrollView, StyleSheet, View, type TextInput } from "react-native";
 import { BottomSheet } from "@/components/ui/BottomSheet";
+import { SheetForm } from "@/components/wallet/SheetForm";
 import {
-  ErrorNotice,
-  FieldError,
-  FieldLabel,
-  SheetForm,
-  SheetInput,
-  SheetSuccess,
-} from "@/components/wallet/SheetForm";
+  AccountField,
+  ActionButton,
+  FieldCaption,
+  IconDisc,
+  InlineError,
+  Notice,
+  SheetHeader,
+  SheetIntro,
+  SuccessPanel,
+  accountActionBar,
+} from "@/components/profile/AccountKit";
 import { useChangePassword } from "@/hooks/useProfile";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { ApiError } from "@/utils/errors";
@@ -25,6 +29,8 @@ interface Props {
 
 /**
  * "Change password" — current, new, confirm, posted to PATCH /users/me/password.
+ * Marquee: ChangePassword.dc.html — a crimson lock disc, the 24pt title, three
+ * 56pt fields with an eye toggle each, one crimson commit.
  *
  * The three values live in this component's own state and nowhere else: never
  * logged, never persisted, never handed to a store or a query cache, and wiped
@@ -59,6 +65,7 @@ export function ChangePasswordSheet({ visible, onClose }: Props) {
   // same, because an older account may hold a password shorter than today's floor.
   const canSubmit =
     currentPassword.length > 0 && newPassword.length >= MIN_PASSWORD && confirmPassword === newPassword;
+  const busy = changePassword.isPending;
 
   const reset = () => {
     setCurrentPassword("");
@@ -115,111 +122,145 @@ export function ChangePasswordSheet({ visible, onClose }: Props) {
     }
   };
 
+  const header = (
+    <SheetHeader onClose={handleClose} closeLabel={t.common.close} closeDisabled={busy}>
+      {succeeded ? null : (
+        <IconDisc icon="lock-closed-outline" color={theme.colors.link} fill={theme.colors.primarySoft} />
+      )}
+    </SheetHeader>
+  );
+
   return (
     <BottomSheet
       visible={visible}
       onClose={handleClose}
-      snapHeight={succeeded ? 420 : 600}
-      title={succeeded ? t.profile.passwordUpdatedTitle : t.profile.changePassword}
-      subtitle={succeeded ? undefined : t.profile.changePasswordSubtitle}
-      showClose
-      dismissible={!changePassword.isPending}
+      snapHeight={succeeded ? 440 : 640}
+      header={header}
+      dismissible={!busy}
     >
       {succeeded ? (
-        <View style={styles.successPane}>
-          <SheetSuccess title={t.profile.passwordUpdatedTitle} body={t.profile.passwordUpdatedBody} />
-          <Button title={t.common.close} onPress={handleClose} size="lg" style={styles.successButton} />
-        </View>
+        /* Centred while it fits; at large text sizes the tick, the two lines
+           and Close outgrow the 440pt sheet, and it scrolls instead of
+           pushing Close off the bottom edge. */
+        <ScrollView
+          style={styles.successScroll}
+          contentContainerStyle={styles.successPane}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          overScrollMode="never"
+        >
+          <SuccessPanel title={t.profile.passwordUpdatedTitle} body={t.profile.passwordUpdatedBody} />
+          <ActionButton title={t.common.close} tone="play" onPress={handleClose} style={styles.successButton} />
+        </ScrollView>
       ) : (
         <SheetForm
+          actionStyle={accountActionBar}
           /* Pinned outside the scroll, floated above the keyboard by SheetForm,
              so the submit is never something you have to scroll to find while
              the last field is focused. The failure line rides with it for the
              same reason. */
           action={
             <>
-              {error ? <ErrorNotice message={error} /> : null}
-              <Button
+              {error ? <Notice message={error} /> : null}
+              <ActionButton
                 title={t.profile.updatePassword}
-                onPress={handleSubmit}
-                loading={changePassword.isPending}
-                disabled={!canSubmit}
-                size="lg"
                 icon="lock-closed-outline"
-                style={styles.actionButton}
+                onPress={handleSubmit}
+                loading={busy}
+                disabled={!canSubmit}
               />
             </>
           }
         >
-          <FieldLabel>{t.profile.currentPasswordLabel}</FieldLabel>
-          <SheetInput
-            value={currentPassword}
-            onChangeText={(value) => {
-              setCurrentPassword(value);
-              // Typing here is the fix for "that was wrong", so the message goes
-              // the moment the user starts making it.
-              setCurrentPasswordError(null);
-            }}
-            accessibilityLabel={t.profile.currentPasswordLabel}
-            secureTextEntry
-            revealable
-            revealAccessibilityLabel={t.profile.showPassword}
-            hideAccessibilityLabel={t.profile.hidePassword}
-            invalid={!!currentPasswordError}
-            editable={!changePassword.isPending}
-            autoCapitalize="none"
-            autoCorrect={false}
-            spellCheck={false}
-            textContentType="password"
-            autoComplete="current-password"
-            returnKeyType="next"
-            onSubmitEditing={() => newRef.current?.focus()}
+          <SheetIntro
+            title={t.profile.changePassword}
+            subtitle={t.profile.changePasswordSubtitle}
+            style={styles.intro}
           />
-          {currentPasswordError ? <FieldError>{currentPasswordError}</FieldError> : null}
 
-          <FieldLabel>{t.profile.newPasswordLabel}</FieldLabel>
-          <SheetInput
-            ref={newRef}
-            value={newPassword}
-            onChangeText={setNewPassword}
-            accessibilityLabel={t.profile.newPasswordLabel}
-            secureTextEntry
-            revealable
-            revealAccessibilityLabel={t.profile.showPassword}
-            hideAccessibilityLabel={t.profile.hidePassword}
-            invalid={!!newPasswordError}
-            editable={!changePassword.isPending}
-            autoCapitalize="none"
-            autoCorrect={false}
-            spellCheck={false}
-            textContentType="newPassword"
-            autoComplete="new-password"
-            returnKeyType="next"
-            onSubmitEditing={() => confirmRef.current?.focus()}
-          />
-          {newPasswordError ? <FieldError>{newPasswordError}</FieldError> : null}
+          <View style={styles.fields}>
+            <View>
+              <FieldCaption>{t.profile.currentPasswordLabel}</FieldCaption>
+              <View style={styles.fieldGap}>
+                <AccountField
+                  value={currentPassword}
+                  onChangeText={(value) => {
+                    setCurrentPassword(value);
+                    // Typing here is the fix for "that was wrong", so the message goes
+                    // the moment the user starts making it.
+                    setCurrentPasswordError(null);
+                  }}
+                  accessibilityLabel={t.profile.currentPasswordLabel}
+                  secureTextEntry
+                  revealable
+                  revealAccessibilityLabel={t.profile.showPassword}
+                  hideAccessibilityLabel={t.profile.hidePassword}
+                  invalid={!!currentPasswordError}
+                  editable={!busy}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  textContentType="password"
+                  autoComplete="current-password"
+                  returnKeyType="next"
+                  onSubmitEditing={() => newRef.current?.focus()}
+                />
+              </View>
+              {currentPasswordError ? <InlineError>{currentPasswordError}</InlineError> : null}
+            </View>
 
-          <FieldLabel>{t.profile.confirmPasswordLabel}</FieldLabel>
-          <SheetInput
-            ref={confirmRef}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            accessibilityLabel={t.profile.confirmPasswordLabel}
-            secureTextEntry
-            revealable
-            revealAccessibilityLabel={t.profile.showPassword}
-            hideAccessibilityLabel={t.profile.hidePassword}
-            invalid={!!confirmPasswordError}
-            editable={!changePassword.isPending}
-            autoCapitalize="none"
-            autoCorrect={false}
-            spellCheck={false}
-            textContentType="newPassword"
-            autoComplete="new-password"
-            returnKeyType="done"
-            onSubmitEditing={handleSubmit}
-          />
-          {confirmPasswordError ? <FieldError>{confirmPasswordError}</FieldError> : null}
+            <View>
+              <FieldCaption>{t.profile.newPasswordLabel}</FieldCaption>
+              <View style={styles.fieldGap}>
+                <AccountField
+                  ref={newRef}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  accessibilityLabel={t.profile.newPasswordLabel}
+                  secureTextEntry
+                  revealable
+                  revealAccessibilityLabel={t.profile.showPassword}
+                  hideAccessibilityLabel={t.profile.hidePassword}
+                  invalid={!!newPasswordError}
+                  editable={!busy}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  textContentType="newPassword"
+                  autoComplete="new-password"
+                  returnKeyType="next"
+                  onSubmitEditing={() => confirmRef.current?.focus()}
+                />
+              </View>
+              {newPasswordError ? <InlineError>{newPasswordError}</InlineError> : null}
+            </View>
+
+            <View>
+              <FieldCaption>{t.profile.confirmPasswordLabel}</FieldCaption>
+              <View style={styles.fieldGap}>
+                <AccountField
+                  ref={confirmRef}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  accessibilityLabel={t.profile.confirmPasswordLabel}
+                  secureTextEntry
+                  revealable
+                  revealAccessibilityLabel={t.profile.showPassword}
+                  hideAccessibilityLabel={t.profile.hidePassword}
+                  invalid={!!confirmPasswordError}
+                  editable={!busy}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  textContentType="newPassword"
+                  autoComplete="new-password"
+                  returnKeyType="done"
+                  onSubmitEditing={handleSubmit}
+                />
+              </View>
+              {confirmPasswordError ? <InlineError>{confirmPasswordError}</InlineError> : null}
+            </View>
+          </View>
         </SheetForm>
       )}
     </BottomSheet>
@@ -227,8 +268,10 @@ export function ChangePasswordSheet({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  successPane: { flex: 1, justifyContent: "center" },
-  successButton: { alignSelf: "stretch", marginTop: theme.spacing.lg },
-  /** The pinned bar owns its own spacing, so the button inside it adds none. */
-  actionButton: { alignSelf: "stretch" },
+  intro: { marginTop: theme.spacing.md },
+  fields: { gap: 20, marginTop: theme.spacing.lg },
+  fieldGap: { marginTop: theme.spacing.sm },
+  successScroll: { flex: 1 },
+  successPane: { flexGrow: 1, justifyContent: "center", paddingBottom: theme.spacing.sm },
+  successButton: { marginTop: theme.spacing.xl },
 });

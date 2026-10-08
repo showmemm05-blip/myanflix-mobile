@@ -1,21 +1,22 @@
 import { useState } from "react";
-import { AccessibilityInfo, ActivityIndicator, Linking, StyleSheet, View } from "react-native";
+import { AccessibilityInfo, Linking, Pressable, StyleSheet, View } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { Button } from "@/components/ui/Button";
 import { BottomSheet } from "@/components/ui/BottomSheet";
+import { SheetForm } from "@/components/wallet/SheetForm";
 import {
-  ErrorNotice,
-  FieldError,
-  FieldLabel,
-  HelperText,
-  SheetForm,
-  SheetInput,
-} from "@/components/wallet/SheetForm";
+  AccountField,
+  ActionButton,
+  BusyDots,
+  Notice,
+  SheetHeader,
+  accountActionBar,
+} from "@/components/profile/AccountKit";
 import { useRemoveAvatar, useUpdateProfile, useUploadAvatar } from "@/hooks/useProfile";
 import { pickAvatar } from "@/services/photo-picker";
 import { useLanguage } from "@/localization/LanguageProvider";
@@ -26,6 +27,8 @@ import type { AppUser } from "@/types/user";
 
 /** Mirrors the backend's 1..40 rule on the trimmed name. */
 const MAX_DISPLAY_NAME = 40;
+/** EditProfile.dc.html's centred portrait. */
+const AVATAR_SIZE = 120;
 
 interface Props {
   user: AppUser;
@@ -33,17 +36,65 @@ interface Props {
   onClose: () => void;
 }
 
-/** A login identity the account owner can see but not edit. */
-function ReadOnlyRow({ label, value }: { label: string; value: string }) {
+/**
+ * A login identity the account owner can see but not edit — the label on the
+ * left, the value and a padlock on the right. Wraps under the label rather
+ * than truncating when a large text size leaves no room beside it.
+ */
+function ReadOnlyRow({ label, value, divider }: { label: string; value: string; divider?: boolean }) {
   return (
-    <View style={styles.readOnlyRow}>
-      <ThemedText variant="caption" style={styles.readOnlyLabel}>
+    <View style={[styles.readOnlyRow, divider && styles.readOnlyDivider]} accessible accessibilityLabel={`${label}, ${value}`}>
+      <ThemedText variant="body" color={theme.colors.textMuted}>
         {label}
       </ThemedText>
-      <ThemedText variant="body" tabular numberOfLines={1}>
-        {value}
-      </ThemedText>
+      <View style={styles.readOnlyValue}>
+        <ThemedText variant="body" weight="bold" tabular style={styles.readOnlyText}>
+          {value}
+        </ThemedText>
+        <Ionicons name="lock-closed-outline" size={15} color={theme.colors.textFaint} />
+      </View>
     </View>
+  );
+}
+
+/** The boards' 44pt pill for the photo actions (Upload/Change, Remove). */
+function PhotoPill({
+  title,
+  icon,
+  onPress,
+  disabled,
+  busy,
+  tone = "tonal",
+}: {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  disabled?: boolean;
+  busy?: boolean;
+  tone?: "tonal" | "danger" | "plain";
+}) {
+  const reduceMotion = useReducedMotion();
+  const ink =
+    tone === "danger" ? theme.colors.danger : theme.colors.text;
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: !!disabled, busy: !!busy }}
+      style={({ pressed }) => [
+        styles.pill,
+        tone === "tonal" && styles.pillTonal,
+        disabled && styles.pillDisabled,
+        pressed && !disabled && (reduceMotion ? styles.pressedStill : styles.pressed),
+      ]}
+    >
+      <Ionicons name={icon} size={18} color={ink} />
+      <ThemedText weight={tone === "plain" ? "extrabold" : "bold"} color={ink} style={styles.pillLabel}>
+        {title}
+      </ThemedText>
+    </Pressable>
   );
 }
 
@@ -51,6 +102,8 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
  * "Edit profile" — the profile photo, one editable field (the display name)
  * and the two identities you sign in with, shown read-only so it is obvious
  * they exist and equally obvious why they are not editable.
+ * Marquee: EditProfile.dc.html — close · centred title, a 120pt portrait with
+ * its photo pills under it, the 56pt name field, the two locked identities.
  *
  * A bottom sheet rather than a pushed screen, for the same reason the feedback
  * sheet is one: it is a short form you fill in and dismiss, and the app's
@@ -63,6 +116,7 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
  */
 export function EditProfileSheet({ user, visible, onClose }: Props) {
   const { t } = useLanguage();
+  const reduceMotion = useReducedMotion();
   const updateProfile = useUpdateProfile();
   const uploadAvatar = useUploadAvatar();
   const removeAvatar = useRemoveAvatar();
@@ -81,10 +135,10 @@ export function EditProfileSheet({ user, visible, onClose }: Props) {
    */
   const [photoBusy, setPhotoBusy] = useState<"upload" | "remove" | null>(null);
   /**
-   * Every photo message lands here and renders as a `FieldError` under the
-   * photo row — NOT in the pinned `ErrorNotice`, which belongs to Save and
-   * speaks for the whole form. A message about the picture points at the
-   * picture. (This app has no toast.)
+   * Every photo message lands here and renders in the line under the photo
+   * pills — NOT in the pinned notice, which belongs to Save and speaks for the
+   * whole form. A message about the picture points at the picture. (This app
+   * has no toast.)
    */
   const [photoError, setPhotoError] = useState<string | null>(null);
   /** Only after a permanent refusal, when re-asking is no longer possible. */
@@ -247,6 +301,16 @@ export function EditProfileSheet({ user, visible, onClose }: Props) {
     }
   };
 
+  const header = (
+    <SheetHeader
+      onClose={handleClose}
+      closeLabel={t.common.close}
+      closeDisabled={updateProfile.isPending || photoPending}
+      closeSide="left"
+      centerTitle={t.profile.editProfile}
+    />
+  );
+
   return (
     <BottomSheet
       visible={visible}
@@ -254,169 +318,226 @@ export function EditProfileSheet({ user, visible, onClose }: Props) {
       // One fixed height, never conditional on whether Remove is showing: that
       // button appears the instant an upload lands, and resizing the sheet
       // under the user's finger at that moment is worse than a little slack.
-      snapHeight={620}
-      title={t.profile.editProfile}
-      subtitle={t.profile.editProfileSubtitle}
-      showClose
+      snapHeight={780}
+      header={header}
       dismissible={!updateProfile.isPending && !photoPending}
     >
       <SheetForm
+        actionStyle={accountActionBar}
         action={
           <>
-            {error ? <ErrorNotice message={error} /> : null}
-            <Button
+            {error ? <Notice message={error} /> : null}
+            <ActionButton
               title={t.common.save}
+              icon="checkmark"
               onPress={handleSave}
               loading={updateProfile.isPending}
               disabled={!canSubmit}
-              size="lg"
-              icon="checkmark-outline"
-              style={styles.actionButton}
             />
           </>
         }
       >
+        {/* The subtitle scrolls with the form rather than riding in the fixed
+            header: it wraps freely, and at large text sizes (long Burmese
+            especially) a header that grows with it would leave little room
+            for the name field once the keyboard is up. */}
+        <ThemedText variant="caption" color={theme.colors.textFaint} style={styles.subtitle}>
+          {t.profile.editProfileSubtitle}
+        </ThemedText>
+
         {/* The photo goes first, matching the website's Photo-then-Details
             order — and because these are buttons rather than fields, keeping
             them above the only text input means SheetForm's reveal-on-focus
             never has to fight them. */}
-        <FieldLabel>{t.profile.photoSection}</FieldLabel>
-        <View style={styles.photoRow}>
-          <View style={styles.avatarWrap}>
-            {shownAvatar ? (
-              <Image source={{ uri: shownAvatar }} style={styles.avatar} contentFit="cover" />
-            ) : (
-              <View style={[styles.avatar, styles.avatarFallback]}>
-                {/* The same helpers the profile hero and the top bar use, so
-                    all three fall back to the same two letters. */}
-                <ThemedText variant="title" weight="bold">
-                  {initials(displayNameOf(user))}
-                </ThemedText>
-              </View>
-            )}
-            {photoPending ? (
-              <View style={styles.avatarBusy}>
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-              </View>
-            ) : null}
-          </View>
-
-          <View style={styles.photoActions}>
-            <Button
-              title={user.avatarUrl ? t.profile.changePhoto : t.profile.uploadPhoto}
-              onPress={handleChangePhoto}
-              variant="soft"
-              icon="camera-outline"
-              loading={photoBusy === "upload"}
-              // Both buttons are disabled together so neither request can start
-              // while the other is running — but Save is untouched.
-              disabled={photoPending}
+        <View
+          style={styles.avatarWrap}
+          accessible
+          accessibilityRole="image"
+          accessibilityLabel={t.profile.photoSection}
+          accessibilityState={{ busy: photoPending }}
+        >
+          {shownAvatar ? (
+            <Image
+              source={{ uri: shownAvatar }}
+              style={styles.avatar}
+              contentFit="cover"
+              transition={reduceMotion ? 0 : 200}
             />
-            {user.avatarUrl ? (
-              <Button
-                title={t.profile.removePhoto}
-                onPress={handleRemovePhoto}
-                variant="ghost"
-                icon="trash-outline"
-                color={theme.colors.danger}
-                loading={photoBusy === "remove"}
-                disabled={photoPending}
-              />
-            ) : null}
-          </View>
+          ) : (
+            <View style={[styles.avatar, styles.avatarFallback]}>
+              {/* The same helpers the profile hero and the top bar use, so
+                  all three fall back to the same two letters. */}
+              <ThemedText weight="extrabold" color={theme.colors.onAvatar} style={styles.initials}>
+                {initials(displayNameOf(user))}
+              </ThemedText>
+            </View>
+          )}
+          {photoPending ? (
+            <View style={styles.avatarBusy}>
+              <BusyDots color={theme.colors.text} />
+            </View>
+          ) : null}
         </View>
-        {photoError ? <FieldError>{photoError}</FieldError> : <HelperText>{t.profile.photoSectionHint}</HelperText>}
-        {settingsNeeded ? (
-          <Button
-            title={t.profile.photoOpenSettings}
-            onPress={() => {
-              // Nothing useful to say if the OS refuses to open its own
-              // settings, and the message above already stands.
-              Linking.openSettings().catch(() => {});
-            }}
-            variant="ghost"
-            icon="settings-outline"
-            style={styles.settingsButton}
+
+        <View style={styles.photoActions}>
+          <PhotoPill
+            title={user.avatarUrl ? t.profile.changePhoto : t.profile.uploadPhoto}
+            icon="camera-outline"
+            onPress={handleChangePhoto}
+            // Both pills are disabled together so neither request can start
+            // while the other is running — but Save is untouched.
+            disabled={photoPending}
+            busy={photoBusy === "upload"}
           />
+          {user.avatarUrl ? (
+            <PhotoPill
+              title={t.profile.removePhoto}
+              icon="trash-outline"
+              tone="danger"
+              onPress={handleRemovePhoto}
+              disabled={photoPending}
+              busy={photoBusy === "remove"}
+            />
+          ) : null}
+        </View>
+        {photoError ? (
+          <View accessible accessibilityRole="alert" accessibilityLiveRegion="polite">
+            <ThemedText variant="caption" weight="semibold" color={theme.colors.danger} style={styles.photoMessage}>
+              {photoError}
+            </ThemedText>
+          </View>
+        ) : (
+          <ThemedText variant="caption" color={theme.colors.textFaint} style={styles.photoMessage}>
+            {t.profile.photoSectionHint}
+          </ThemedText>
+        )}
+        {settingsNeeded ? (
+          <View style={styles.settingsRow}>
+            <PhotoPill
+              title={t.profile.photoOpenSettings}
+              icon="options-outline"
+              tone="plain"
+              onPress={() => {
+                // Nothing useful to say if the OS refuses to open its own
+                // settings, and the message above already stands.
+                Linking.openSettings().catch(() => {});
+              }}
+            />
+          </View>
         ) : null}
 
-        <FieldLabel>{t.profile.displayNameLabel}</FieldLabel>
-        <SheetInput
-          value={displayName}
-          onChangeText={setDisplayName}
-          placeholder={user.username}
-          accessibilityLabel={t.profile.displayNameLabel}
-          // A soft stop well above the 40 the server enforces, so typing past
-          // the limit shows the message instead of silently swallowing keys.
-          maxLength={80}
-          autoCapitalize="words"
-          autoCorrect={false}
-          returnKeyType="done"
-          onSubmitEditing={handleSave}
-          editable={!updateProfile.isPending}
-          invalid={tooLong}
-        />
+        {/* The board's overline label. Burmese has no case and ThemedText
+            drops its tracking, so only the English reads as capitals. */}
+        <ThemedText variant="overline" style={styles.nameLabel}>
+          {t.profile.displayNameLabel.toUpperCase()}
+        </ThemedText>
+        <View style={styles.nameField}>
+          <AccountField
+            value={displayName}
+            onChangeText={setDisplayName}
+            placeholder={user.username}
+            accessibilityLabel={t.profile.displayNameLabel}
+            // A soft stop well above the 40 the server enforces, so typing past
+            // the limit shows the message instead of silently swallowing keys.
+            maxLength={80}
+            autoCapitalize="words"
+            autoCorrect={false}
+            autoComplete="nickname"
+            returnKeyType="done"
+            onSubmitEditing={handleSave}
+            editable={!updateProfile.isPending}
+            invalid={tooLong}
+          />
+        </View>
         {tooLong ? (
-          <FieldError>{t.profile.displayNameTooLong}</FieldError>
+          <View accessibilityLiveRegion="polite">
+            <ThemedText variant="caption" weight="semibold" color={theme.colors.danger} style={styles.nameHelp}>
+              {t.profile.displayNameTooLong}
+            </ThemedText>
+          </View>
         ) : (
-          <HelperText>{t.profile.displayNameHint}</HelperText>
+          <ThemedText variant="caption" color={theme.colors.textFaint} style={styles.nameHelp}>
+            {t.profile.displayNameHint}
+          </ThemedText>
         )}
 
         <View style={styles.identities}>
-          <ReadOnlyRow label={t.profile.usernameLabel} value={user.username} />
+          <ReadOnlyRow label={t.profile.usernameLabel} value={user.username} divider />
           <ReadOnlyRow label={t.profile.phoneLabel} value={user.phone ?? t.profile.phoneNotSet} />
         </View>
 
-        <View style={styles.lockNote}>
-          <Ionicons name="lock-closed-outline" size={14} color={theme.colors.textFaint} style={styles.lockIcon} />
-          <ThemedText variant="caption" style={styles.lockText}>
-            {t.profile.loginIdentityNote}
-          </ThemedText>
-        </View>
+        <ThemedText variant="caption" color={theme.colors.textFaint} style={styles.lockText}>
+          {t.profile.loginIdentityNote}
+        </ThemedText>
       </SheetForm>
     </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  actionButton: { alignSelf: "stretch" },
-  photoRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.md },
-  avatarWrap: { width: 72, height: 72 },
-  /** 72 rather than the hero's 92 — it shares this row with two buttons. */
-  avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: theme.radius.pill,
-    borderWidth: 2,
-    borderColor: theme.colors.border,
+  subtitle: { textAlign: "center", paddingBottom: theme.spacing.xs },
+  avatarWrap: {
+    alignSelf: "center",
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    marginTop: 20,
+    borderRadius: AVATAR_SIZE / 2,
+    overflow: "hidden",
   },
+  avatar: { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 },
   avatarFallback: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.colors.secondary,
+    backgroundColor: theme.colors.avatar,
   },
+  initials: { fontSize: 42, lineHeight: 52 },
   avatarBusy: {
     ...StyleSheet.absoluteFill,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.colors.scrim,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "rgba(8,8,11,0.55)",
   },
-  /** Stacked, not side by side: two labelled buttons do not fit one ~240pt column. */
-  photoActions: { flex: 1, gap: theme.spacing.sm },
-  settingsButton: { alignSelf: "flex-start", marginTop: theme.spacing.xs },
-  identities: { gap: theme.spacing.sm, marginTop: theme.spacing.lg },
+  /** Centred and wrapping: at large text sizes the two pills stack instead of overflowing. */
+  photoActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+  },
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    minHeight: theme.layout.minTouch,
+    paddingVertical: 8,
+    paddingLeft: 16,
+    paddingRight: 18,
+    borderRadius: 22,
+    maxWidth: "100%",
+  },
+  pillTonal: { backgroundColor: theme.colors.tonal },
+  pillDisabled: { opacity: 0.5 },
+  pillLabel: { flexShrink: 1 },
+  pressed: { transform: [{ scale: 0.96 }] },
+  pressedStill: { opacity: 0.8 },
+  photoMessage: { marginTop: 10, textAlign: "center" },
+  settingsRow: { alignItems: "center", marginTop: 6 },
+  nameLabel: { marginTop: 28 },
+  nameField: { marginTop: theme.spacing.sm },
+  nameHelp: { marginTop: theme.spacing.sm },
+  identities: { marginTop: theme.spacing.lg },
   readOnlyRow: {
-    gap: 2,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm + 2,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSunken,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    columnGap: 12,
+    minHeight: 56,
+    paddingVertical: theme.spacing.sm,
   },
-  readOnlyLabel: { color: theme.colors.textFaint },
-  lockNote: { flexDirection: "row", gap: theme.spacing.sm, marginTop: theme.spacing.sm },
-  lockIcon: { marginTop: 2 },
-  lockText: { flex: 1, color: theme.colors.textFaint },
+  readOnlyDivider: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  readOnlyValue: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, flexShrink: 1 },
+  readOnlyText: { flexShrink: 1, textAlign: "right" },
+  lockText: { marginTop: 12 },
 });

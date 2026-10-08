@@ -10,8 +10,23 @@ import { theme } from "@/theme";
 export const stackScreenOptions: NativeStackNavigationOptions = {
   headerShown: false,
   contentStyle: { backgroundColor: theme.colors.background },
-  animation: "slide_from_right",
+  /**
+   * The owner's choice (2026-10-05): the iPhone-style push everywhere — the
+   * new page slides in while the old one drifts back and dims. Android only
+   * (iOS already uses its own native push for this value).
+   */
+  animation: "ios_from_right",
   animationDuration: 260,
+};
+
+/**
+ * Title pages — MovieDetails, SeriesDetails, BookDetails (2026-10-05): the
+ * page fades in while rising a little, calmer and more cinematic than a
+ * side slide. animationDuration is honoured on iOS; Android uses its own.
+ */
+export const titleScreenOptions: NativeStackNavigationOptions = {
+  animation: "fade_from_bottom",
+  animationDuration: 320,
 };
 
 /** Modal-presented screens (Subscribe) — same background, sheet-style entrance. */

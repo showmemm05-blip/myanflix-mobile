@@ -1,241 +1,160 @@
-import { memo, useCallback, useMemo, useRef } from "react";
-import { ActivityIndicator, FlatList, View, StyleSheet } from "react-native";
+import { memo } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { SectionHeader } from "@/components/ui/SectionHeader";
 import { ThemedText } from "@/components/ui/ThemedText";
-import { EpisodeRow, EPISODE_ROW_HEIGHT } from "@/components/series/EpisodeRow";
-import { usePlayerEpisodes } from "@/hooks/useSeries";
+import { PressableScale } from "@/components/ui/PressableScale";
+import { FadeInView } from "@/components/ui/FadeInView";
+import { Skeleton } from "@/components/common/Skeleton";
+import { EpisodeBrowser } from "@/components/player/EpisodeBrowser";
+import { PlayerGlyph } from "@/components/player/PlayerGlyph";
+import { describeEpisode, episodeTag, type OrderedEpisode } from "@/components/player/episodeOrder";
 import { useLanguage } from "@/localization/LanguageProvider";
+import { formatDuration } from "@/utils/format";
 import { theme } from "@/theme";
-import type { PlayerEpisode } from "@/types/series";
+import type { Movie } from "@/types/movie";
 
 interface Props {
   seriesId: string;
   currentEpisodeId: string;
   onSelectEpisode: (episodeId: string) => void;
-  /** Hides the "Episodes" heading — the sheet already carries a title. */
-  hideHeader?: boolean;
-}
-
-/** Every row type the flat list can hold, each with a height known up front. */
-type Row =
-  | { key: string; kind: "title" }
-  | { key: string; kind: "season"; seasonNumber: number; episodeCount: number }
-  | { key: string; kind: "episode"; episode: PlayerEpisode };
-
-const ROW_GAP = theme.spacing.sm;
-const EPISODE_BLOCK_HEIGHT = EPISODE_ROW_HEIGHT + ROW_GAP;
-const SEASON_HEADER_HEIGHT = 40;
-const TITLE_HEIGHT = 44;
-const CONTENT_PADDING_TOP = theme.spacing.md;
-
-/** Module scope: a fresh extractor each render defeats FlatList's PureComponent. */
-const keyExtractor = (item: Row) => item.key;
-
-function rowHeight(row: Row): number {
-  switch (row.kind) {
-    case "title":
-      return TITLE_HEIGHT;
-    case "season":
-      return SEASON_HEADER_HEIGHT;
-    default:
-      return EPISODE_BLOCK_HEIGHT;
-  }
+  /** The episode playing — undefined for the renders between a swap and its details landing. */
+  episode: Movie | undefined;
+  /** The episode after this one in the series order; null hides Next episode. */
+  nextEpisode: OrderedEpisode | null;
+  onNextEpisode: () => void;
+  /** The home-indicator inset, so the rail can scroll clear of it. */
+  bottomInset: number;
 }
 
 /**
- * The episode list under the player. Virtualized — a long series is hundreds of
- * rows, each with a remote still, and mounting them all at once is what made
- * opening the picker stutter. Every row has a fixed height, so `getItemLayout`
- * gives exact offsets: the one-time scroll to the current episode lands on the
- * right row in EVERY season, not just the first (offsets are list-absolute, not
- * relative to a season block).
+ * Everything under the video in portrait for a series episode
+ * (Player.dc.html, "series"): which episode this is ("S1 · E2", its title
+ * and runtime), the Next-episode control, and the episodes — a chip per
+ * season and a rail of that season's cards.
+ *
+ * The series' own name is not shown: the player never loads the series
+ * record (AREA-NOTES, Player). The Next-episode control is new (owner
+ * decision 2026-10-02): it plays the episode after this one in the order the
+ * episode list returns, through the same select handler the rail uses, and is
+ * hidden on the last episode.
  *
  * Memoized because the player re-renders four times a second off the playback
  * tick (VideoPlayer's `timeUpdateEventInterval` is 0.25s) and every prop this
- * takes is already stable there — so none of those ticks need reach this list.
+ * takes is already stable there — so none of those ticks reach this panel.
  */
 export const EpisodesSection = memo(function EpisodesSection({
   seriesId,
   currentEpisodeId,
   onSelectEpisode,
-  hideHeader,
+  episode,
+  nextEpisode,
+  onNextEpisode,
+  bottomInset,
 }: Props) {
-  const { t } = useLanguage();
-  const episodesQuery = usePlayerEpisodes(seriesId);
-  const listRef = useRef<FlatList<Row>>(null);
-  const hasScrolledRef = useRef(false);
-
-  const seasons = useMemo(() => episodesQuery.data?.seasons ?? [], [episodesQuery.data]);
-
-  const rows = useMemo<Row[]>(() => {
-    const items: Row[] = [];
-    if (!hideHeader) items.push({ key: "title", kind: "title" });
-    for (const season of seasons) {
-      items.push({
-        key: `season-${season.seasonNumber}`,
-        kind: "season",
-        seasonNumber: season.seasonNumber,
-        episodeCount: season.episodes.length,
-      });
-      for (const episode of season.episodes) {
-        items.push({ key: `episode-${episode.id}`, kind: "episode", episode });
-      }
-    }
-    return items;
-  }, [seasons, hideHeader]);
-
-  /**
-   * Cumulative, list-ABSOLUTE offsets (content padding included, so they match
-   * what the scroll view expects) — one pass, reused by `getItemLayout` and the
-   * auto-scroll below.
-   */
-  const offsets = useMemo(() => {
-    let running = CONTENT_PADDING_TOP;
-    return rows.map((row) => {
-      const offset = running;
-      running += rowHeight(row);
-      return offset;
-    });
-  }, [rows]);
-
-  const currentOffset = useMemo(() => {
-    const index = rows.findIndex((row) => row.kind === "episode" && row.episode.id === currentEpisodeId);
-    return index < 0 ? null : offsets[index];
-  }, [rows, offsets, currentEpisodeId]);
-
-  const getItemLayout = useCallback(
-    (_: ArrayLike<Row> | null | undefined, index: number) => {
-      const row = rows[index];
-      return {
-        length: row ? rowHeight(row) : EPISODE_BLOCK_HEIGHT,
-        offset: offsets[index] ?? CONTENT_PADDING_TOP + EPISODE_BLOCK_HEIGHT * index,
-        index,
-      };
-    },
-    [rows, offsets],
-  );
-
-  /** Fires once the content is laid out, so the scroll always takes effect. */
-  const handleContentSizeChange = useCallback(() => {
-    if (hasScrolledRef.current || currentOffset === null) return;
-    hasScrolledRef.current = true;
-    listRef.current?.scrollToOffset({ offset: currentOffset, animated: true });
-  }, [currentOffset]);
-
-  const renderItem = useCallback(
-    ({ item }: { item: Row }) => {
-      if (item.kind === "title") {
-        return (
-          <View style={styles.titleRow}>
-            <SectionHeader title={t.series.episodesTitle} icon="albums-outline" inset={false} style={styles.header} />
-          </View>
-        );
-      }
-
-      if (item.kind === "season") {
-        return (
-          <View style={styles.seasonHeader}>
-            <ThemedText variant="label" tabular>
-              {t.series.season.replace("{n}", String(item.seasonNumber))}
-            </ThemedText>
-            <ThemedText variant="caption" tabular style={styles.seasonCount}>
-              {t.series.episodeCount.replace("{n}", String(item.episodeCount))}
-            </ThemedText>
-          </View>
-        );
-      }
-
-      const episode = item.episode;
-      return (
-        <View style={styles.episodeBlock}>
-          <EpisodeRow
-            episodeId={episode.id}
-            title={episode.title}
-            episodeNumber={episode.episodeNumber}
-            durationMinutes={episode.duration}
-            thumbnailUrl={episode.thumbnailUrl ?? episode.posterUrl}
-            isCurrent={episode.id === currentEpisodeId}
-            progressPercent={episode.watchProgress?.progressPercent ?? 0}
-            onPress={onSelectEpisode}
-          />
-        </View>
-      );
-    },
-    [t, currentEpisodeId, onSelectEpisode],
-  );
-
-  if (episodesQuery.isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={theme.colors.primary} />
-      </View>
-    );
-  }
-
-  if (episodesQuery.isError) {
-    return (
-      <View style={styles.center}>
-        <Ionicons name="cloud-offline-outline" size={26} color={theme.colors.textFaint} />
-        <ThemedText variant="muted">{t.series.episodesLoadError}</ThemedText>
-      </View>
-    );
-  }
-
-  if (seasons.every((s) => s.episodes.length === 0)) {
-    return (
-      <View style={styles.center}>
-        <Ionicons name="albums-outline" size={26} color={theme.colors.textFaint} />
-        <ThemedText variant="muted">{t.series.episodesEmpty}</ThemedText>
-      </View>
-    );
-  }
+  const tag = episodeTag(episode?.seasonNumber, episode?.episodeNumber);
+  const runtime = formatDuration(episode?.duration);
 
   return (
-    <FlatList
-      ref={listRef}
-      data={rows}
-      keyExtractor={keyExtractor}
-      renderItem={renderItem}
-      getItemLayout={getItemLayout}
-      onContentSizeChange={handleContentSizeChange}
-      style={styles.container}
-      contentContainerStyle={styles.content}
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={{ paddingBottom: bottomInset + theme.spacing.xl }}
       showsVerticalScrollIndicator={false}
-      initialNumToRender={8}
-      maxToRenderPerBatch={8}
-      windowSize={7}
-    />
+    >
+      <FadeInView from="bottom" style={styles.info}>
+        {episode ? (
+          <>
+            {tag && (
+              <ThemedText variant="caption" weight="bold" tabular color={theme.colors.link}>
+                {tag}
+              </ThemedText>
+            )}
+            <ThemedText variant="title" accessibilityRole="header" style={styles.title}>
+              {episode.title}
+            </ThemedText>
+            {runtime && (
+              <ThemedText variant="caption" tabular color={theme.colors.textMuted} style={styles.runtime}>
+                {runtime}
+              </ThemedText>
+            )}
+          </>
+        ) : (
+          <View style={styles.infoSkeleton}>
+            <Skeleton width={64} height={14} radius="xs" />
+            <Skeleton width={220} height={26} radius="sm" />
+            <Skeleton width={48} height={14} radius="xs" />
+          </View>
+        )}
+
+        {nextEpisode && <NextEpisodeButton next={nextEpisode} onPress={onNextEpisode} />}
+      </FadeInView>
+
+      <View style={styles.episodes}>
+        <EpisodeBrowser
+          seriesId={seriesId}
+          currentEpisodeId={currentEpisodeId}
+          onSelectEpisode={onSelectEpisode}
+          size="regular"
+          inset={theme.layout.screenPadding}
+          showHeading
+        />
+      </View>
+    </ScrollView>
   );
 });
 
+function NextEpisodeButton({ next, onPress }: { next: OrderedEpisode; onPress: () => void }) {
+  const { t } = useLanguage();
+  const description = describeEpisode(next, t.series.episodeFallbackTitle);
+  return (
+    <PressableScale
+      onPress={onPress}
+      accessibilityLabel={t.player.nextEpisodeLabel.replace("{title}", description)}
+      style={styles.next}
+    >
+      <View style={styles.nextDisc}>
+        <PlayerGlyph name="next" size={18} color={theme.colors.onPlay} />
+      </View>
+      <View style={styles.nextText}>
+        <ThemedText weight="extrabold" style={styles.nextLabel}>
+          {t.player.nextEpisode}
+        </ThemedText>
+        <ThemedText variant="caption" tabular color={theme.colors.textMuted}>
+          {description}
+        </ThemedText>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={theme.colors.textFaint} />
+    </PressableScale>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: {
-    paddingTop: CONTENT_PADDING_TOP,
-    paddingBottom: theme.spacing.xl,
-    paddingHorizontal: theme.spacing.sm,
+  scroll: { flex: 1 },
+  info: { paddingTop: 20, paddingHorizontal: theme.layout.screenPadding },
+  title: { marginTop: 4 },
+  runtime: { marginTop: 6 },
+  infoSkeleton: { gap: 10 },
+  next: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 56,
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: theme.radius.button,
+    backgroundColor: theme.colors.tonalStrong,
   },
-  titleRow: { height: TITLE_HEIGHT, justifyContent: "center" },
-  header: { paddingHorizontal: theme.spacing.sm, marginBottom: 0 },
-  center: {
-    flex: 1,
+  nextDisc: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    gap: theme.spacing.sm,
-    padding: theme.spacing.lg,
+    backgroundColor: theme.colors.play,
   },
-  seasonHeader: {
-    height: SEASON_HEADER_HEIGHT,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
-    paddingBottom: theme.spacing.xs,
-  },
-  seasonCount: { color: theme.colors.textFaint },
-  episodeBlock: { height: EPISODE_BLOCK_HEIGHT, paddingBottom: ROW_GAP },
+  nextText: { flex: 1, gap: 2 },
+  nextLabel: { fontSize: 15 },
+  episodes: { marginTop: 32 },
 });

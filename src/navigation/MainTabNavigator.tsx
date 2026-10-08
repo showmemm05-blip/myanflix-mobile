@@ -2,8 +2,6 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { HomeStackNavigator } from "@/navigation/HomeStackNavigator";
 import { SearchStackNavigator } from "@/navigation/SearchStackNavigator";
 import { WalletStackNavigator } from "@/navigation/WalletStackNavigator";
-import { LibraryStackNavigator } from "@/navigation/LibraryStackNavigator";
-import { SettingsStackNavigator } from "@/navigation/SettingsStackNavigator";
 import { CustomTabBar } from "@/components/layout/TabBar";
 import { theme } from "@/theme";
 import type { MainTabParamList } from "@/navigation/types";
@@ -33,8 +31,10 @@ export function MainTabNavigator() {
       <Tab.Screen name="HomeTab" component={HomeStackNavigator} />
       <Tab.Screen name="SearchTab" component={SearchStackNavigator} />
       <Tab.Screen name="WalletTab" component={WalletStackNavigator} />
-      <Tab.Screen name="LibraryTab" component={LibraryStackNavigator} />
-      <Tab.Screen name="SettingsTab" component={SettingsStackNavigator} />
+      {/* Three tabs only (owner, 2026-10-07): Home · Media · Wallet. Profile
+          is not a tab — it opens from the avatar in the top bars as a root
+          screen (RootNavigator), and it carries the "Your library" group that
+          leads to Favorites, Watch History and Downloads. */}
     </Tab.Navigator>
   );
 }

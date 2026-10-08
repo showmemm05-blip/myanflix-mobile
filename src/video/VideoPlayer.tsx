@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, memo, useEffect, useImperativeHandle, useRef } from "react";
 import { StyleSheet } from "react-native";
 import { useVideoPlayer, VideoView, type SubtitleTrack } from "expo-video";
 import { useEventListener } from "expo";
@@ -61,7 +61,13 @@ const SEEK_PROXIMITY_SECONDS = 1.5;
 // 0.25 halves that error; expo-video has no cue event to use instead.
 const TIME_UPDATE_INTERVAL_SECONDS = 0.25;
 
-export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
+/**
+ * Memoised: the screen re-renders on every playback tick (4×/s), and this
+ * component only needs to when one of its props really changes. That holds
+ * because Player passes stable callbacks (see its `videoEventsRef`); an inline
+ * arrow here would quietly bring the per-tick re-render back.
+ */
+export const VideoPlayer = memo(forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
   {
     playlistUrl,
     paused,
@@ -85,6 +91,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   // the subtitle effect below for why this is tracked here rather than read
   // back off the player.
   const appliedSubtitleRef = useRef<SubtitleTrack | null | undefined>(undefined);
+  // The latest onProgress, for the seek backstop below. Read through a ref so
+  // the imperative handle is not rebuilt whenever the callback's identity
+  // changes (it used to be rebuilt on every 0.25 s tick).
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
 
   const player = useVideoPlayer({ uri: playlistUrl, contentType: "hls" }, (p) => {
     p.timeUpdateEventInterval = TIME_UPDATE_INTERVAL_SECONDS;
@@ -113,11 +124,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
           if (pendingSeekRef.current === null) return;
           pendingSeekRef.current = null;
           seekSettleTimeoutRef.current = null;
-          onProgress({ currentTime: player.currentTime, bufferedSeconds: player.bufferedPosition });
+          onProgressRef.current({ currentTime: player.currentTime, bufferedSeconds: player.bufferedPosition });
         }, SEEK_SETTLE_MS);
       },
     }),
-    [player, onProgress],
+    [player],
   );
 
   useEffect(() => {
@@ -252,4 +263,4 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       surfaceType="textureView"
     />
   );
-});
+}));

@@ -1,9 +1,9 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { depositsService } from "@/services/deposits.service";
 import { nextPageParam } from "@/hooks/pagination";
-import type { PaginationParams } from "@/types/api";
+import type { RequestListParams } from "@/types/api";
 
-export function useDeposits(pagination: PaginationParams = {}) {
+export function useDeposits(pagination: RequestListParams = {}) {
   return useQuery({
     queryKey: ["deposits", "mine", pagination],
     queryFn: ({ signal }) => depositsService.getMyDeposits(pagination, { signal }),
@@ -16,7 +16,7 @@ export function useDeposits(pagination: PaginationParams = {}) {
  * invalidations reach it; `enabled` is the visible ledger tab (see
  * useTransactionsInfinite).
  */
-export function useDepositsInfinite(pagination: PaginationParams = {}, options: { enabled?: boolean } = {}) {
+export function useDepositsInfinite(pagination: RequestListParams = {}, options: { enabled?: boolean } = {}) {
   return useInfiniteQuery({
     queryKey: ["deposits", "mine", "infinite", pagination],
     queryFn: ({ pageParam, signal }) => depositsService.getMyDeposits({ ...pagination, page: pageParam }, { signal }),

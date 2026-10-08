@@ -11,7 +11,10 @@ interface Props {
   style?: StyleProp<ViewStyle>;
 }
 
-/** Thin non-interactive progress line (continue-watching, upload, plan usage). */
+/**
+ * Thin non-interactive progress line (continue-watching, upload, plan usage):
+ * crimson over a white-at-25% track, ends rounded.
+ */
 export function ProgressTrack({ progress, height = 3, color = theme.colors.primary, trackColor, style }: Props) {
   const clamped = clamp(Number.isFinite(progress) ? progress : 0, 0, 1);
 
@@ -19,7 +22,7 @@ export function ProgressTrack({ progress, height = 3, color = theme.colors.prima
     <View
       style={[
         styles.track,
-        { height, borderRadius: height, backgroundColor: trackColor ?? theme.colors.overlay },
+        { height, borderRadius: height, backgroundColor: trackColor ?? theme.colors.track },
         style,
       ]}
       accessibilityRole="progressbar"

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
+import * as SystemUI from "expo-system-ui";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer, DarkTheme } from "@react-navigation/native";
@@ -20,18 +21,22 @@ import { ApiError } from "@/utils/errors";
  * "@expo-google-fonts/noto-sans-myanmar". That package's generated index.js
  * `require()`s all nine weights it ships and Metro does no tree shaking, so
  * importing anything from its root — `useFonts` included — bundles 1.6 MB of
- * TTF to load the four faces below. `useFonts` therefore comes from expo-font
+ * TTF to load the six faces below. `useFonts` therefore comes from expo-font
  * directly; the google-fonts one is only a thin wrapper over its `loadAsync`
  * and has the identical `[loaded, error]` contract. The package declares no
  * `exports` map, so these per-weight subpaths are legal.
  *
- * These four faces are what `theme.font` names, so every `ThemedText` in the
+ * These six faces are what `theme.font` names, so every `ThemedText` in the
  * app depends on them. Adding a weight to `theme.font` means adding it here.
+ * 800 and 900 arrived with the Marquee type scale (title/section/overline are
+ * ExtraBold, display is Black).
  */
 const NotoSansMyanmar_400Regular = require("@expo-google-fonts/noto-sans-myanmar/400Regular/NotoSansMyanmar_400Regular.ttf");
 const NotoSansMyanmar_500Medium = require("@expo-google-fonts/noto-sans-myanmar/500Medium/NotoSansMyanmar_500Medium.ttf");
 const NotoSansMyanmar_600SemiBold = require("@expo-google-fonts/noto-sans-myanmar/600SemiBold/NotoSansMyanmar_600SemiBold.ttf");
 const NotoSansMyanmar_700Bold = require("@expo-google-fonts/noto-sans-myanmar/700Bold/NotoSansMyanmar_700Bold.ttf");
+const NotoSansMyanmar_800ExtraBold = require("@expo-google-fonts/noto-sans-myanmar/800ExtraBold/NotoSansMyanmar_800ExtraBold.ttf");
+const NotoSansMyanmar_900Black = require("@expo-google-fonts/noto-sans-myanmar/900Black/NotoSansMyanmar_900Black.ttf");
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -77,6 +82,17 @@ function onAppStateChange(status: AppStateStatus) {
   focusManager.setFocused(status === "active");
 }
 
+/**
+ * The root view behind every screen. It is white unless set, and it shows
+ * during page transitions: the owner saw a white flash on Back from Profile
+ * with the iPhone-style slide (2026-10-05). Set at runtime, outside any
+ * component (expo-system-ui SDK 57 docs); app.json's top-level
+ * `backgroundColor` covers the next native build too.
+ */
+SystemUI.setBackgroundColorAsync(theme.colors.background).catch(() => {
+  // Cosmetic only — never let it stop the app from starting.
+});
+
 const navigationTheme = {
   ...DarkTheme,
   colors: {
@@ -95,6 +111,8 @@ export default function App() {
     NotoSansMyanmar_500Medium,
     NotoSansMyanmar_600SemiBold,
     NotoSansMyanmar_700Bold,
+    NotoSansMyanmar_800ExtraBold,
+    NotoSansMyanmar_900Black,
   });
   const isAuthBootstrapping = useAuthStore((s) => s.isBootstrapping);
   const [languageHydrated, setLanguageHydrated] = useState(hasLanguageHydrated());

@@ -1,17 +1,17 @@
 import { memo, useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Button } from "@/components/ui/Button";
-import { Pill } from "@/components/ui/Pill";
 import { Surface } from "@/components/ui/Surface";
+import { Skeleton } from "@/components/common/Skeleton";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useAuth } from "@/hooks/useAuth";
-import { useComments, usePostComment } from "@/hooks/useComments";
+import { useComments, useLoadMoreReplies, usePostComment } from "@/hooks/useComments";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { displayNameOf, formatRelativeTime } from "@/utils/format";
 import { ApiError } from "@/utils/errors";
@@ -22,8 +22,9 @@ import { COMMENT_MAX_LENGTH, type Comment, type CommentTarget } from "@/types/co
 /**
  * The comment thread under a movie, a series or a book — the mobile counterpart of the
  * website's components/comments/CommentsSection.tsx, same behaviour and the
- * same strings, drawn in this app's idioms (Surface rows, violet accents,
- * ThemedText type scale) rather than the web's.
+ * same strings, drawn as Marquee draws it (MovieDetail.dc.html): the heading
+ * with its count, a 48pt pill that opens the composer, then flat rows — a
+ * 36pt initials disc, the name and time, the comment, and quiet text actions.
  *
  * REPLY-FIRST BY DESIGN, inherited from the web: the only affordance on a
  * comment is "reply", and there are deliberately no reactions — a like button
@@ -32,19 +33,42 @@ import { COMMENT_MAX_LENGTH, type Comment, type CommentTarget } from "@/types/co
  *
  * Replies are one level deep because the API is: replying to a reply is
  * refused server-side, so a reply row simply has no reply button.
+ *
+ * A thread read carries the first REPLY_PAGE_SIZE replies of each comment and
+ * the full `replyCount`; the rest come a page at a time behind "Show N more
+ * replies" and live in `extraReplies` for as long as the section is mounted.
  */
 export function CommentsSection(target: CommentTarget) {
   const { t } = useLanguage();
   const { user, isAuthenticated } = useAuth();
   const commentsQuery = useComments(target);
+  const loadMore = useLoadMoreReplies();
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [openReplies, setOpenReplies] = useState<Record<string, boolean>>({});
+  const [extraReplies, setExtraReplies] = useState<Record<string, Comment[]>>({});
+  const [repliesError, setRepliesError] = useState<string | null>(null);
 
   const comments = useMemo(() => commentsQuery.data ?? [], [commentsQuery.data]);
   const total = useMemo(
-    () => comments.reduce((sum, comment) => sum + 1 + comment.replies.length, 0),
+    () => comments.reduce((sum, comment) => sum + 1 + comment.replyCount, 0),
     [comments],
   );
+
+  const appendReplies = useCallback(
+    (commentId: string, replies: Comment[]) =>
+      setExtraReplies((prev) => ({ ...prev, [commentId]: [...(prev[commentId] ?? []), ...replies] })),
+    [],
+  );
+
+  const loadMoreReplies = async (commentId: string, loaded: number) => {
+    setRepliesError(null);
+    try {
+      const page = await loadMore.mutateAsync({ commentId, loaded });
+      appendReplies(commentId, page.items);
+    } catch {
+      setRepliesError(commentId);
+    }
+  };
 
   /**
    * One handler for every row. `replyingTo` lives above the map and the rows
@@ -56,21 +80,26 @@ export function CommentsSection(target: CommentTarget) {
     [],
   );
 
-  const handleReplyPosted = (parentId: string) => {
+  const handleReplyPosted = (parentId: string, reply: Comment) => {
     setReplyingTo(null);
     // A thread you just replied to should never sit collapsed under its toggle.
     setOpenReplies((prev) => ({ ...prev, [parentId]: true }));
+    // The thread is refetched, but a reply past the preview would not be in
+    // it — keep the one just posted on screen whatever page it landed on.
+    appendReplies(parentId, [reply]);
   };
 
   return (
     <View style={styles.section}>
       <SectionHeader
         title={t.comments.heading}
-        icon="chatbubbles-outline"
         inset={false}
+        style={styles.header}
         accessory={
           commentsQuery.isSuccess ? (
-            <Pill tone="neutral">{countLabel(total, t.comments.countOne, t.comments.count)}</Pill>
+            <ThemedText variant="caption" tabular color={theme.colors.textFaint}>
+              {countLabel(total, t.comments.countOne, t.comments.count)}
+            </ThemedText>
           ) : undefined
         }
       />
@@ -100,8 +129,9 @@ export function CommentsSection(target: CommentTarget) {
       )}
 
       {commentsQuery.isLoading ? (
-        <View style={styles.state}>
-          <ActivityIndicator color={theme.colors.primary} />
+        <View style={styles.thread} accessible accessibilityLabel={t.common.loading}>
+          <CommentSkeleton />
+          <CommentSkeleton />
         </View>
       ) : commentsQuery.isError ? (
         <EmptyState
@@ -127,6 +157,9 @@ export function CommentsSection(target: CommentTarget) {
         <View style={styles.thread}>
           {comments.map((comment) => {
             const repliesOpen = !!openReplies[comment.id];
+            const replies = visibleReplies(comment, extraReplies[comment.id]);
+            const remaining = Math.max(0, comment.replyCount - replies.length);
+            const loadingMore = loadMore.isPending && loadMore.variables?.commentId === comment.id;
             return (
               <View key={comment.id}>
                 <CommentRow
@@ -141,11 +174,11 @@ export function CommentsSection(target: CommentTarget) {
                     avatarUrl={user?.avatarUrl ?? null}
                     name={displayNameOf(user) || t.comments.you}
                     onCancel={() => setReplyingTo(null)}
-                    onPosted={() => handleReplyPosted(comment.id)}
+                    onPosted={(reply) => handleReplyPosted(comment.id, reply)}
                   />
                 )}
 
-                {comment.replies.length > 0 && (
+                {comment.replyCount > 0 && (
                   <View style={styles.repliesBlock}>
                     <Pressable
                       onPress={() => setOpenReplies((prev) => ({ ...prev, [comment.id]: !prev[comment.id] }))}
@@ -155,21 +188,40 @@ export function CommentsSection(target: CommentTarget) {
                       accessibilityState={{ expanded: repliesOpen }}
                       accessibilityLabel={repliesOpen ? t.comments.hideReplies : t.comments.showReplies}
                     >
+                      <ThemedText variant="caption" weight="bold" style={styles.repliesToggleText}>
+                        {countLabel(comment.replyCount, t.comments.replyCountOne, t.comments.replyCount)}
+                      </ThemedText>
                       <Ionicons
                         name={repliesOpen ? "chevron-up" : "chevron-down"}
                         size={14}
-                        color={theme.colors.primary}
+                        color={theme.colors.link}
                       />
-                      <ThemedText variant="caption" weight="semibold" style={styles.repliesToggleText}>
-                        {countLabel(comment.replies.length, t.comments.replyCountOne, t.comments.replyCount)}
-                      </ThemedText>
                     </Pressable>
 
                     {repliesOpen && (
                       <View style={styles.replies}>
-                        {comment.replies.map((reply) => (
+                        {replies.map((reply) => (
                           <CommentRow key={reply.id} comment={reply} compact />
                         ))}
+                        {remaining > 0 && (
+                          <Pressable
+                            onPress={() => loadMoreReplies(comment.id, replies.length)}
+                            disabled={loadingMore}
+                            style={styles.repliesToggle}
+                            hitSlop={10}
+                            accessibilityRole="button"
+                            accessibilityState={{ disabled: loadingMore, busy: loadingMore }}
+                          >
+                            <ThemedText variant="caption" weight="bold" style={styles.repliesToggleText}>
+                              {loadingMore
+                                ? t.comments.loadingReplies
+                                : countLabel(remaining, t.comments.moreRepliesOne, t.comments.moreReplies)}
+                            </ThemedText>
+                          </Pressable>
+                        )}
+                        {repliesError === comment.id && !loadingMore && (
+                          <InlineError message={t.comments.repliesLoadError} />
+                        )}
                       </View>
                     )}
                   </View>
@@ -183,9 +235,54 @@ export function CommentsSection(target: CommentTarget) {
   );
 }
 
+/** Two placeholder rows while the thread loads — Marquee never draws a spinner. */
+function CommentSkeleton() {
+  return (
+    <View style={styles.row} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <Skeleton width={36} height={36} radius="pill" />
+      <View style={styles.skeletonBody}>
+        <Skeleton width="40%" height={13} radius="xs" />
+        <Skeleton width="90%" height={13} radius="xs" />
+        <Skeleton width="65%" height={13} radius="xs" />
+      </View>
+    </View>
+  );
+}
+
 /** Burmese has no plural form, so the two templates are separate keys, not a suffix rule. */
 function countLabel(count: number, one: string, many: string): string {
   return count === 1 ? one : many.replace("{n}", String(count));
+}
+
+/**
+ * The preview the thread read carried plus the replies loaded (or posted)
+ * since, oldest first, each reply once. A refetch can move a reply from a
+ * later page into the preview, and a reply you just posted is appended
+ * before its page is ever loaded, so ids are deduplicated here rather than
+ * at every write.
+ */
+function visibleReplies(comment: Comment, extra: Comment[] | undefined): Comment[] {
+  if (!extra?.length) return comment.replies;
+  const seen = new Set<string>();
+  const merged: Comment[] = [];
+  for (const reply of [...comment.replies, ...extra]) {
+    if (seen.has(reply.id)) continue;
+    seen.add(reply.id);
+    merged.push(reply);
+  }
+  return merged.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/** The server's per-account 429 codes (CommentsService); any other 429 is the IP backstop. */
+const RATE_DAY_CODE = "COMMENT_RATE_DAY";
+
+/** The notice a failed post shows: the limit's own line, else the server's rule, else the fallback. */
+function postErrorMessage(err: unknown, t: ReturnType<typeof useLanguage>["t"]): string {
+  if (!(err instanceof ApiError)) return t.comments.postError;
+  if (err.status === 429) {
+    return err.code === RATE_DAY_CODE ? t.comments.dailyLimit : t.comments.rateLimited;
+  }
+  return err.message;
 }
 
 /* ------------------------------------------------------------------ */
@@ -207,7 +304,12 @@ const CommentAvatar = memo(function CommentAvatar({
 
   return (
     <View style={[styles.avatar, styles.avatarFallback, dimension]}>
-      <ThemedText variant="caption" weight="bold">
+      <ThemedText
+        variant="caption"
+        weight="extrabold"
+        color={theme.colors.onAvatar}
+        style={size < 32 ? styles.avatarInitialsSmall : undefined}
+      >
         {name.slice(0, 2).toUpperCase()}
       </ThemedText>
     </View>
@@ -240,15 +342,15 @@ const CommentRow = memo(function CommentRow({
 
       <View style={styles.rowBody}>
         <View style={styles.rowMeta}>
-          <ThemedText variant="caption" weight="bold" numberOfLines={1} style={styles.authorName}>
+          <ThemedText variant="muted" weight="extrabold" numberOfLines={1} style={styles.authorName}>
             {authorName}
           </ThemedText>
-          <ThemedText variant="caption" tabular style={styles.timestamp}>
-            {formatRelativeTime(comment.createdAt, t.comments)}
+          <ThemedText variant="muted" tabular style={styles.timestamp}>
+            {`· ${formatRelativeTime(comment.createdAt, t.comments)}`}
           </ThemedText>
         </View>
 
-        <ThemedText variant="body" style={styles.commentBody}>
+        <ThemedText variant="muted" style={styles.commentBody}>
           {comment.body}
         </ThemedText>
 
@@ -260,8 +362,7 @@ const CommentRow = memo(function CommentRow({
             accessibilityRole="button"
             accessibilityLabel={t.comments.reply}
           >
-            <Ionicons name="arrow-undo-outline" size={13} color={theme.colors.textMuted} />
-            <ThemedText variant="caption" weight="semibold" style={styles.replyActionText}>
+            <ThemedText variant="caption" weight="bold" style={styles.replyActionText}>
               {t.comments.reply}
             </ThemedText>
           </Pressable>
@@ -290,19 +391,17 @@ function Composer({
 
   if (!expanded) {
     return (
-      <View style={styles.composer}>
-        <CommentAvatar url={avatarUrl} name={name} size={36} />
-        <Pressable
-          onPress={() => setExpanded(true)}
-          style={styles.composerPill}
-          accessibilityRole="button"
-          accessibilityLabel={t.comments.placeholder}
-        >
-          <ThemedText variant="muted" numberOfLines={1}>
-            {t.comments.placeholder}
-          </ThemedText>
-        </Pressable>
-      </View>
+      <Pressable
+        onPress={() => setExpanded(true)}
+        style={({ pressed }) => [styles.composerPill, pressed && styles.composerPillPressed]}
+        accessibilityRole="button"
+        accessibilityLabel={t.comments.placeholder}
+      >
+        <CommentAvatar url={avatarUrl} name={name} size={28} />
+        <ThemedText variant="body" color={theme.colors.textFaint} numberOfLines={1} style={styles.composerPlaceholder}>
+          {t.comments.placeholder}
+        </ThemedText>
+      </Pressable>
     );
   }
 
@@ -336,7 +435,7 @@ function ReplyComposer({
   avatarUrl: string | null;
   name: string;
   onCancel: () => void;
-  onPosted: () => void;
+  onPosted: (reply: Comment) => void;
 }) {
   const { t } = useLanguage();
 
@@ -381,7 +480,8 @@ function CommentEditor({
   submitLabel: string;
   minHeight?: number;
   onCancel: () => void;
-  onPosted: () => void;
+  /** Receives the comment as the server returned it. */
+  onPosted: (comment: Comment) => void;
 }) {
   const { t } = useLanguage();
   const mutation = usePostComment(target);
@@ -393,15 +493,16 @@ function CommentEditor({
     if (!trimmed) return;
     setError(null);
     try {
-      await mutation.mutateAsync(parentId ? { body: trimmed, parentId } : { body: trimmed });
+      const posted = await mutation.mutateAsync(parentId ? { body: trimmed, parentId } : { body: trimmed });
       setBody("");
-      onPosted();
+      onPosted(posted);
     } catch (err) {
       // A failed post keeps what was typed — the notice says why, and
-      // retrying should not mean writing the comment again. The server's own
-      // message is preferred when there is one (it names the actual rule that
-      // was broken); anything else falls back to the localized line.
-      setError(err instanceof ApiError ? err.message : t.comments.postError);
+      // retrying should not mean writing the comment again. The posting
+      // limit (429) has its own translated line; any other server message is
+      // preferred when there is one (it names the actual rule that was
+      // broken); anything else falls back to the localized line.
+      setError(postErrorMessage(err, t));
     }
   };
 
@@ -481,6 +582,8 @@ function InlineError({ message }: { message: string }) {
 
 const styles = StyleSheet.create({
   section: { paddingHorizontal: theme.layout.screenPadding, gap: theme.spacing.md },
+  /** The section's own gap already spaces the heading from the composer. */
+  header: { marginBottom: 0 },
 
   signedOut: {
     flexDirection: "row",
@@ -491,17 +594,18 @@ const styles = StyleSheet.create({
   signedOutText: { flex: 1 },
 
   state: { paddingVertical: theme.spacing.lg },
-  thread: { gap: theme.spacing.lg },
+  thread: { gap: 20, marginTop: theme.spacing.xs },
+  skeletonBody: { flex: 1, gap: 8, paddingTop: 2 },
 
   /* ---- one comment ---- */
-  row: { flexDirection: "row", gap: theme.spacing.sm + 2 },
-  rowBody: { flex: 1, gap: 3 },
-  rowMeta: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+  row: { flexDirection: "row", gap: 12 },
+  rowBody: { flex: 1, minWidth: 0 },
+  rowMeta: { flexDirection: "row", alignItems: "center", gap: 4 },
   // `flexShrink: 1` keeps a long display name from pushing the timestamp out
   // of the row instead of ellipsizing itself.
   authorName: { flexShrink: 1, color: theme.colors.text },
-  timestamp: { color: theme.colors.textFaint },
-  commentBody: { color: theme.colors.text },
+  timestamp: { color: theme.colors.textFaint, flexShrink: 0 },
+  commentBody: { color: theme.colors.textBody, marginTop: 4 },
   // paddingVertical + hitSlop 10 clear the 44pt minimum without the row
   // itself being 44pt tall, which would put too much air under every comment.
   replyAction: {
@@ -514,13 +618,14 @@ const styles = StyleSheet.create({
   },
   replyActionText: { color: theme.colors.textMuted },
 
-  avatar: { borderWidth: 1, borderColor: theme.colors.ring, backgroundColor: theme.colors.secondary },
+  avatar: { backgroundColor: theme.colors.avatar, overflow: "hidden" },
   avatarFallback: { alignItems: "center", justifyContent: "center" },
+  avatarInitialsSmall: { fontSize: 11 },
 
   /* ---- replies ---- */
-  repliesBlock: { marginTop: theme.spacing.xs, paddingLeft: 46 },
+  repliesBlock: { paddingLeft: 48 },
   repliesToggle: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", paddingVertical: 8 },
-  repliesToggleText: { color: theme.colors.primary },
+  repliesToggleText: { color: theme.colors.link },
   replies: {
     gap: theme.spacing.md,
     marginTop: theme.spacing.sm,
@@ -531,18 +636,21 @@ const styles = StyleSheet.create({
 
   /* ---- composers ---- */
   composer: { flexDirection: "row", gap: theme.spacing.sm + 2 },
-  replyComposer: { flexDirection: "row", gap: theme.spacing.sm + 2, marginTop: theme.spacing.sm, paddingLeft: 46 },
+  replyComposer: { flexDirection: "row", gap: theme.spacing.sm + 2, marginTop: theme.spacing.sm, paddingLeft: 48 },
   composerBody: { flex: 1, gap: theme.spacing.sm },
+  /** MovieDetail.dc.html: a 48pt, radius-24 pill with the avatar inside it. */
   composerPill: {
-    flex: 1,
-    justifyContent: "center",
-    minHeight: theme.layout.minTouch,
-    paddingHorizontal: theme.spacing.md,
-    borderRadius: theme.radius.pill,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: 24,
     backgroundColor: theme.colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
   },
+  composerPillPressed: { opacity: 0.8 },
+  composerPlaceholder: { flex: 1 },
   composerActions: { flexDirection: "row", justifyContent: "flex-end", gap: theme.spacing.sm },
   input: {
     backgroundColor: theme.colors.surfaceSunken,

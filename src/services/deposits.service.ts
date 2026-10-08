@@ -1,5 +1,5 @@
 import { depositsApi } from "@/api/deposits.api";
-import type { PaginationParams, RequestSignalOptions } from "@/types/api";
+import type { RequestListParams, RequestSignalOptions } from "@/types/api";
 
 export const depositsService = {
   createDeposit(
@@ -12,7 +12,7 @@ export const depositsService = {
     return depositsApi.createDeposit(amount, paymentMethod, reference, accountName, paymentAccountId);
   },
 
-  getMyDeposits(pagination: PaginationParams = {}, options: RequestSignalOptions = {}) {
+  getMyDeposits(pagination: RequestListParams = {}, options: RequestSignalOptions = {}) {
     return depositsApi.getMyDeposits(pagination, options);
   },
 };

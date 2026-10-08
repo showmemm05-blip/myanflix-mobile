@@ -8,13 +8,16 @@ A `Button`, a `Surface`, a `BottomSheet`. If it would drop unchanged into
 another app, it belongs here.
 
 **`common/` — shared components that DO know the domain.** An `AccessBadge`
-that reads `AccessType`, a `MediaCard` that lays out a poster, a `GamePlate`
-that knows the arcade, a `StatTile` that speaks in role tones, an
-`AuroraBackdrop` that knows the palette. Used by more than one feature folder.
+that reads `AccessType`, a `MediaCard` that lays out a poster, an
+`ActorAvatar` that knows a person's initials. Used by more than one feature
+folder.
 
 **`<feature>/` — everything used by exactly one screen family:** `arcade`,
 `auth`, `books`, `comments`, `detail`, `feedback`, `layout`, `movie`,
-`player`, `profile`, `search`, `series`, `wallet`.
+`player`, `profile`, `search`, `series`, `wallet`. One feature is opened from
+two screen families and still keeps its own folder, because every piece of it
+is about that one feature: `withdrawal-code` (the 6-digit code's pages, sheet
+and keypad — the withdraw flow and Profile › Account both open them).
 
 `Chip`, `Skeleton` and `ProgressTrack` are domain-free and would sit in `ui/`
 under this rule. They are left in `common/` because moving them rewrites 22

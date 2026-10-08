@@ -36,7 +36,7 @@ const SPACIOUS_MAX_COLUMNS = 8;
 
 /**
  * One shared layout brain for every portrait poster grid (Search results,
- * Favorites, WatchHistory, CategoryDetail, BooksCatalog) so all of them
+ * Favorites, WatchHistory, CategoryDetail) so all of them
  * agree on columns and cell width, and rotation/foldables re-flow live.
  */
 export function usePosterGrid(density: PosterGridDensity = "default"): PosterGridLayout {

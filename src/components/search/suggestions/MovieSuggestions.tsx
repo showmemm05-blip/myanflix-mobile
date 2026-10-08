@@ -12,7 +12,13 @@ interface Props {
   term: string;
   visible: boolean;
   anchorRef: RefObject<View | null>;
+  /** Higher anchors for a short screen — see SuggestionPanel. */
+  fallbackAnchorRefs?: ReadonlyArray<RefObject<View | null>>;
+  /** Bumped by the screen when the anchor may have moved — see SuggestionPanel. */
+  anchorKey?: number;
   containerRef: RefObject<View | null>;
+  /** A tap on the dim behind the panel — see SuggestionPanel. */
+  onDismiss?: () => void;
   onSelect: (movie: Movie) => void;
   onSeeAll: () => void;
 }
@@ -25,7 +31,17 @@ interface Props {
  * Everything else — the box, the motion, the keyboard budget, the states and
  * the footer — is SuggestionPanel's, shared byte for byte with series and books.
  */
-export function MovieSuggestions({ term, visible, anchorRef, containerRef, onSelect, onSeeAll }: Props) {
+export function MovieSuggestions({
+  term,
+  visible,
+  anchorRef,
+  fallbackAnchorRefs,
+  anchorKey,
+  containerRef,
+  onDismiss,
+  onSelect,
+  onSeeAll,
+}: Props) {
   const { t } = useLanguage();
   const debounced = useSuggestDebounce(term);
   const query = useMovieSuggestions(debounced, visible);
@@ -35,7 +51,10 @@ export function MovieSuggestions({ term, visible, anchorRef, containerRef, onSel
     <SuggestionPanel
       visible={visible}
       anchorRef={anchorRef}
+      fallbackAnchorRefs={fallbackAnchorRefs}
+      anchorKey={anchorKey}
       containerRef={containerRef}
+      onDismiss={onDismiss}
       term={debounced}
       accessibilityLabel={t.search.suggestionsLabel}
       emptyLabel={t.search.suggestNoResults.replace("{term}", debounced)}

@@ -27,5 +27,11 @@ export interface Transaction {
   amount: number;
   status: TransactionStatus;
   movieId: string | null;
+  /**
+   * The purchased title, joined in by the wallet service for rows that carry
+   * a movieId (null otherwise). Optional because it is a read-only extra the
+   * row does not depend on: a purchase without it still reads as "Purchase".
+   */
+  movieTitle?: string | null;
   createdAt: string;
 }

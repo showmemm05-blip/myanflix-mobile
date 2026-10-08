@@ -12,7 +12,13 @@ interface Props {
   term: string;
   visible: boolean;
   anchorRef: RefObject<View | null>;
+  /** Higher anchors for a short screen — see SuggestionPanel. */
+  fallbackAnchorRefs?: ReadonlyArray<RefObject<View | null>>;
+  /** Bumped by the screen when the anchor may have moved — see SuggestionPanel. */
+  anchorKey?: number;
   containerRef: RefObject<View | null>;
+  /** A tap on the dim behind the panel — see SuggestionPanel. */
+  onDismiss?: () => void;
   onSelect: (book: Book) => void;
   onSeeAll: () => void;
 }
@@ -23,7 +29,17 @@ interface Props {
  * carries neither a release year nor a genre, and the author is the field the
  * search itself matched on half the time.
  */
-export function BookSuggestions({ term, visible, anchorRef, containerRef, onSelect, onSeeAll }: Props) {
+export function BookSuggestions({
+  term,
+  visible,
+  anchorRef,
+  fallbackAnchorRefs,
+  anchorKey,
+  containerRef,
+  onDismiss,
+  onSelect,
+  onSeeAll,
+}: Props) {
   const { t } = useLanguage();
   const debounced = useSuggestDebounce(term);
   const query = useBookSuggestions(debounced, visible);
@@ -52,7 +68,10 @@ export function BookSuggestions({ term, visible, anchorRef, containerRef, onSele
     <SuggestionPanel
       visible={visible}
       anchorRef={anchorRef}
+      fallbackAnchorRefs={fallbackAnchorRefs}
+      anchorKey={anchorKey}
       containerRef={containerRef}
+      onDismiss={onDismiss}
       term={debounced}
       accessibilityLabel={t.search.suggestionsLabelBooks}
       emptyLabel={t.search.suggestNoResultsBooks.replace("{term}", debounced)}

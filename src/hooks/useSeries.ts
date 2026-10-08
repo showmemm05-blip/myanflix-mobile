@@ -18,12 +18,24 @@ export const seriesSuggestKey = (term: string) => ["series", "suggest", term] as
 const MINUTE_MS = 60_000;
 
 /**
- * `options.enabled` has the same shape useBooksList already uses, and exists
- * for the same reason: CategoryDetail and Favorites open on their MOVIES tab,
- * so without it both pulled a speculative 100-row series page for a tab the
- * user may never select.
+ * The per-screen knobs a list hook passes through. Omitted, each hook keeps
+ * its own default (useSeriesList a minute, useSeriesInfinite the 30s search
+ * window); a browse shelf passes a longer `staleTime` because the catalogue
+ * changes far less often than a search does.
  */
-export function useSeriesList(query: SeriesQuery = {}, options: { enabled?: boolean } = {}) {
+export interface SeriesListOptions {
+  enabled?: boolean;
+  staleTime?: number;
+  refetchOnWindowFocus?: boolean;
+}
+
+/**
+ * `options.enabled` has the same shape useBooksList already uses, and exists
+ * for the same reason: a screen that opens on another tab (Search's idle
+ * series rail, for one) must not pull series rows for a tab the user may
+ * never select.
+ */
+export function useSeriesList(query: SeriesQuery = {}, options: SeriesListOptions = {}) {
   return useQuery({
     queryKey: ["series", query],
     // Forward React Query's abort handle so leaving the screen (or changing a
@@ -31,11 +43,11 @@ export function useSeriesList(query: SeriesQuery = {}, options: { enabled?: bool
     queryFn: ({ signal }) => seriesService.getSeries(query, { signal }),
     enabled: options.enabled ?? true,
     // The one catalogue hook that used to set no window, while its twins all
-    // do (useBooksList a minute, useMovies and useSeriesInfinite 30s). Search,
-    // Favorites and CategoryDetail all mount the identical
-    // ["series",{limit:100}] key, so each open re-downloaded 100 rows already
-    // in hand.
-    staleTime: MINUTE_MS,
+    // do (useBooksList a minute, useMovies and useSeriesInfinite 30s). Without
+    // it, every screen that mounts the same key (the Media shelves, the
+    // filter sheets' live counts) re-downloaded rows already in hand.
+    staleTime: options.staleTime ?? MINUTE_MS,
+    ...(options.refetchOnWindowFocus !== undefined ? { refetchOnWindowFocus: options.refetchOnWindowFocus } : {}),
   });
 }
 
@@ -48,7 +60,7 @@ export function useSeriesList(query: SeriesQuery = {}, options: { enabled?: bool
  * reason: CategoryDetail opens on its MOVIES tab, and without it the series
  * pages would be pulled for a tab the user may never select.
  */
-export function useSeriesInfinite(query: SeriesQuery = {}, options: { enabled?: boolean } = {}) {
+export function useSeriesInfinite(query: SeriesQuery = {}, options: SeriesListOptions = {}) {
   return useInfiniteQuery({
     queryKey: seriesInfiniteKey(query),
     queryFn: ({ pageParam, signal }) => seriesService.getSeries({ ...query, page: pageParam }, { signal }),
@@ -59,7 +71,8 @@ export function useSeriesInfinite(query: SeriesQuery = {}, options: { enabled?: 
       return loaded < lastPage.total ? lastPage.page + 1 : undefined;
     },
     placeholderData: keepPreviousData,
-    staleTime: SEARCH_STALE_TIME_MS,
+    staleTime: options.staleTime ?? SEARCH_STALE_TIME_MS,
+    ...(options.refetchOnWindowFocus !== undefined ? { refetchOnWindowFocus: options.refetchOnWindowFocus } : {}),
   });
 }
 
