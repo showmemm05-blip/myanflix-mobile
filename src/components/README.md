@@ -14,10 +14,12 @@ folder.
 
 **`<feature>/` — everything used by exactly one screen family:** `arcade`,
 `auth`, `books`, `comments`, `detail`, `feedback`, `layout`, `movie`,
-`player`, `profile`, `search`, `series`, `wallet`. One feature is opened from
-two screen families and still keeps its own folder, because every piece of it
-is about that one feature: `withdrawal-code` (the 6-digit code's pages, sheet
-and keypad — the withdraw flow and Profile › Account both open them).
+`player`, `profile`, `search`, `series`, `splash`, `wallet`. One feature is
+opened from two screen families and still keeps its own folder, because every
+piece of it is about that one feature: `withdrawal-code` (the 6-digit code's
+pages, sheet and keypad — the withdraw flow and Profile › Account both open
+them). `splash` is used by App.tsx alone: the cold-start animated splash, its
+geometry and the wordmark's generated path data.
 
 `Chip`, `Skeleton` and `ProgressTrack` are domain-free and would sit in `ui/`
 under this rule. They are left in `common/` because moving them rewrites 22

@@ -1,8 +1,15 @@
-/** Comment author as the public thread exposes it — never a phone, never an IP. */
+/**
+ * Comment author as the public thread exposes it — never a phone, never an
+ * IP, never a username (a phone sign-up's username IS its phone number, so
+ * the server stopped sending it — SEC-007).
+ */
 export interface CommentAuthor {
-  id: string;
-  username: string;
-  displayName: string | null;
+  /** The author's user id — on your own comments only (`Comment.isMine`); never another reader's. */
+  id?: string;
+  /** The display name, else the server's `Member #<tag>` pseudonym. Always set. */
+  displayName: string;
+  /** The tag behind a `Member #<tag>` pseudonym, so the prefix can be translated; null when `displayName` is the account's own. */
+  memberTag: string | null;
   avatarUrl: string | null;
 }
 
@@ -18,6 +25,8 @@ export interface Comment {
   body: string;
   createdAt: string;
   user: CommentAuthor;
+  /** True when the signed-in viewer wrote it (the thread is read with the session's token). */
+  isMine: boolean;
   /** For a top-level comment: its first REPLY_PAGE_SIZE replies, oldest first. */
   replies: Comment[];
   /** Every visible reply, whether or not it is in `replies`. */

@@ -467,6 +467,7 @@ export const mm = {
   },
   comments: {
     heading: "မှတ်ချက်များ",
+    member: "အဖွဲ့ဝင် #{tag}",
     count: "မှတ်ချက် {n} ခု",
     countOne: "မှတ်ချက် ၁ ခု",
     placeholder: "သင့်အမြင်ကို မျှဝေပါ…",

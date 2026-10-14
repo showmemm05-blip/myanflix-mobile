@@ -106,8 +106,10 @@ export function CommentsSection(target: CommentTarget) {
 
       {isAuthenticated ? (
         /* The display name, because that is what a posted comment renders with
-           (`comment.user.displayName ?? username` below) — using the username
-           here made your own pending comment disagree with its posted self. */
+           (`authorName` in CommentRow) — using the username here made your own
+           pending comment disagree with its posted self. An account with no
+           display name still sees its own username here; everyone else sees
+           the server's `Member #…` pseudonym on the posted comment. */
         <Composer
           target={target}
           avatarUrl={user?.avatarUrl ?? null}
@@ -334,7 +336,12 @@ const CommentRow = memo(function CommentRow({
   compact?: boolean;
 }) {
   const { t } = useLanguage();
-  const authorName = comment.user.displayName ?? comment.user.username;
+  // The display name, else the server's `Member #<tag>` pseudonym with the
+  // prefix in the viewer's language — never a username: for a phone sign-up
+  // that is the phone number, which is why the server no longer sends one.
+  const authorName = comment.user.memberTag
+    ? t.comments.member.replace("{tag}", comment.user.memberTag)
+    : comment.user.displayName;
 
   return (
     <View style={styles.row}>

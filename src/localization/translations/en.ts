@@ -553,6 +553,8 @@ export const en = {
   },
   comments: {
     heading: "Comments",
+    /** The name shown for a commenter who never set a display name; the server sends the tag. */
+    member: "Member #{tag}",
     /**
      * Burmese has no plural form, so the singular is its own key rather than a
      * suffix rule applied to `count` — same shape as home.hero.dayLeft/daysLeft.

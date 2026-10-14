@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { AppState, type AppStateStatus } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { AppState, Platform, type AppStateStatus } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import * as SystemUI from "expo-system-ui";
@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-
 import { useFonts } from "expo-font";
 import { RootNavigator } from "@/navigation/RootNavigator";
 import { AppErrorBoundary } from "@/components/common/AppErrorBoundary";
+import { AnimatedSplash } from "@/components/splash/AnimatedSplash";
 import { bootstrapAuth, subscribeToUnauthorized } from "@/hooks/useAuth";
 import { useAuthStore } from "@/store/authStore";
 import { hasLanguageHydrated, onLanguageHydrated } from "@/localization/LanguageProvider";
@@ -39,6 +40,23 @@ const NotoSansMyanmar_800ExtraBold = require("@expo-google-fonts/noto-sans-myanm
 const NotoSansMyanmar_900Black = require("@expo-google-fonts/noto-sans-myanmar/900Black/NotoSansMyanmar_900Black.ttf");
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+/**
+ * Android only: expo-splash-screen fades the system splash out over 400 ms
+ * (AccelerateInterpolator) when it is told to hide. The animated splash
+ * (components/splash) starts from the very frame the system splash shows, so
+ * the two must simply swap — with the fade, a ghost of the centred bar would
+ * linger on top while ours slides left. iOS removes its launch view at once
+ * unless `fade` is set, which it is not. (A warning and a no-op in Expo Go.)
+ */
+if (Platform.OS === "android") SplashScreen.setOptions({ duration: 0 });
+
+/**
+ * The animated splash plays on a COLD START only — once per JS runtime. A
+ * resume from background never re-mounts App, so it never replays; a full
+ * reload (or a Fast Refresh that re-evaluates this module) is a new runtime
+ * and counts as a cold start.
+ */
+let splashPlayed = false;
 
 /**
  * The defaults every hook inherits. Both of these were previously React
@@ -116,6 +134,12 @@ export default function App() {
   });
   const isAuthBootstrapping = useAuthStore((s) => s.isBootstrapping);
   const [languageHydrated, setLanguageHydrated] = useState(hasLanguageHydrated());
+  // Decided once, when App first mounts in this runtime — see `splashPlayed`.
+  const [splashVisible, setSplashVisible] = useState(() => !splashPlayed);
+  useEffect(() => {
+    splashPlayed = true;
+  }, []);
+  const handleSplashFinished = useCallback(() => setSplashVisible(false), []);
 
   useEffect(() => {
     bootstrapAuth();
@@ -141,32 +165,42 @@ export default function App() {
   // strictly better than an app that never starts.
   const isReady = (fontsLoaded || !!fontError) && !isAuthBootstrapping && languageHydrated;
 
-  // NOT an onLayout handler, despite the Expo recipe this came from: the tree
-  // below returns null until `isReady`, so the root view cannot lay out while
-  // the splash is still the thing on screen. Hide it the moment fonts, auth
-  // bootstrap and language hydration have all landed.
+  // The native splash is hidden by the AnimatedSplash overlay from its FIRST
+  // layout — its first frame is the native splash's frame, so the switch is
+  // invisible and the animation starts as early as the root view exists —
+  // not from here. This is the safety net for a mount that shows no overlay
+  // (a re-mount of App after the splash has played); once the native splash
+  // is gone it is a no-op.
   useEffect(() => {
-    if (isReady) SplashScreen.hideAsync().catch(() => {});
-  }, [isReady]);
-
-  if (!isReady) return null;
+    if (isReady && !splashVisible) SplashScreen.hideAsync().catch(() => {});
+  }, [isReady, splashVisible]);
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          {/* Inside the providers, outside the navigator: the fallback still
-              gets the language store, the query client and the safe-area
-              insets, and a render throw anywhere in the app costs the screen
-              instead of the whole root. */}
-          <AppErrorBoundary>
-            <NavigationContainer theme={navigationTheme}>
-              <RootNavigator />
-            </NavigationContainer>
-          </AppErrorBoundary>
-          <StatusBar style="light" />
-        </QueryClientProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <>
+      {/* The app tree mounts the moment it is ready — UNDER the overlay,
+          which stays opaque until the splash's minimum hold has passed too,
+          so the first screen is drawn before the fade reveals it. */}
+      {isReady ? (
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <SafeAreaProvider>
+            <QueryClientProvider client={queryClient}>
+              {/* Inside the providers, outside the navigator: the fallback still
+                  gets the language store, the query client and the safe-area
+                  insets, and a render throw anywhere in the app costs the screen
+                  instead of the whole root. */}
+              <AppErrorBoundary>
+                <NavigationContainer theme={navigationTheme}>
+                  <RootNavigator />
+                </NavigationContainer>
+              </AppErrorBoundary>
+            </QueryClientProvider>
+          </SafeAreaProvider>
+        </GestureHandlerRootView>
+      ) : null}
+      {/* Rendered last and zIndexed above the app until its fade has ended. */}
+      {splashVisible ? <AnimatedSplash ready={isReady} onFinished={handleSplashFinished} /> : null}
+      {/* Outside the ready gate so the status bar is light over the splash too. */}
+      <StatusBar style="light" />
+    </>
   );
 }
