@@ -123,7 +123,7 @@ export function AuthorDetailsScreen({ route, navigation }: Props) {
     () => (
       <RefreshControl
         refreshing={booksQuery.isRefetching && !booksQuery.isFetchingNextPage}
-        onRefresh={() => booksQuery.refetch()}
+        onRefresh={() => void booksQuery.refetch()}
         tintColor={theme.colors.primary}
         colors={[theme.colors.primary]}
         progressBackgroundColor={theme.colors.surface}
@@ -236,7 +236,7 @@ export function AuthorDetailsScreen({ route, navigation }: Props) {
               numColumns={grid.columns}
               keyExtractor={keyExtractor}
               renderItem={renderBookItem}
-              ListHeaderComponent={hero}
+              ListHeaderComponent={hero ?? undefined}
               ListEmptyComponent={<EmptyState message={t.authors.noBooks} icon="book-outline" fill={false} style={styles.empty} />}
               ListFooterComponent={listFooter}
               columnWrapperStyle={gridRowStyle}

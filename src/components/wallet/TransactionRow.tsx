@@ -13,7 +13,7 @@ import { theme } from "@/theme";
 import type { TranslationShape } from "@/localization/translations";
 import type { Transaction, TransactionStatus, TransactionType } from "@/types/wallet";
 
-const POSITIVE_TYPES = new Set(["DEPOSIT", "REFUND", "ADJUSTMENT_CREDIT"]);
+const POSITIVE_TYPES = new Set(["DEPOSIT", "REFUND", "ADJUSTMENT_CREDIT", "LOTTERY_PRIZE"]);
 const ICONS: Record<TransactionType, keyof typeof Ionicons.glyphMap> = {
   DEPOSIT: "arrow-down",
   REFUND: "return-up-back",
@@ -22,11 +22,14 @@ const ICONS: Record<TransactionType, keyof typeof Ionicons.glyphMap> = {
   WITHDRAWAL: "arrow-up",
   ADJUSTMENT_CREDIT: "add",
   ADJUSTMENT_DEBIT: "remove",
+  LOTTERY_PURCHASE: "ticket-outline",
+  LOTTERY_PRIZE: "trophy-outline",
 };
 /**
  * One colour per money role, so a ledger reads at a glance: emerald = money in,
  * gold = subscription, sky = money out, amber = an admin correction, violet =
- * a content purchase (the approved wallet design tints purchases violet).
+ * a content purchase (the approved wallet design tints purchases violet). A
+ * lottery purchase is a purchase (violet); a lottery prize is money in.
  */
 const TONES: Record<TransactionType, string> = {
   DEPOSIT: theme.colors.finance,
@@ -36,9 +39,11 @@ const TONES: Record<TransactionType, string> = {
   PURCHASE: theme.colors.primary,
   WITHDRAWAL: theme.colors.info,
   ADJUSTMENT_DEBIT: theme.colors.warning,
+  LOTTERY_PURCHASE: theme.colors.primary,
+  LOTTERY_PRIZE: theme.colors.finance,
 };
 /** A purchase's glyph is the lighter text violet on its violet tint, as the design draws it. */
-const INKS: Partial<Record<TransactionType, string>> = { PURCHASE: theme.colors.link };
+const INKS: Partial<Record<TransactionType, string>> = { PURCHASE: theme.colors.link, LOTTERY_PURCHASE: theme.colors.link };
 
 type LedgerRowStatus = Extract<RowStatus, "PENDING" | "COMPLETED" | "FAILED" | "REFUNDED">;
 

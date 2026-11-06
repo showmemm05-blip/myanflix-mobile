@@ -99,8 +99,8 @@ export function ResultsGrid<T>({
       data={data}
       numColumns={columns}
       keyExtractor={keyExtractor}
-      ListHeaderComponent={header}
-      ListFooterComponent={footer}
+      ListHeaderComponent={header ?? undefined}
+      ListFooterComponent={footer ?? undefined}
       contentContainerStyle={[styles.gridContent, contentStyle]}
       columnWrapperStyle={rowStyle}
       ItemSeparatorComponent={separator ?? RowSeparator}

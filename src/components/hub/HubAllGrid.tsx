@@ -8,6 +8,7 @@ import {
   View,
   useWindowDimensions,
   type ListRenderItemInfo,
+  type ViewInstance,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { useScrollOffset } from "react-native-reanimated";
@@ -190,7 +191,7 @@ export function HubAllGrid<T>({
   const refreshControl = useHubRefreshControl(onRefresh, refreshing);
   useHubListScroll(scroll, grid.columns);
 
-  const titleRef = useRef<View>(null);
+  const titleRef = useRef<ViewInstance>(null);
   useEffect(() => {
     if (!focusTitleOnMount) return;
     const timer = setTimeout(() => {
@@ -358,7 +359,7 @@ export function HubAllGrid<T>({
       keyExtractor={keyExtractor}
       renderItem={renderItem}
       ListHeaderComponent={listHeader}
-      ListFooterComponent={footer}
+      ListFooterComponent={footer ?? undefined}
       columnWrapperStyle={columnStyle}
       ItemSeparatorComponent={Separator}
       onEndReached={onEndReached}

@@ -1,5 +1,14 @@
 import { useRef, useState } from "react";
-import { AccessibilityInfo, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  AccessibilityInfo,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  type ScrollViewInstance,
+  type ViewInstance,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAnimatedRef, useReducedMotion, useSharedValue } from "react-native-reanimated";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
@@ -90,8 +99,8 @@ export function SubscribeScreen({ navigation }: Props) {
    * glass covers the inset and its 44pt row — transparent over the art at
    * the top, frosted once the plans scroll up under the button.
    */
-  const blurTarget = useRef<View>(null);
-  const scrollRef = useAnimatedRef<ScrollView>();
+  const blurTarget = useRef<ViewInstance>(null);
+  const scrollRef = useAnimatedRef<ScrollViewInstance>();
   const scrollY = useSharedValue(0);
   const glassHeight = topInset + GLASS_BAR_ROW;
 

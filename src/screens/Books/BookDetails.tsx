@@ -1,5 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type ScrollViewInstance,
+} from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -99,7 +107,7 @@ export function BookDetailsScreen({ route, navigation }: Props) {
   // the hero, transparent at the top, frosted once the page scrolls under it
   // — it replaces the solid ground that used to fade in there.
   const glass = useGlassBar();
-  const scrollRef = useAnimatedRef<ScrollView>();
+  const scrollRef = useAnimatedRef<ScrollViewInstance>();
   const readingLanguage = useReaderPrefsStore((s) => s.readingLanguage);
   const setReadingLanguage = useReaderPrefsStore((s) => s.setReadingLanguage);
 

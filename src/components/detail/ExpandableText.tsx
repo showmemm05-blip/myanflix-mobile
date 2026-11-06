@@ -3,9 +3,8 @@ import {
   Pressable,
   StyleSheet,
   View,
-  type NativeSyntheticEvent,
   type StyleProp,
-  type TextLayoutEventData,
+  type TextLayoutEvent,
   type ViewStyle,
 } from "react-native";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
@@ -51,7 +50,7 @@ export function ExpandableText({ text, collapsedLines = 3, moreLabel, lessLabel,
 
   if (trimmed.length === 0) return null;
 
-  const onMeasure = (event: NativeSyntheticEvent<TextLayoutEventData>) => {
+  const onMeasure = (event: TextLayoutEvent) => {
     const next = event.nativeEvent.lines.length > collapsedLines;
     if (next !== overflows) setOverflows(next);
   };

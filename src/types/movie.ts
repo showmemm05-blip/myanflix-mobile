@@ -49,6 +49,7 @@ export interface Movie {
   episodeNumber: number | null;
   /** Nullable — new metadata the admin backfills over time. */
   director: string | null;
+  /** The movie TYPE word ("Korean", "English"…; utils/mediaType.ts), not a country name. */
   country: string | null;
   ageRating: AgeRating | null;
   categories: MovieCategoryRef[];

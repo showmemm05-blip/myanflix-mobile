@@ -1,5 +1,13 @@
 import { useCallback, useMemo } from "react";
-import { FlatList, RefreshControl, ScrollView, StyleSheet, View, type ListRenderItemInfo } from "react-native";
+import {
+  FlatList,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+  type ListRenderItemInfo,
+  type ScrollViewInstance,
+} from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -74,7 +82,7 @@ export function ActorDetailsScreen({ route, navigation }: Props) {
   // whichever is showing feeds the glass.
   const glass = useGlassBar();
   const gridRef = useAnimatedRef<FlatList<Movie>>();
-  const emptyRef = useAnimatedRef<ScrollView>();
+  const emptyRef = useAnimatedRef<ScrollViewInstance>();
   const actorQuery = useActor(actorId);
   const moviesQuery = useMoviesInfinite({ actorIds: [actorId], sort: "newest", limit: LIST_PAGE_SIZE });
   const seriesQuery = useSeriesInfinite({ actorIds: [actorId], sort: "newest", limit: LIST_PAGE_SIZE });

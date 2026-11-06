@@ -8,7 +8,9 @@ import {
   View,
   type FlatList,
   type ListRenderItemInfo,
-  type TextInput,
+  type ScrollViewInstance,
+  type TextInputInstance,
+  type ViewInstance,
 } from "react-native";
 import { useAnimatedRef } from "react-native-reanimated";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -39,6 +41,7 @@ import { PeopleRail } from "@/components/search/PeopleRail";
 import { RecentSearches } from "@/components/search/RecentSearches";
 import { TrendingSection, TrendingSkeleton } from "@/components/search/TrendingSection";
 import { BrowseEntry } from "@/components/search/BrowseEntry";
+import { SearchEverythingLink } from "@/components/search/SearchEverythingLink";
 import { NextPageFooter } from "@/components/search/NextPageFooter";
 import { useSearchGrid, type SearchGridLayout } from "@/components/search/useSearchGrid";
 import { AppTopBar } from "@/components/layout/AppTopBar";
@@ -244,7 +247,15 @@ function IdleError({ onRetry }: { onRetry: () => void }) {
  *   AppTopBar   the Media tab's bar ("Media", the search button — this page,
  *               so it just hands the caret back — the bell, the avatar), then
  *               the round back button beside the big field, its hint line,
- *               and the scope pills All / Movies / Series / Books.
+ *               and the scope pills All / Movies / Series / Books (on All, a
+ *               line above them: "Everything · movies, series and books").
+ *   LOCKED      opened from a section page (route param `lock`,
+ *               MediaSearchMovies.dc.html): no pills — a scope line in their
+ *               place, "In Movies · 7 results" — that section's suggestions
+ *               and results only, and under them (and under the empty
+ *               state) the quiet "Search everything for “rain”" link, which
+ *               REPLACES this screen with itself unlocked, on All, carrying
+ *               the term (`term`).
  *   Under pills Movies/Series, with a COMMITTED term or any filter active:
  *               the filter row — the Sort & filter pill, then a removable
  *               chip per active value (the genre or category carried over
@@ -299,12 +310,28 @@ export function SearchScreen({ navigation, route }: Props) {
    * is ever mounted; each has its ref and a GlassScrollFeed beside it.
    */
   const glass = useGlassBar(BAR_ROWS_ESTIMATE);
-  const idleScrollRef = useAnimatedRef<ScrollView>();
-  const headerOnlyScrollRef = useAnimatedRef<ScrollView>();
+  const idleScrollRef = useAnimatedRef<ScrollViewInstance>();
+  const headerOnlyScrollRef = useAnimatedRef<ScrollViewInstance>();
   const gridRef = useAnimatedRef<FlatList>();
   /** A non-scrolling body state (an empty or error message) fills the page below the bar. */
   const underBar = useMemo(() => [styles.fill, { paddingTop: glass.barHeight }], [glass.barHeight]);
   const [tab, setTab] = useState<Tab>(route.params?.scope ?? "all");
+  /**
+   * A section page's search is LOCKED to its section (2026-10-22): no scope
+   * pills, that section's results only, and a "Search everything" link out.
+   * Read once, on mount — the scope param is consumed below, and a later
+   * arrival (Browse's search button popping back here) keeps the search the
+   * user opened. "all" cannot be locked: there is nothing to lock it to.
+   */
+  const [locked] = useState(
+    () => route.params?.lock === true && !!route.params?.scope && route.params.scope !== "all",
+  );
+  /**
+   * The screen opens ready to type — unless it was reopened WITH a term
+   * ("Search everything"), which has results to show and must not cover
+   * them with the keyboard. Read once: TextInput applies autoFocus on mount.
+   */
+  const [autoFocus] = useState(() => route.params?.term === undefined);
   /* ---- the two terms -------------------------------------------------------
    * `searchText` is what the FIELD shows — every keystroke. `committedTerm` is
    * what the GRID answers, and it only ever advances when the user commits:
@@ -396,9 +423,11 @@ export function SearchScreen({ navigation, route }: Props) {
   /**
    * "Trending searches": the most-watched titles. Its own small request; if it
    * fails or comes back empty the section is simply not drawn — it is a
-   * recommendation, and the rest of the scope must not depend on it.
+   * recommendation, and the rest of the scope must not depend on it. Not on
+   * a LOCKED search: its cleared state is recents and Popular movies alone
+   * (MediaSearchMovies.dc.html, "cleared"), so it never asks.
    */
-  const trendingQuery = useMovies({ limit: TRENDING_COUNT, sort: "mostViewed" }, { enabled: movieScope });
+  const trendingQuery = useMovies({ limit: TRENDING_COUNT, sort: "mostViewed" }, { enabled: movieScope && !locked });
   const trendingMovies = useMemo(() => trendingQuery.data?.items ?? [], [trendingQuery.data]);
   const seriesRailQuery = useSeriesList({ limit: IDLE_SERIES_COUNT }, { enabled: tab === "series" });
 
@@ -593,27 +622,39 @@ export function SearchScreen({ navigation, route }: Props) {
   );
   /**
    * The sections' "See all" — the whole catalogue is that catalogue's hub on
-   * the Media root, so these go back there on the matching chip rather than
-   * pushing a near-duplicate list.
+   * the Media tab's section page, so these pop back to it on the matching
+   * section (or push it over the hub) rather than stacking a near-duplicate list.
    */
   const showAllMovies = useCallback(() => navigation.popTo("Search", { initialTab: "movies" }), [navigation]);
   const showAllSeries = useCallback(() => navigation.popTo("Search", { initialTab: "series" }), [navigation]);
   const showAllBooks = useCallback(() => navigation.popTo("Search", { initialTab: "books" }), [navigation]);
-  /** The round back button: back where the screen was opened from (the Media root, usually). */
+  /** The round back button: back where the screen was opened from (the hub or a section page, usually). */
   const goBack = useCallback(() => {
     if (navigation.canGoBack()) navigation.goBack();
-    else navigation.navigate("Search");
+    else navigation.popTo("MediaHub");
   }, [navigation]);
   /**
    * …and it says where that is (MediaSearch.dc.html: "Back to Media"). The
-   * Media root's search button, and Browse on the Home tab or Profile (which
-   * lands here with the root underneath), both go back to the Media page; the
-   * Media tab's own Browse goes back to Browse, so there it is plain "Back".
+   * hub's and a section page's search buttons, and Browse on the Home tab or
+   * Profile (which lands here with the hub underneath), all go back to a
+   * Media page; the Media tab's own Browse goes back to Browse, so there it
+   * is plain "Back".
    */
   const backToMedia = useNavigationState((state) => {
     const at = state.routes.findIndex((entry) => entry.key === route.key);
-    return at <= 0 || state.routes[at - 1]?.name === "Search";
+    const below = state.routes[at - 1]?.name;
+    return at <= 0 || below === "Search" || below === "MediaHub";
   });
+  /**
+   * "Search everything for “rain”" — the locked search's way out: this
+   * screen again, unlocked, on All, with the same term, in PLACE of this one
+   * (a push would stack two searches, and back would land on the locked one
+   * the user just left).
+   */
+  const searchEverything = useCallback(
+    () => navigation.replace("MediaSearch", { scope: "all", term: committedTerm }),
+    [navigation, committedTerm],
+  );
 
   // The cell renderers must not close over either term — that would give them
   // a new identity on every keystroke and re-render every visible FlatList
@@ -639,7 +680,7 @@ export function SearchScreen({ navigation, route }: Props) {
   const rememberCommittedSearch = useCallback(() => rememberSearch(committedTermRef.current), [rememberSearch]);
   const rememberTypedSearch = useCallback(() => rememberSearch(searchTextRef.current), [rememberSearch]);
 
-  const inputRef = useRef<TextInput | null>(null);
+  const inputRef = useRef<TextInputInstance | null>(null);
   /** The bar's search button names this very page: it just hands the caret back. */
   const focusField = useCallback(() => inputRef.current?.focus(), []);
 
@@ -651,15 +692,15 @@ export function SearchScreen({ navigation, route }: Props) {
    * the dim closes it. Its only reach into the grid is the "See all results"
    * footer, which runs the same `commitSearch` the keyboard's search key does.
    */
-  const containerRef = useRef<View | null>(null);
-  const tabsRef = useRef<View | null>(null);
+  const containerRef = useRef<ViewInstance | null>(null);
+  const tabsRef = useRef<ViewInstance | null>(null);
   /**
    * Where the panel hangs instead when the pills sit too low to leave room
    * above the keyboard (short phones, 2× text): under the hint line, then
    * under the field — the old anchor, so it never vanishes where it used to fit.
    */
-  const hintRef = useRef<View | null>(null);
-  const fieldRef = useRef<View | null>(null);
+  const hintRef = useRef<ViewInstance | null>(null);
+  const fieldRef = useRef<ViewInstance | null>(null);
   const fallbackAnchorRefs = useMemo(() => [hintRef, fieldRef], []);
   /** Bumped whenever the pill strip lays out, so an open panel re-measures where it hangs. */
   const [anchorKey, setAnchorKey] = useState(0);
@@ -728,6 +769,16 @@ export function SearchScreen({ navigation, route }: Props) {
     [rememberSearch],
   );
 
+  // Reopened with a term ("Search everything" from a locked search): the
+  // term is replayed exactly as a recent chip is — committed at once, the
+  // panel closed — and the param cleared, so the user's own edits stand.
+  const requestedTerm = route.params?.term;
+  useEffect(() => {
+    if (requestedTerm === undefined) return;
+    replayRecent(requestedTerm);
+    navigation.setParams({ term: undefined });
+  }, [requestedTerm, replayRecent, navigation]);
+
   /** A tap on the dim behind the panel: close it and put the keyboard away. */
   const dismissSuggestions = useCallback(() => {
     setSuggestDismissed(true);
@@ -760,13 +811,22 @@ export function SearchScreen({ navigation, route }: Props) {
   const suggestKind: SuggestKind | null =
     resultsTab === "series" ? "series" : resultsTab === "books" ? (isAuthenticated ? "books" : null) : "movies";
 
-  /** The field names what it will actually search — derived from the same scope as the panel. */
+  /**
+   * The field names what it will actually search — derived from the same
+   * scope as the panel. On an unlocked All it promises everything (the hub's
+   * field, MediaSearch.dc.html); a commit there lands on Movies and the
+   * placeholder follows the pill.
+   */
   const searchPlaceholder =
-    resultsTab === "series"
-      ? t.search.placeholderSeries
-      : resultsTab === "books"
-        ? t.search.placeholderBooks
-        : t.search.placeholderMovies;
+    !locked && tab === "all"
+      ? t.search.placeholderAll
+      : resultsTab === "series"
+        ? t.search.placeholderSeries
+        : resultsTab === "books"
+          ? t.search.placeholderBooks
+          : t.search.placeholderMovies;
+  /** The locked search's section, as the pills name it — the scope line and the empty state say it. */
+  const scopeName = resultsTab === "series" ? t.search.series : resultsTab === "books" ? t.search.books : t.search.movies;
 
   /** It reads the LIVE text, on purpose: the panel answers every keystroke while the grid holds still. */
   const suggestionsVisible =
@@ -868,7 +928,7 @@ export function SearchScreen({ navigation, route }: Props) {
     () => (
       <RefreshControl
         refreshing={moviesQuery.isRefetching && !moviesQuery.isFetchingNextPage}
-        onRefresh={() => moviesQuery.refetch()}
+        onRefresh={() => void moviesQuery.refetch()}
         tintColor={theme.colors.primary}
         colors={[theme.colors.primary]}
         progressBackgroundColor={theme.colors.surface}
@@ -884,7 +944,7 @@ export function SearchScreen({ navigation, route }: Props) {
     () => (
       <RefreshControl
         refreshing={seriesQuery.isRefetching && !seriesQuery.isFetchingNextPage}
-        onRefresh={() => seriesQuery.refetch()}
+        onRefresh={() => void seriesQuery.refetch()}
         tintColor={theme.colors.primary}
         colors={[theme.colors.primary]}
         progressBackgroundColor={theme.colors.surface}
@@ -1030,14 +1090,43 @@ export function SearchScreen({ navigation, route }: Props) {
    * the COMMITTED term — the one that was actually searched (a results view
    * only exists with one). The reset clears the visible results' filters.
    */
-  const emptyResultProps = useMemo(
-    () => ({
-      title: t.search.noResultsTitle,
-      message: t.search.noResultsBody.replace("{term}", committedTerm),
+  const emptyResultProps = useMemo(() => {
+    // Locked: it names the section it looked in and points at the other two
+    // (MediaSearchMovies.dc.html, "empty") — the link below it is the way there.
+    const lockedTitle =
+      resultsTab === "series"
+        ? t.search.noKindMatchSeries
+        : resultsTab === "books"
+          ? t.search.noKindMatchBooks
+          : t.search.noKindMatchMovies;
+    const lockedBody =
+      resultsTab === "series"
+        ? t.search.lookElsewhereSeries
+        : resultsTab === "books"
+          ? t.search.lookElsewhereBooks
+          : t.search.lookElsewhereMovies;
+    return {
+      title: locked ? lockedTitle.replace("{term}", committedTerm) : t.search.noResultsTitle,
+      message: locked ? lockedBody : t.search.noResultsBody.replace("{term}", committedTerm),
       actionLabel: activeFilterCount > 0 ? t.common.reset : undefined,
       onAction: activeFilterCount > 0 ? clearTabFilters : undefined,
-    }),
-    [committedTerm, activeFilterCount, t, clearTabFilters],
+    };
+  }, [locked, resultsTab, committedTerm, activeFilterCount, t, clearTabFilters]);
+
+  /**
+   * The locked search's way out, drawn under its results (after the paging
+   * footer) and under its empty states — only with a term, which is what it
+   * carries over. Memoized like the header and footer it joins.
+   */
+  const everythingLink = useMemo(
+    () =>
+      locked && hasTerm ? (
+        <SearchEverythingLink
+          label={t.search.searchEverythingFor.replace("{term}", committedTerm)}
+          onPress={searchEverything}
+        />
+      ) : null,
+    [locked, hasTerm, t, committedTerm, searchEverything],
   );
 
   /**
@@ -1054,16 +1143,18 @@ export function SearchScreen({ navigation, route }: Props) {
   /**
    * The results grid's header. Memoized so a keystroke re-renders NOTHING
    * below the field — every value it reads is committed state. Order: people
-   * (Movies) — the count row.
+   * (Movies) — the count row. A LOCKED search already says the number in its
+   * scope line ("In Movies · 7 results"), so its row keeps only the pills:
+   * the board has the count once.
    */
   const listHeader = useMemo(
     () => (
       <View style={[styles.listHeader, { paddingTop: bodyTop }]}>
         {resultsTab === "movies" && peopleRail ? <View style={styles.headerSection}>{peopleRail}</View> : null}
-        <SearchResultsHeader countLabel={countLabel} filter={filterControl} people={peopleControl} />
+        <SearchResultsHeader countLabel={locked ? undefined : countLabel} filter={filterControl} people={peopleControl} />
       </View>
     ),
-    [bodyTop, resultsTab, peopleRail, countLabel, filterControl, peopleControl],
+    [bodyTop, resultsTab, peopleRail, locked, countLabel, filterControl, peopleControl],
   );
 
   /**
@@ -1073,19 +1164,34 @@ export function SearchScreen({ navigation, route }: Props) {
    */
   const listFooter = useMemo(
     () => (
-      <NextPageFooter
-        grid={grid}
-        kind={resultsTab === "books" ? "book" : "poster"}
-        loading={isFetchingNextPage}
-        failed={!isFetchingNextPage && nextPageFailed}
-        onRetry={retryNextPage}
-      />
+      <>
+        <NextPageFooter
+          grid={grid}
+          kind={resultsTab === "books" ? "book" : "poster"}
+          loading={isFetchingNextPage}
+          failed={!isFetchingNextPage && nextPageFailed}
+          onRetry={retryNextPage}
+        />
+        {everythingLink}
+      </>
     ),
-    [grid, resultsTab, isFetchingNextPage, nextPageFailed, retryNextPage],
+    [grid, resultsTab, isFetchingNextPage, nextPageFailed, retryNextPage, everythingLink],
   );
 
   const hintVisible = isTooShort || isPendingSearch;
   const pendingLabel = t.search.pendingSearch.replace("{term}", trimmedText);
+  /**
+   * The locked search's scope line, where the pills would be: "In Movies",
+   * then " · 7 results" once the grid's count is honest (the same rule as
+   * `countLabel`: never a number that belongs to the previous term).
+   */
+  const scopeLabel = t.search.inScope.replace("{kind}", scopeName);
+  const scopeCount =
+    hasTerm && resultTotal !== undefined && !resultsStale
+      ? resultTotal === 1
+        ? t.search.resultsCountOne
+        : t.search.resultsCount.replace("{n}", String(resultTotal))
+      : null;
 
   /** The body's padding everywhere a plain scroll stands in for the grid: under the bar, clear of the dock. */
   const scrollBottom = useMemo(
@@ -1118,7 +1224,7 @@ export function SearchScreen({ navigation, route }: Props) {
         : isAuthenticated && bookShelfQuery.isError && !bookShelfQuery.data;
   const idleRefreshing =
     idleScope === "movies"
-      ? railsQuery.isRefetching || trendingQuery.isRefetching
+      ? railsQuery.isRefetching || (!locked && trendingQuery.isRefetching)
       : idleScope === "series"
         ? seriesRailQuery.isRefetching
         : bookShelfQuery.isRefetching;
@@ -1131,13 +1237,21 @@ export function SearchScreen({ navigation, route }: Props) {
   const refetchIdle = useCallback(() => {
     if (idleScope === "movies") {
       void railsQuery.refetch();
-      void trendingQuery.refetch();
+      if (!locked) void trendingQuery.refetch();
     } else if (idleScope === "series") {
       void seriesRailQuery.refetch();
     } else if (isAuthenticated) {
       void bookShelfQuery.refetch();
     }
-  }, [idleScope, isAuthenticated, railsQuery.refetch, trendingQuery.refetch, seriesRailQuery.refetch, bookShelfQuery.refetch]);
+  }, [
+    idleScope,
+    isAuthenticated,
+    locked,
+    railsQuery.refetch,
+    trendingQuery.refetch,
+    seriesRailQuery.refetch,
+    bookShelfQuery.refetch,
+  ]);
 
   const idleBody = (
     <>
@@ -1181,10 +1295,11 @@ export function SearchScreen({ navigation, route }: Props) {
           /* One tree while loading AND loaded (MediaSearch.dc.html): only the
              two lists swap skeleton → content, each with the board's entrance
              fade, while Browse categories — which needs no data — is there and
-             tappable from the first frame. */
+             tappable from the first frame. A LOCKED search (its board's
+             "cleared" state) has neither: recents, then Popular movies. */
           <View style={styles.idleSections}>
             {/* Most watched — tapping a row opens the title. */}
-            {trendingQuery.isLoading ? (
+            {locked ? null : trendingQuery.isLoading ? (
               <TrendingSkeleton />
             ) : trendingMovies.length > 0 ? (
               <FadeInView duration={280}>
@@ -1192,7 +1307,7 @@ export function SearchScreen({ navigation, route }: Props) {
               </FadeInView>
             ) : null}
 
-            <BrowseEntry onPress={openBrowse} />
+            {locked ? null : <BrowseEntry onPress={openBrowse} />}
 
             {railsQuery.isLoading ? (
               <IdleSkeleton grid={grid} title={t.search.popularMovies} kind="poster" />
@@ -1325,11 +1440,8 @@ export function SearchScreen({ navigation, route }: Props) {
                 keyboardShouldPersistTaps="handled"
               >
                 {listHeader}
-                <EmptyState
-                  title={t.search.noResultsTitle}
-                  message={t.search.noResultsBody.replace("{term}", committedTerm)}
-                  icon="search-outline"
-                />
+                <EmptyState title={emptyResultProps.title} message={emptyResultProps.message} icon="search-outline" />
+                {everythingLink}
               </ScrollView>
               <GlassScrollFeed scrollRef={headerOnlyScrollRef} scrollY={glass.scrollY} />
             </>
@@ -1385,12 +1497,15 @@ export function SearchScreen({ navigation, route }: Props) {
                   keyboardShouldPersistTaps="handled"
                 >
                   {listHeader}
+                  {everythingLink}
                 </ScrollView>
                 <GlassScrollFeed scrollRef={headerOnlyScrollRef} scrollY={glass.scrollY} />
               </>
             ) : (
               <View style={underBar}>
-                <EmptyState {...emptyResultProps} icon="search-outline" />
+                {/* Locked: not centred — the block sits under the bar with its link right under it. */}
+                <EmptyState {...emptyResultProps} icon="search-outline" fill={!everythingLink} />
+                {everythingLink}
               </View>
             )
           ) : (
@@ -1430,7 +1545,8 @@ export function SearchScreen({ navigation, route }: Props) {
           </View>
         ) : series.length === 0 ? (
           <View style={underBar}>
-            <EmptyState {...emptyResultProps} icon="search-outline" />
+            <EmptyState {...emptyResultProps} icon="search-outline" fill={!everythingLink} />
+            {everythingLink}
           </View>
         ) : (
           <ResultsRegion termKey={`series:${committedTerm}`} stale={resultsStale}>
@@ -1471,13 +1587,19 @@ export function SearchScreen({ navigation, route }: Props) {
           <AppBarAction
             icon="chevron-back"
             onPress={goBack}
-            accessibilityLabel={backToMedia ? t.search.backToMedia : t.common.back}
+            accessibilityLabel={
+              locked
+                ? t.search.backToSection.replace("{kind}", scopeName)
+                : backToMedia
+                  ? t.search.backToMedia
+                  : t.common.back
+            }
           />
           <View style={styles.field}>
             <SearchField
               inputRef={inputRef}
               anchorRef={fieldRef}
-              autoFocus
+              autoFocus={autoFocus}
               onFocus={handleFieldFocus}
               onBlur={handleFieldBlur}
               value={searchText}
@@ -1527,16 +1649,42 @@ export function SearchScreen({ navigation, route }: Props) {
           </View>
         ) : null}
 
+        {/* On an unlocked All: what the field covers (MediaSearch.dc.html's
+            "Everything · movies, series and books"), above the pills. */}
+        {!locked && tab === "all" ? (
+          <View style={styles.scopeNote}>
+            <ThemedText variant="caption" numberOfLines={2}>
+              <ThemedText variant="caption" weight="bold" color={theme.colors.text}>
+                {t.search.everything}
+              </ThemedText>
+              {` · ${t.search.everythingTail}`}
+            </ThemedText>
+          </View>
+        ) : null}
+
         {/* The pill strip is also the suggestion panel's anchor: the panel
             hangs under it, so the pills stay tappable while typing (on a short
-            screen it hangs from the hint line or the field instead). */}
+            screen it hangs from the hint line or the field instead). A locked
+            search has no pills — its scope line stands in the same slot, so
+            the panel hangs under that instead. */}
         <View
           ref={tabsRef}
           collapsable={false}
           onLayout={bumpAnchor}
           style={hintVisible ? styles.tabsAfterHint : styles.tabs}
         >
-          <SearchTabs options={tabOptions} value={tab} onChange={handleTabChange} />
+          {locked ? (
+            <View style={styles.scopeRow}>
+              <ThemedText variant="caption" tabular numberOfLines={1} accessibilityLiveRegion="polite">
+                <ThemedText variant="caption" weight="bold" color={theme.colors.text}>
+                  {scopeLabel}
+                </ThemedText>
+                {scopeCount ? ` · ${scopeCount}` : ""}
+              </ThemedText>
+            </View>
+          ) : (
+            <SearchTabs options={tabOptions} value={tab} onChange={handleTabChange} />
+          )}
         </View>
 
         {/* The filter row: the Sort & filter pill (its count badge), then a
@@ -1609,6 +1757,10 @@ const styles = StyleSheet.create({
   /** 12pt under the field (the idle board), 6pt under the hint line (the typing board). */
   tabs: { marginTop: 12 },
   tabsAfterHint: { marginTop: 6 },
+  /** The "Everything · …" line: 6pt under the field, aligned with its text. */
+  scopeNote: { marginTop: 6, paddingHorizontal: theme.layout.screenPadding },
+  /** The locked search's scope line in the pills' slot — a minimum, so 2× text grows it. */
+  scopeRow: { minHeight: 32, justifyContent: "center", paddingHorizontal: theme.layout.screenPadding },
   filterRow: { marginTop: 12 },
   /** The grid header's own bottom gap: count row → first row of posters. */
   listHeader: { paddingBottom: HEADER_TO_GRID },

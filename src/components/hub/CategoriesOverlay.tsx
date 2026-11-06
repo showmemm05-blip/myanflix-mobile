@@ -8,6 +8,8 @@ import {
   View,
   useWindowDimensions,
   type LayoutChangeEvent,
+  type ScrollViewInstance,
+  type ViewInstance,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useReducedMotion } from "react-native-reanimated";
@@ -147,7 +149,7 @@ export function CategoriesOverlay({ visible, onClose, initialKind, selected, onP
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   /**
    * The kind showing. Set back to `initialKind` on every opening (React's
@@ -199,7 +201,7 @@ export function CategoriesOverlay({ visible, onClose, initialKind, selected, onP
    * one — otherwise the reader starts at the top), then the pop-up's name,
    * queued behind what that focus reads.
    */
-  const selectedRef = useRef<View>(null);
+  const selectedRef = useRef<ViewInstance>(null);
   const focusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const kindRef = useRef(kind);
   kindRef.current = kind;
@@ -363,7 +365,7 @@ export function CategoriesOverlay({ visible, onClose, initialKind, selected, onP
 /** What every kind's list gets from the pop-up. */
 interface ListProps {
   selectedKey: string | null;
-  selectedRef: RefObject<View | null>;
+  selectedRef: RefObject<ViewInstance | null>;
   onSelectedLayout: (event: LayoutChangeEvent) => void;
   pick: (kind: CategoryKind, next: CategoryPick) => void;
 }

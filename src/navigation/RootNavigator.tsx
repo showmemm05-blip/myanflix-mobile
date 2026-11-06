@@ -10,7 +10,9 @@ import { ProfileStackNavigator } from "@/navigation/ProfileStackNavigator";
 import { useRealtimeWallet } from "@/hooks/useRealtimeWallet";
 import { useAuthStore } from "@/store/authStore";
 import { hydrateReaderPrefs } from "@/store/readerPrefsStore";
-import { stackScreenOptions } from "@/navigation/options";
+import { stackScreenOptions, titleScreenOptions } from "@/navigation/options";
+import { LotteryNavigator } from "@/lottery/navigation/LotteryNavigator";
+import { LT } from "@/lottery/theme/tokens";
 import type { RootStackParamList } from "@/navigation/types";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -74,6 +76,19 @@ export function RootNavigator() {
               Favorites, Watch History, Downloads and the title pages under
               them — push on top of Profile and Back returns to it. */}
           <Stack.Screen name="Profile" component={ProfileStackNavigator} />
+          {/* The Thai lottery app (owner, 2026-10-15; UI only, sample data),
+              opened from the Lottery hub. A ROOT screen so the main dock never
+              shows inside it; it rises in like a title page, on its own warm
+              paper so the push never flashes the dark ground. No edge-swipe
+              pop (owner, 2026-10-23: leaving the lottery is a choice — the top
+              bar's emblem chip or the back key — after users
+              left it by accident); the pages pushed inside a lottery tab keep
+              their own swipe-back, which is the inner stack's gesture. */}
+          <Stack.Screen
+            name="Lottery"
+            component={LotteryNavigator}
+            options={{ ...titleScreenOptions, gestureEnabled: false, contentStyle: { backgroundColor: LT.paper } }}
+          />
         </>
       ) : sessionUnreachable ? (
         // A saved session the server could not be asked about yet — kept,

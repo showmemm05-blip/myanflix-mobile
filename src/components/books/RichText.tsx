@@ -77,6 +77,9 @@ function attr(node: PMNode, key: string): unknown {
   return attrs && typeof attrs === "object" ? (attrs as Record<string, unknown>)[key] : undefined;
 }
 
+/** React Native's style types are read-only; markStyle builds one up field by field. */
+type MutableTextStyle = { -readonly [K in keyof TextStyle]: TextStyle[K] };
+
 interface Ctx {
   base: number;
   /** Leading multiplier before the per-block Myanmar floor. */
@@ -110,7 +113,7 @@ function markStyle(
   face: { regular: string; bold: string; italic?: string; boldItalic?: string },
   bold: boolean,
 ): { style: TextStyle; href: string | null } {
-  const style: TextStyle = { fontFamily: bold ? face.bold : face.regular };
+  const style: MutableTextStyle = { fontFamily: bold ? face.bold : face.regular };
   let href: string | null = null;
   let isBold = bold;
   let isItalic = false;

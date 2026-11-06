@@ -21,6 +21,8 @@ interface Props {
   hitSlop?: number;
   accessibilityRole?: AccessibilityRole;
   accessibilityLabel?: string;
+  /** What pressing does, when the label alone does not say (the hub's section cards). */
+  accessibilityHint?: string;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -41,6 +43,7 @@ export function PressableScale({
   hitSlop,
   accessibilityRole = "button",
   accessibilityLabel,
+  accessibilityHint,
   style,
 }: Props) {
   const reduceMotion = useReducedMotion();
@@ -57,6 +60,7 @@ export function PressableScale({
       hitSlop={hitSlop}
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       onPressIn={() => {
         if (!reduceMotion) scale.value = withSpring(activeScale, { damping: 15, stiffness: 300 });
         if (dimOnPress) opacity.value = withTiming(0.86, { duration: 120 });

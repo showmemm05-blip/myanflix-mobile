@@ -1,6 +1,17 @@
 import { forwardRef, useCallback, type ForwardedRef } from "react";
-import { ScrollView, View, type ScrollViewProps } from "react-native";
-import { ScrollIntoViewContext, useKeyboardLift } from "@/hooks/useKeyboardLift";
+import { ScrollView, View, type ScrollViewInstance, type ScrollViewProps } from "react-native";
+import { ScrollIntoViewContext, useKeyboardLift, type KeyboardLiftBlock } from "@/hooks/useKeyboardLift";
+
+export interface KeyboardLiftScrollViewProps extends ScrollViewProps {
+  /**
+   * How much of the viewport's bottom edge something floating covers while
+   * the keyboard is up (the Lottery buy bar riding on it, gap included): the
+   * lift keeps the field above it too. See useKeyboardLift.
+   */
+  keyboardObstruction?: number;
+  /** The block round the one field, lifted whole (label, field, help line, action row). See useKeyboardLift. */
+  liftBlock?: KeyboardLiftBlock;
+}
 
 /**
  * A ScrollView that keeps its focused text field above the keyboard — the
@@ -11,19 +22,19 @@ import { ScrollIntoViewContext, useKeyboardLift } from "@/hooks/useKeyboardLift"
  * by the keyboard strip when the window did not shrink — see
  * useKeyboardLift for the why.
  */
-export const KeyboardLiftScrollView = forwardRef<ScrollView, ScrollViewProps>(function KeyboardLiftScrollView(
+export const KeyboardLiftScrollView = forwardRef<ScrollViewInstance, KeyboardLiftScrollViewProps>(function KeyboardLiftScrollView(
   // 32ms is plenty for the lift (it only notes the offset); a screen whose top
   // bar fades with this scroll (the glass on the detail screens) passes 16.
-  { children, onLayout, onScroll, scrollEventThrottle = 32, ...rest },
-  forwardedRef: ForwardedRef<ScrollView>,
+  { children, onLayout, onScroll, scrollEventThrottle = 32, keyboardObstruction = 0, liftBlock, ...rest },
+  forwardedRef: ForwardedRef<ScrollViewInstance>,
 ) {
-  const lift = useKeyboardLift();
+  const lift = useKeyboardLift({ obstruction: keyboardObstruction, block: liftBlock });
 
   // One node, two owners: the lift measures against it, and a screen that
   // also scrolls it (the player's "new title starts at the top") keeps its
   // own ref.
   const setScrollRef = useCallback(
-    (node: ScrollView | null) => {
+    (node: ScrollViewInstance | null) => {
       lift.scrollRef.current = node;
       if (typeof forwardedRef === "function") forwardedRef(node);
       else if (forwardedRef) forwardedRef.current = node;

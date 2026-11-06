@@ -1,5 +1,12 @@
 import { useCallback, useState, type RefObject } from "react";
-import { StyleSheet, TextInput, View, useWindowDimensions } from "react-native";
+import {
+  StyleSheet,
+  TextInput,
+  View,
+  useWindowDimensions,
+  type TextInputInstance,
+  type ViewInstance,
+} from "react-native";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -66,7 +73,7 @@ interface Props {
   accessibilityLabel: string;
   clearAccessibilityLabel: string;
   /** Lets the screen hand focus to the field, e.g. from a recent-search chip. */
-  inputRef?: RefObject<TextInput | null>;
+  inputRef?: RefObject<TextInputInstance | null>;
   /**
    * Focus, told to the caller as well as kept here (e.g. a suggestion panel
    * that hangs off the field and has to know when it is live); the field's own
@@ -78,7 +85,7 @@ interface Props {
    * The field's outer view, so a caller can measure where its bottom edge is
    * and hang something off it. Optional and unused by the field itself.
    */
-  anchorRef?: RefObject<View | null>;
+  anchorRef?: RefObject<ViewInstance | null>;
   /**
    * "default" = the Search hero field (17pt text).
    * "soft" = the wallet History's filter box (16pt text). Marquee draws both

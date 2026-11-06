@@ -13,8 +13,10 @@ that reads `AccessType`, a `MediaCard` that lays out a poster, an
 folder.
 
 **`<feature>/` — everything used by exactly one screen family:** `arcade`,
-`auth`, `books`, `comments`, `detail`, `feedback`, `layout`, `movie`,
-`player`, `profile`, `search`, `series`, `splash`, `wallet`. One feature is
+`auth`, `books`, `comments`, `detail`, `feedback`, `layout`, `lottery`, `movie`,
+`player`, `profile`, `search`, `series`, `splash`, `wallet`. `lottery` holds
+the Lottery tab hub's card and the Home banner; the Ivory Lottery app itself
+lives in `src/lottery`. One feature is
 opened from two screen families and still keeps its own folder, because every
 piece of it is about that one feature: `withdrawal-code` (the 6-digit code's
 pages, sheet and keypad — the withdraw flow and Profile › Account both open

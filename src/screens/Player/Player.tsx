@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, StatusBar, Pressable, Share, View, StyleSheet } from "react-native";
+import { AppState, BackHandler, StatusBar, Pressable, Share, View, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import * as ScreenOrientation from "expo-screen-orientation";
@@ -8,7 +8,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { SubtitleTrack } from "expo-video";
 import { VideoPlayer, type VideoPlayerHandle } from "@/video/VideoPlayer";
-import { PlayerControls } from "@/components/player/PlayerControls";
+import { ChromeButton, PlayerControls } from "@/components/player/PlayerControls";
+import { AdLoadingPill, PrerollAdPlayer } from "@/components/player/PrerollAdPlayer";
+import { CornerAd } from "@/components/player/CornerAd";
 import { PlayerSettingsSheet, type SettingsTab } from "@/components/player/PlayerSettingsSheet";
 import { SubtitleOverlay } from "@/components/player/SubtitleOverlay";
 import { EpisodeSheet } from "@/components/player/EpisodeSheet";
@@ -28,6 +30,7 @@ import { useMovie, useMovies } from "@/hooks/useMovies";
 import { usePlayerEpisodes } from "@/hooks/useSeries";
 import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
 import { useSubscriptionStatus } from "@/hooks/useSubscription";
+import { useAdSession } from "@/hooks/useAdSession";
 import { useWatchProgressReporter } from "@/video/useWatchProgressReporter";
 import { useSubtitleCues } from "@/video/useSubtitleCues";
 import { cueLinesAt, type SubtitleCue } from "@/video/subtitleCues";
@@ -40,12 +43,36 @@ import {
   subtitleTrackTag,
 } from "@/video/subtitleTracks";
 import { resolveQualityUrl } from "@/video/qualityOptions";
+import {
+  createMidrollState,
+  midrollDecisionUsable,
+  midrollMarkers,
+  midrollNoteSeek,
+  midrollRebase,
+  midrollStart,
+  midrollTick,
+  MIDROLL_DECISION_BACKSTOP_MS,
+  MIDROLL_OFF,
+  type MidrollAction,
+  type MidrollState,
+} from "@/video/midroll";
+import {
+  cornerDismiss,
+  cornerFail,
+  cornerNearEnd,
+  cornerTick,
+  createCornerState,
+  CORNER_OFF,
+  type CornerState,
+} from "@/video/corner";
+import { adsApi } from "@/api/ads.api";
 import { clamp } from "@/utils/format";
 import { hasAccess } from "@/utils/access";
 import { theme } from "@/theme";
 import type { RootStackParamList } from "@/navigation/types";
 import type { Movie } from "@/types/movie";
 import type { StreamSubtitle } from "@/types/video";
+import type { AdPlaybackEvent, CornerAd as CornerAdPlan, VideoAd } from "@/types/ads";
 
 type VideoProgress = { currentTime: number; bufferedSeconds: number };
 type VideoLoad = { durationSeconds: number };
@@ -72,6 +99,13 @@ const SKIP_SECONDS = 10;
  * is the lesser failure, and generous enough that a slow rendition still lands.
  */
 const RESUME_LOAD_TIMEOUT_MS = 15000;
+/**
+ * How long the film waits for the pre-roll decision before playing without
+ * one. The request itself gives up at 4 s (ads.api.ts); this is the backstop
+ * behind it, for an answer that never comes at all — the query paused with
+ * the network off, say — so the stage can never stay black over an ad.
+ */
+const AD_DECISION_BACKSTOP_MS = 8000;
 
 /** Module scope, so "no cues" and "no caption" are the SAME array every tick. */
 const EMPTY_LINES: string[] = [];
@@ -80,6 +114,37 @@ const EMPTY_CUES: SubtitleCue[] = [];
 const EMPTY_MOVIES: Movie[] = [];
 
 type TapZone = "left" | "center" | "right";
+/** Where the pre-roll ad stands between opening a title and its film — see "PRE-ROLL AD" in the screen. */
+type AdStage = "deciding" | "playing" | "done";
+
+/** "No break ticks" — one frozen array, so the seek line never sees a fresh empty one. */
+const NO_MARKERS: readonly number[] = Object.freeze([]);
+type BreakAction = Extract<MidrollAction, { kind: "break" }>;
+/** The ad break on the stage — see "IN-MOVIE ADS" in the screen. `ad` is null while it is being decided. */
+interface BreakSession {
+  token: number;
+  ad: VideoAd | null;
+}
+/** One `/ads/midroll` question, asked ahead of its break (or as it fires). */
+interface BreakDecision {
+  breakIndex: number;
+  askedAt: number;
+  /** Never rejects: any failure is "no ad at this break". */
+  promise: Promise<VideoAd | null>;
+  abort: AbortController;
+}
+/** What the corner ad has told the server this viewing, and whether this showing's picture has painted. */
+interface CornerLedger {
+  impression: boolean;
+  /** The last showing reported as seen (0 = none). */
+  showing: number;
+  pictureReady: boolean;
+}
+const freshCornerLedger = (): CornerLedger => ({ impression: false, showing: 0, pictureReady: false });
+
+function sameSeconds(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((seconds, i) => seconds === b[i]);
+}
 
 export function PlayerScreen({ route, navigation }: Props) {
   const routeMovieId = route.params.movieId;
@@ -270,7 +335,8 @@ export function PlayerScreen({ route, navigation }: Props) {
     scheduleHide();
   }, [scheduleHide]);
 
-  const toggleFullscreen = async () => {
+  /** A callback, so the memoised ad player keeps its props from one tick to the next. */
+  const toggleFullscreen = useCallback(async () => {
     if (isFullscreen) {
       await exitFullscreen();
     } else {
@@ -278,7 +344,7 @@ export function PlayerScreen({ route, navigation }: Props) {
       setIsFullscreen(true);
       scheduleHide();
     }
-  };
+  }, [isFullscreen, exitFullscreen, scheduleHide]);
 
   /**
    * Android's back button means "leave fullscreen" here, not "close the
@@ -307,6 +373,16 @@ export function PlayerScreen({ route, navigation }: Props) {
   };
 
   const handleTogglePlay = () => {
+    // Inert until the film is what the stage holds. Before the pre-roll
+    // decision lands the disc is already there, showing its buffering dots,
+    // and a tap on it would park `isPlaying` at false with nothing to pause
+    // — the film would then mount paused after the ad. (`adStage` is
+    // declared under "PRE-ROLL AD" below; this closure only runs after the
+    // render that declares it.)
+    if (adStage !== "done") return;
+    // Nor while an ad break holds the stage: the film waits paused under it
+    // and the break itself starts it again (see "IN-MOVIE ADS").
+    if (activeBreakRef.current) return;
     setIsPlaying((playing) => {
       const next = !playing;
       if (!next) reportNow();
@@ -315,8 +391,19 @@ export function PlayerScreen({ route, navigation }: Props) {
     scheduleHide();
   };
 
+  /** Shared by the film's chrome and the ad's: one mute for the whole sitting. */
+  const toggleMute = useCallback(() => setMuted((m) => !m), []);
+
+  /**
+   * Both seek paths tell the break schedule first (see "IN-MOVIE ADS"): a
+   * seek the viewer makes is decided once it settles — one ad for a jump over
+   * unplayed breaks — where a jump nobody declared is only a rebase. Inert
+   * while a break holds the stage.
+   */
   const handleSkip = (delta: number) => {
+    if (activeBreakRef.current) return;
     const target = clamp(position + delta, 0, duration);
+    commitMidroll(midrollNoteSeek(midrollRef.current, position, target, Date.now()));
     videoRef.current?.seek(target);
     setPosition(target);
     updatePosition(target);
@@ -325,6 +412,8 @@ export function PlayerScreen({ route, navigation }: Props) {
   };
 
   const handleSeek = (seconds: number) => {
+    if (activeBreakRef.current) return;
+    commitMidroll(midrollNoteSeek(midrollRef.current, position, seconds, Date.now()));
     videoRef.current?.seek(seconds);
     setPosition(seconds);
     updatePosition(seconds);
@@ -332,10 +421,11 @@ export function PlayerScreen({ route, navigation }: Props) {
     scheduleHide();
   };
 
-  const handleBack = () => {
+  /** Stable for the same reason as `toggleFullscreen`: the ad player takes it. */
+  const handleBack = useCallback(() => {
     reportNow();
     navigation.goBack();
-  };
+  }, [reportNow, navigation]);
 
   const handleSelectSpeed = (speed: number) => {
     setPreferredSpeed(speed);
@@ -551,6 +641,339 @@ export function PlayerScreen({ route, navigation }: Props) {
   }, [duration, position, clearResumeWait]);
 
   /**
+   * PRE-ROLL AD (2026-11-03). Before the film, the backend may hand a title
+   * an advertisement: `useAdSession` asks once per title, beside the stream
+   * request (the same answer carries the in-movie ads — see "IN-MOVIE ADS"
+   * below), and PrerollAdPlayer plays it in the stage on a player of
+   * its own. Everything the film owns waits behind `adStage`: the resume
+   * timer below is armed only once the ad is over, and `sourceUrl` stays null
+   * so the film is not even mounted — the ad is the only thing decoding, and
+   * the film autoplays the moment it mounts after (`isPlaying` starts true).
+   *
+   * The phase is keyed on the EPISODE, so a swap mid-ad abandons the ad (its
+   * player unmounts and is released) and the incoming episode is decided
+   * afresh, with nothing for `resetEpisodeState` to clear. "done" is also the
+   * answer whenever there is no ad to play — none eligible (the server's
+   * "Same movie again" minutes included), a decision that failed or timed
+   * out — and once reached it is latched
+   * for the episode, so no late answer can put an ad over a film already
+   * playing.
+   *
+   * The watch-progress reporter never sees the ad: PrerollAdPlayer feeds
+   * nothing into `videoEventsRef`, `updatePosition` or `reportNow`, and the
+   * film's `duration` is still 0 while it plays, which keeps every flush
+   * (back, backgrounding) inert — see useWatchProgressReporter.
+   */
+  const { preroll: prerollAd, breaks, corner, decided: prerollDecided } = useAdSession(movieId);
+  const [adPhase, setAdPhase] = useState<{ movieId: string; done: boolean }>({ movieId, done: false });
+  const adDone = adPhase.movieId === movieId && adPhase.done;
+  const adStage: AdStage = adDone ? "done" : !prerollDecided ? "deciding" : prerollAd ? "playing" : "done";
+  // The latch: "done" reached by any route is remembered against the episode.
+  // The film autoplays from here whichever route it was, so `isPlaying` is
+  // put back to true as well — the toggle above is inert until now, but a
+  // false parked there by any other path would mount the film paused.
+  useEffect(() => {
+    if (adStage !== "done" || adDone) return;
+    setAdPhase({ movieId, done: true });
+    setIsPlaying(true);
+  }, [adStage, adDone, movieId]);
+  // The backstop behind the request's own timeout — see AD_DECISION_BACKSTOP_MS.
+  useEffect(() => {
+    if (adStage !== "deciding") return;
+    const timer = setTimeout(() => setAdPhase({ movieId, done: true }), AD_DECISION_BACKSTOP_MS);
+    return () => clearTimeout(timer);
+  }, [adStage, movieId]);
+  const handleAdFinished = useCallback(() => {
+    setAdPhase({ movieId: movieIdRef.current, done: true });
+    // The film mounts on this very commit, so its buffering pill is there
+    // with it rather than a `statusChange` later (as handleSelectQuality
+    // does), and the chrome shows as it does on a fresh open — the ad hid it.
+    setIsBuffering(true);
+    setControlsVisible(true);
+    scheduleHide();
+  }, [scheduleHide]);
+
+  /**
+   * IN-MOVIE ADS (2026-11-04): ad breaks and the corner picture, both from the
+   * same `useAdSession` answer as the pre-roll.
+   * docs/in-movie-ads-2026-11-04/PLAYER-DESIGN.md.
+   *
+   * BREAKS — every N minutes of FILM position the film stops for one ad and
+   * then carries on from the same second. The schedule is the pure
+   * `@/video/midroll` (the website runs the same file), held in a ref: started
+   * once per title at the real start point (see "RESUME"), rebased before
+   * every seek this screen makes on its own (`onLoad`), told about every seek
+   * the VIEWER makes (`handleSkip` / `handleSeek`; a drag on the seek line
+   * counts once released, see `scrubbingRef`), and ticked from the film's
+   * `onProgress`. React state changes only when a break starts or ends and
+   * when the seek line's ticks change — never per tick.
+   *
+   * A break never touches the film's player: `isPlaying` goes false, so the
+   * film pauses under the `paused` prop with its source, buffer, quality and
+   * position intact, and the ad plays on PrerollAdPlayer's own player in a
+   * black layer above it. Never through `sourceUrl`, which would unmount the
+   * film. Only the decision is asked ahead (~20 s, JSON) — the MP4 loads when
+   * the break starts — with the request's 4 s timeout and an 8 s backstop
+   * behind it. A break is used up the moment it fires, so a null answer, a
+   * failure or a stall resumes the film and is never retried.
+   *
+   * CORNER — `@/video/corner`, also in a ref and ticked from the same
+   * `onProgress`; `cornerShowing` flips only when a showing starts or ends,
+   * and CornerAd is mounted only for a showing. Its time on screen counts
+   * only once the picture has painted (`pictureReady`).
+   *
+   * Everything here is per episode and cleared in `resetEpisodeState`.
+   */
+  const [breakSession, setBreakSession] = useState<BreakSession | null>(null);
+  const [breakMarkers, setBreakMarkers] = useState<readonly number[]>(NO_MARKERS);
+  const [cornerShowing, setCornerShowing] = useState(false);
+  const midrollRef = useRef<MidrollState>(MIDROLL_OFF);
+  const cornerRef = useRef<CornerState>(CORNER_OFF);
+  /** The corner ad this viewing started with — its play is what the corner events are filed under. */
+  const viewingCornerRef = useRef<CornerAdPlan | null>(null);
+  const cornerLedgerRef = useRef<CornerLedger>(freshCornerLedger());
+  const breakTokenRef = useRef(0);
+  /**
+   * The break holding the stage — the synchronous twin of `breakSession`,
+   * which the tick and the late-landing promises read (state would be a
+   * render behind). `backstop` is the 8 s give-up while the ad is decided.
+   */
+  const activeBreakRef = useRef<{ token: number; backstop: ReturnType<typeof setTimeout> | null } | null>(null);
+  const breakDecisionRef = useRef<BreakDecision | null>(null);
+  /** An ad decided while the app was in the background, mounted when the viewer comes back. */
+  const pendingBreakAdRef = useRef<BreakSession | null>(null);
+  /**
+   * A finger is on the seek line (ProgressBar reports it, both layouts). A
+   * break the film plays across meanwhile is OWED, not fired — firing would
+   * take the controls, and the seek being dragged, away from under the
+   * finger — and the release reaches the schedule through `handleSeek` as one
+   * jump. A ref, never state: the drag must not re-render the screen.
+   */
+  const scrubbingRef = useRef(false);
+  const handleScrubChange = useCallback(
+    (dragging: boolean) => {
+      scrubbingRef.current = dragging;
+      // The controls stay up for the whole drag (the auto-hide would unmount
+      // the bar under the finger and drop the seek); the usual 3 s count
+      // starts again when the finger lifts.
+      if (dragging) {
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+      } else {
+        scheduleHide();
+      }
+    },
+    [scheduleHide],
+  );
+
+  /**
+   * The film's length as the schedule sees it: the player's own once it has
+   * loaded, the catalogue runtime until then (no break is placed while both
+   * are unknown). Mirrored into a ref for the stable callbacks below.
+   */
+  const breakDuration = duration > 0 ? duration : (movieQuery.data?.duration ?? 0) * 60;
+  const breakDurationRef = useRef(breakDuration);
+  breakDurationRef.current = breakDuration;
+
+  /** Re-derives the seek line's ticks, keeping the same array when nothing moved. */
+  const refreshBreakMarkers = useCallback(() => {
+    const next = midrollMarkers(midrollRef.current, breakDurationRef.current);
+    setBreakMarkers((current) => (sameSeconds(current, next) ? current : next));
+  }, []);
+
+  /**
+   * The one way the schedule is written. The scheduler hands back the SAME
+   * object when nothing changed, so most ticks stop at the first line, and
+   * the ticks are only re-derived when a break was used up or forgiven, the
+   * quiet gap moved, or the plan itself changed.
+   */
+  const commitMidroll = useCallback(
+    (next: MidrollState) => {
+      const prev = midrollRef.current;
+      if (next === prev) return;
+      midrollRef.current = next;
+      if (next.done !== prev.done || next.quietUntil !== prev.quietUntil || next.interval !== prev.interval) {
+        refreshBreakMarkers();
+      }
+    },
+    [refreshBreakMarkers],
+  );
+
+  // The ticks also move when the length becomes known (or changes source).
+  useEffect(() => {
+    refreshBreakMarkers();
+  }, [breakDuration, refreshBreakMarkers]);
+
+  /**
+   * Asks `/ads/midroll` for one break, replacing (and cancelling) any earlier
+   * question. Asked of the episode on screen; every answer is checked against
+   * the episode and the break still on screen before it is used.
+   */
+  const askBreak = useCallback((breakIndex: number, breakAtSeconds: number): BreakDecision => {
+    breakDecisionRef.current?.abort.abort();
+    const abort = new AbortController();
+    const decision: BreakDecision = {
+      breakIndex,
+      askedAt: Date.now(),
+      // A timeout, a 4xx, the abort above: all of them mean "no ad here".
+      promise: adsApi.getMidroll(movieIdRef.current, breakAtSeconds, { signal: abort.signal }).catch(() => null),
+      abort,
+    };
+    breakDecisionRef.current = decision;
+    return decision;
+  }, []);
+
+  /**
+   * Gives the stage back to the film, from the very second it stopped — it
+   * never moved, so there is nothing to seek. A stale token (a backstop or an
+   * answer for a break already over) changes nothing. Not in the background:
+   * a film started under a locked screen is a film the viewer never sees, so
+   * it waits paused, Play showing, for their return.
+   */
+  const endBreak = useCallback((token: number) => {
+    const active = activeBreakRef.current;
+    if (!active || active.token !== token) return;
+    if (active.backstop) clearTimeout(active.backstop);
+    activeBreakRef.current = null;
+    pendingBreakAdRef.current = null;
+    setBreakSession(null);
+    if (AppState.currentState === "active") setIsPlaying(true);
+    else setControlsVisible(true);
+  }, []);
+
+  /**
+   * A break fired: the film pauses where it is (its position is saved now),
+   * the chrome goes down and a black stage says "Loading ad" while the
+   * decision is settled — the one asked ahead if it still serves, else a
+   * fresh one. No ad, or no answer within the backstop, and the film simply
+   * carries on.
+   */
+  const beginBreak = useCallback(
+    (action: BreakAction) => {
+      const token = ++breakTokenRef.current;
+      activeBreakRef.current = {
+        token,
+        backstop: setTimeout(() => endBreak(token), MIDROLL_DECISION_BACKSTOP_MS),
+      };
+      setIsPlaying(false);
+      reportNow();
+      setControlsVisible(false);
+      setBreakSession({ token, ad: null });
+
+      const forMovie = movieIdRef.current;
+      const cached = breakDecisionRef.current;
+      // The answer asked ahead serves only the break that fires — the LAST
+      // one crossed — and only while fresh. One asked for an earlier break
+      // (a jump over several) never plays here: `askBreak` cancels it and
+      // asks for this break's second, which moves the server's open row there.
+      const decision =
+        cached && midrollDecisionUsable(cached, action.consumed, Date.now())
+          ? cached
+          : askBreak(action.breakIndex, action.breakAtSeconds);
+      void decision.promise.then((ad) => {
+        const active = activeBreakRef.current;
+        if (!active || active.token !== token || movieIdRef.current !== forMovie) return;
+        if (!ad) {
+          endBreak(token);
+          return;
+        }
+        // From here the ad player's own stall watch is the backstop.
+        if (active.backstop) {
+          clearTimeout(active.backstop);
+          active.backstop = null;
+        }
+        if (AppState.currentState !== "active") {
+          pendingBreakAdRef.current = { token, ad };
+          return;
+        }
+        setBreakSession({ token, ad });
+      });
+    },
+    [askBreak, endBreak, reportNow],
+  );
+
+  /** However the break's ad ends — completed, skipped, failed, stalled — the film resumes. */
+  const handleBreakFinished = useCallback(() => {
+    const active = activeBreakRef.current;
+    if (active) endBreak(active.token);
+  }, [endBreak]);
+
+  /**
+   * An ad decided while the app was away is parked rather than started
+   * under a locked screen; this mounts it on the way back. Listening only
+   * while a break is open, which is the only time anything can be parked.
+   */
+  const breakOpen = breakSession !== null;
+  useEffect(() => {
+    if (!breakOpen) return;
+    const subscription = AppState.addEventListener("change", (state) => {
+      const parked = pendingBreakAdRef.current;
+      if (state !== "active" || !parked) return;
+      pendingBreakAdRef.current = null;
+      if (activeBreakRef.current?.token === parked.token) setBreakSession(parked);
+    });
+    return () => subscription.remove();
+  }, [breakOpen]);
+
+  // Leaving the player: nothing may land on a screen that is gone.
+  useEffect(
+    () => () => {
+      breakDecisionRef.current?.abort.abort();
+      const active = activeBreakRef.current;
+      if (active?.backstop) clearTimeout(active.backstop);
+    },
+    [],
+  );
+
+  /** Fire and forget, like the video ads' events: the film never waits on the answer. */
+  const sendCornerEvent = useCallback((event: AdPlaybackEvent) => {
+    const ad = viewingCornerRef.current;
+    if (ad) adsApi.sendPlaybackEvent(ad.playbackId, event).catch(() => {});
+  }, []);
+
+  /**
+   * The corner is on screen with its picture painted. The first time this
+   * viewing that is the impression (`started`); each later showing is a
+   * `shown`; seen again within the same showing (after the controls went
+   * down, say) it is nothing new.
+   */
+  const handleCornerVisible = useCallback(() => {
+    const state = cornerRef.current;
+    if (state.phase !== "showing") return;
+    const ledger = cornerLedgerRef.current;
+    ledger.pictureReady = true;
+    if (ledger.showing === state.showings) return;
+    ledger.showing = state.showings;
+    sendCornerEvent(ledger.impression ? "shown" : "started");
+    ledger.impression = true;
+  }, [sendCornerEvent]);
+
+  /** A tap on the linked picture: the film pauses (Play showing for the return) before the browser opens. */
+  const handleCornerOpen = useCallback(() => {
+    setIsPlaying(false);
+    reportNow();
+    setControlsVisible(true);
+    sendCornerEvent("clicked");
+  }, [reportNow, sendCornerEvent]);
+
+  /** ✕ — gone for the rest of this viewing. */
+  const handleCornerClose = useCallback(() => {
+    const next = cornerDismiss(cornerRef.current);
+    if (next === cornerRef.current) return;
+    cornerRef.current = next;
+    sendCornerEvent("skipped");
+    setCornerShowing(false);
+  }, [sendCornerEvent]);
+
+  /** The picture would not load: no corner ad for the rest of this viewing. */
+  const handleCornerError = useCallback(() => {
+    const next = cornerFail(cornerRef.current);
+    if (next === cornerRef.current) return;
+    cornerRef.current = next;
+    sendCornerEvent("failed");
+    setCornerShowing(false);
+  }, [sendCornerEvent]);
+
+  /**
    * RESUME (audit H-27): a title opens at the second the viewer left it, not at
    * 0:00 — "Continue watching" and the history grid used to restart every film
    * although the position had been saved all along.
@@ -565,13 +988,25 @@ export function PlayerScreen({ route, navigation }: Props) {
    *
    * Applied ONCE per title: an episode swap re-keys the lookup and gets its own
    * resume, while a refetch landing mid-film changes nothing.
+   *
+   * And only once the pre-roll ad is over (`adStage`): the give-up timer is
+   * armed here, and a 20 s ad would run it out before the film was so much
+   * as mounted — the viewer would start from 0:00 for having watched the ad.
+   *
+   * The in-movie ads start here too, on the same once-per-title latch and at
+   * the same second: breaks at or before it are forgiven, none comes in the
+   * quiet gap after it, and the corner starts counting watched time.
    */
   const resumeSettled = !resumeQuery.isLoading;
   const savedPosition = resumeQuery.data ?? null;
   const resumeAppliedForRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!resumeSettled || resumeAppliedForRef.current === movieId) return;
+    if (!resumeSettled || adStage !== "done" || resumeAppliedForRef.current === movieId) return;
     resumeAppliedForRef.current = movieId;
+    commitMidroll(midrollStart(createMidrollState(breaks), savedPosition ?? 0));
+    cornerRef.current = createCornerState(corner);
+    viewingCornerRef.current = corner;
+    cornerLedgerRef.current = freshCornerLedger();
     if (savedPosition === null) return;
     clearResumeWait();
     pendingResumeRef.current = savedPosition;
@@ -580,7 +1015,17 @@ export function PlayerScreen({ route, navigation }: Props) {
     // before the seek lands (back, pause, backgrounding) would otherwise write
     // 0:00 over the very position being restored.
     updatePosition(savedPosition);
-  }, [resumeSettled, movieId, savedPosition, clearResumeWait, updatePosition]);
+  }, [
+    resumeSettled,
+    adStage,
+    movieId,
+    savedPosition,
+    clearResumeWait,
+    updatePosition,
+    breaks,
+    corner,
+    commitMidroll,
+  ]);
 
   /**
    * The playlist URL carries a signed token that expires (the cache server
@@ -916,6 +1361,28 @@ export function PlayerScreen({ route, navigation }: Props) {
     // each episode is transcoded on its own, so the remembered quality gets a
     // clean hearing here.
     setUnplayableQuality(null);
+    // The pre-roll ad needs nothing here: its phase is keyed on the episode
+    // (see "PRE-ROLL AD" above), so the swap alone retires the outgoing
+    // episode's ad — its player unmounts and is released — and lets the
+    // incoming episode be decided afresh.
+    //
+    // The in-movie ads do (see "IN-MOVIE ADS"): a break on the stage is
+    // dropped — its ad player unmounts and is released, with no event, as a
+    // pre-roll abandoned by a swap — the question in flight is cancelled, and
+    // both schedules stop until the incoming episode's own session starts
+    // them again from "RESUME".
+    breakDecisionRef.current?.abort.abort();
+    breakDecisionRef.current = null;
+    if (activeBreakRef.current?.backstop) clearTimeout(activeBreakRef.current.backstop);
+    activeBreakRef.current = null;
+    pendingBreakAdRef.current = null;
+    setBreakSession(null);
+    midrollRef.current = MIDROLL_OFF;
+    scrubbingRef.current = false;
+    setBreakMarkers(NO_MARKERS);
+    cornerRef.current = CORNER_OFF;
+    viewingCornerRef.current = null;
+    setCornerShowing(false);
     // The reporter is about to be re-keyed to the new episode, and it reports
     // from a ref the video ticks into. Zeroing it is what stops the outgoing
     // episode's seconds being written against the incoming episode's id by the
@@ -1125,13 +1592,38 @@ export function PlayerScreen({ route, navigation }: Props) {
    * Null only while an episode swap waits for its stream: the stage, and every
    * layer over it, stays mounted with no video in it rather than the screen
    * going away. The old episode's player is gone by then — nothing plays under
-   * the spinner.
+   * the spinner. Null, too, for as long as a pre-roll ad holds the stage: the
+   * ad's own player is what is mounted there, and the film's only opens once
+   * it has gone.
    */
-  const sourceUrl = !resumeSettled
-    ? // Held back until the resume lookup answers — see "RESUME" above. The
-      // buffering treatment covers the wait, exactly as it covers a swap.
-      null
-    : (pinnedPlaylistUrl ?? (streamQuery.data?.status === "ready" ? streamQuery.data.playlistUrl : null));
+  const sourceUrl =
+    !resumeSettled || adStage !== "done"
+      ? // Held back until the resume lookup answers and the pre-roll ad is
+        // over — see "RESUME" and "PRE-ROLL AD" above. The buffering
+        // treatment covers the first wait, exactly as it covers a swap; the
+        // ad is its own cover for the second.
+        null
+      : (pinnedPlaylistUrl ?? (streamQuery.data?.status === "ready" ? streamQuery.data.playlistUrl : null));
+
+  const adPlaying = adStage === "playing";
+  // Not while an ad holds the stage — the pre-roll or a break: each covers
+  // its own waits, and the film's "no source yet" IS the pre-roll. Before
+  // the decision lands the pill shows as it would for a swap.
+  const showBuffering = !playbackError && !adPlaying && !breakSession && (isBuffering || !sourceUrl);
+  /**
+   * When the corner picture may be seen: the film playing on a clear stage —
+   * controls down, no rebuffer, no ad, no error, no sheet. The last two
+   * minutes are the schedule's own rule (`cornerNearEnd`).
+   */
+  const cornerCanShow =
+    !controlsVisible &&
+    isPlaying &&
+    !showBuffering &&
+    !breakSession &&
+    !adPlaying &&
+    !playbackError &&
+    settingsTab === null &&
+    !episodeSheetOpen;
 
   // The bodies behind the stable handlers above. Set after commit, never
   // during render, so a render React throws away cannot leave its handlers
@@ -1149,6 +1641,49 @@ export function PlayerScreen({ route, navigation }: Props) {
         setBuffered(bufferedSeconds);
         setPosition(currentTime);
         updatePosition(currentTime);
+
+        // IN-MOVIE ADS. Nothing is scheduled while a break holds the stage;
+        // the film's paused ticks (Android keeps sending them) are its own.
+        if (activeBreakRef.current) return;
+        const step = midrollTick(midrollRef.current, {
+          position: currentTime,
+          duration: breakDuration,
+          playing: isPlaying,
+          nowMs: Date.now(),
+          scrubbing: scrubbingRef.current,
+          // A break crossed under an open sheet, mid-drag on the seek line,
+          // or with the app away, is owed and plays on the first tick that
+          // may interrupt.
+          canInterrupt:
+            !scrubbingRef.current &&
+            settingsTab === null &&
+            !episodeSheetOpen &&
+            AppState.currentState === "active",
+        });
+        commitMidroll(step.state);
+        if (step.action.kind === "break") {
+          beginBreak(step.action);
+          return;
+        }
+        if (step.action.kind === "prefetch") askBreak(step.action.breakIndex, step.action.breakAtSeconds);
+
+        const cornerBefore = cornerRef.current;
+        const cornerAfter = cornerTick(cornerBefore, {
+          position: currentTime,
+          duration: breakDuration,
+          playing: isPlaying,
+          rate: preferredSpeed,
+          canShow: cornerCanShow && cornerLedgerRef.current.pictureReady,
+        });
+        if (cornerAfter !== cornerBefore) {
+          cornerRef.current = cornerAfter;
+          const showing = cornerAfter.phase === "showing";
+          if (showing !== (cornerBefore.phase === "showing")) {
+            // Each showing mounts the picture afresh; its time counts once painted.
+            cornerLedgerRef.current.pictureReady = false;
+            setCornerShowing(showing);
+          }
+        }
       },
       onLoad: ({ durationSeconds }) => {
         setDuration(durationSeconds);
@@ -1167,6 +1702,10 @@ export function PlayerScreen({ route, navigation }: Props) {
         // Issued here rather than from the switch, because a seek into a
         // player that has not parsed its manifest yet is unreliable —
         // this is the first moment the new source has a duration.
+        // Declared to the break schedule first: a seek this screen makes on
+        // its own (resume, quality switch, drop to Auto, recovery) crosses
+        // nothing — see "IN-MOVIE ADS".
+        commitMidroll(midrollRebase(midrollRef.current, resumeAt));
         videoRef.current?.seek(resumeAt);
       },
       onError: (message) => {
@@ -1240,7 +1779,6 @@ export function PlayerScreen({ route, navigation }: Props) {
 
   const movie = movieQuery.data;
   const seriesId = loadedSeriesId ?? sessionSeriesId;
-  const showBuffering = !playbackError && (isBuffering || !sourceUrl);
   const showEpisodesRail = !!seriesId && !isFullscreen;
   const episodeLabel = episodeTag(movie?.seasonNumber, movie?.episodeNumber) ?? undefined;
 
@@ -1269,6 +1807,24 @@ export function PlayerScreen({ route, navigation }: Props) {
           setHasStage(true);
         }}
       >
+        {/* The ad holds the stage before the film — see "PRE-ROLL AD". The
+            two are never mounted together: `sourceUrl` is null until the ad
+            is over, so the film's player only ever opens onto a free stage. */}
+        {adPlaying && prerollAd && (
+          <PrerollAdPlayer
+            // Keyed on the PLAY, not the episode: a different decision for the
+            // same episode would be a different file and a different impression.
+            key={prerollAd.playbackId}
+            ad={prerollAd}
+            muted={muted}
+            onToggleMute={toggleMute}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={toggleFullscreen}
+            onBack={handleBack}
+            onFinished={handleAdFinished}
+          />
+        )}
+
         {sourceUrl && (
           <VideoPlayer
             ref={videoRef}
@@ -1296,19 +1852,23 @@ export function PlayerScreen({ route, navigation }: Props) {
 
         {/* Directly above the picture and below every other layer, so the
             buffering and error scrims dim the caption the way they dim the
-            video, and the controls always paint over it. */}
-        <SubtitleOverlay
-          lines={subtitleLines}
-          size={subtitleSize}
-          background={subtitleBackground}
-          // The same boolean the control bar's own visibility uses — the
-          // caption steps up exactly while the bar is there.
-          liftForControls={controlsVisible}
-          stageWidth={stageSize.width}
-          stageHeight={stageSize.height}
-          edgeInsets={captionInsets}
-          controlsClearance={isFullscreen ? controlsClearance.full : controlsClearance.inline}
-        />
+            video, and the controls always paint over it. Not during an ad
+            (the pre-roll or a break): the caption clock is the film's, and a
+            cue would otherwise sit over the advertisement. */}
+        {!adPlaying && !breakSession && (
+          <SubtitleOverlay
+            lines={subtitleLines}
+            size={subtitleSize}
+            background={subtitleBackground}
+            // The same boolean the control bar's own visibility uses — the
+            // caption steps up exactly while the bar is there.
+            liftForControls={controlsVisible}
+            stageWidth={stageSize.width}
+            stageHeight={stageSize.height}
+            edgeInsets={captionInsets}
+            controlsClearance={isFullscreen ? controlsClearance.full : controlsClearance.inline}
+          />
+        )}
 
         {/* Waiting is three pulsing dots in a dark pill over a 40% dim —
             never a spinner (Marquee). While the controls show, the dots move
@@ -1348,12 +1908,43 @@ export function PlayerScreen({ route, navigation }: Props) {
          * won responder priority over the later PlayerControls sibling.
          * Three zones instead of one so a double tap on the left/right third
          * can seek; the container itself never becomes a responder.
+         *
+         * Not during an ad (the pre-roll or a break): it cannot be seeked,
+         * and its chrome is always showing, so there is nothing for a tap to
+         * toggle — and these zones would sit over that chrome and take its
+         * touches.
          */}
-        <View style={[StyleSheet.absoluteFill, styles.tapZones]} pointerEvents="box-none">
-          <Pressable style={styles.tapZone} onPress={() => handleZoneTap("left")} />
-          <Pressable style={styles.tapZone} onPress={() => handleZoneTap("center")} />
-          <Pressable style={styles.tapZone} onPress={() => handleZoneTap("right")} />
-        </View>
+        {!adPlaying && !breakSession && (
+          <View style={[StyleSheet.absoluteFill, styles.tapZones]} pointerEvents="box-none">
+            <Pressable style={styles.tapZone} onPress={() => handleZoneTap("left")} />
+            <Pressable style={styles.tapZone} onPress={() => handleZoneTap("center")} />
+            <Pressable style={styles.tapZone} onPress={() => handleZoneTap("right")} />
+          </View>
+        )}
+
+        {/* The corner picture — see "IN-MOVIE ADS". After the tap zones, so
+            its link and ✕ take their own touches; it only shows while the
+            controls are down, so the top-right is free. Mounted for a
+            showing only, faded in and out as its gate opens and closes. */}
+        {cornerShowing && corner && (
+          <CornerAd
+            imageUrl={corner.imageUrl}
+            imageWidth={corner.imageWidth}
+            imageHeight={corner.imageHeight}
+            title={corner.title}
+            linkUrl={corner.linkUrl}
+            // "Until closed" always gets its ✕ — the schedule's own rule.
+            closable={corner.closable || corner.showSeconds === null}
+            visible={cornerCanShow && !cornerNearEnd(position, breakDuration)}
+            isFullscreen={isFullscreen}
+            stageWidth={stageSize.width}
+            stageHeight={stageSize.height}
+            onOpen={handleCornerOpen}
+            onClose={handleCornerClose}
+            onVisibleLoaded={handleCornerVisible}
+            onError={handleCornerError}
+          />
+        )}
 
         {seekFlash && seekFlash !== "center" && <SeekFlash side={seekFlash} seconds={SKIP_SECONDS} />}
 
@@ -1375,7 +1966,8 @@ export function PlayerScreen({ route, navigation }: Props) {
         )}
 
         <PlayerControls
-          visible={controlsVisible}
+          // An ad carries its own chrome; the film's stays down until it ends.
+          visible={controlsVisible && !adPlaying && !breakSession}
           title={movie?.title ?? ""}
           subtitle={episodeLabel}
           isPlaying={isPlaying}
@@ -1386,7 +1978,7 @@ export function PlayerScreen({ route, navigation }: Props) {
           bufferedSeconds={buffered}
           onSeek={handleSeek}
           muted={muted}
-          onToggleMute={() => setMuted((m) => !m)}
+          onToggleMute={toggleMute}
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
           onOpenSpeed={() => setSettingsTab("speed")}
@@ -1411,7 +2003,45 @@ export function PlayerScreen({ route, navigation }: Props) {
           onNextEpisode={nextEpisode ? handleNextEpisode : undefined}
           nextEpisodeLabel={nextEpisodeLabel}
           onBottomClearance={handleControlsClearance}
+          breakMarkers={breakMarkers}
+          onScrubChange={handleScrubChange}
         />
+
+        {/* An ad break — see "IN-MOVIE ADS". Over everything in the stage,
+            the film paused and still mounted underneath: black with the
+            loading pill (and Back) while the break's ad is decided, then the
+            ad on its own player, keyed on the play like the pre-roll. */}
+        {breakSession && (
+          <View style={[StyleSheet.absoluteFill, styles.breakStage]}>
+            {breakSession.ad ? (
+              <PrerollAdPlayer
+                key={breakSession.ad.playbackId}
+                ad={breakSession.ad}
+                muted={muted}
+                onToggleMute={toggleMute}
+                isFullscreen={isFullscreen}
+                onToggleFullscreen={toggleFullscreen}
+                onBack={handleBack}
+                onFinished={handleBreakFinished}
+                note={t.player.adBreakNote}
+              />
+            ) : (
+              <>
+                <AdLoadingPill isFullscreen={isFullscreen} />
+                <View
+                  style={[
+                    styles.breakBack,
+                    isFullscreen
+                      ? { top: 14 + insets.top, left: Math.max(36, insets.left, insets.right) }
+                      : { top: 4, left: 4 },
+                  ]}
+                >
+                  <ChromeButton glyph="back" glyphSize={24} label={t.common.back} onPress={handleBack} />
+                </View>
+              </>
+            )}
+          </View>
+        )}
       </View>
 
       {/* Memoized like the film panel below: every prop is state, a
@@ -1536,4 +2166,7 @@ const styles = StyleSheet.create({
   bufferingTextFull: { fontSize: 14 },
   tapZones: { flexDirection: "row" },
   tapZone: { flex: 1 },
+  breakStage: { backgroundColor: "#000" },
+  // Where PlayerControls' Back sits, so it is under the viewer's thumb.
+  breakBack: { position: "absolute" },
 });

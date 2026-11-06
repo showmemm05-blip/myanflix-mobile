@@ -115,6 +115,8 @@ export function AppBar({
   // nothing under it, so it never needs this.
   const passThrough = overlaid && touchThrough ? "box-none" : "auto";
 
+  const compactTitle = !large && !!title;
+
   const content = (
     <SafeAreaView
       edges={["top"]}
@@ -134,7 +136,7 @@ export function AppBar({
             ) : null)}
         </View>
 
-        {!large && title ? (
+        {compactTitle ? (
           <ThemedText weight="extrabold" numberOfLines={1} accessibilityRole="header" style={styles.compactTitle}>
             {title}
           </ThemedText>

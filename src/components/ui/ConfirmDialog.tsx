@@ -7,6 +7,7 @@ import {
   StyleSheet,
   View,
   useWindowDimensions,
+  type ViewInstance,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -108,7 +109,7 @@ export function ConfirmDialog({
   const reduceMotion = useReducedMotion();
   const { fontScale, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const titleRef = useRef<View>(null);
+  const titleRef = useRef<ViewInstance>(null);
   const progress = useSharedValue(0);
 
   useEffect(() => {

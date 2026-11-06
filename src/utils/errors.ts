@@ -1,16 +1,22 @@
 /**
  * What a coded refusal adds next to `message` in the error envelope
  * (`{ success: false, message, code, ...extra }` — backend
- * common/errors/coded-http.exception.ts). Only the withdrawal-code errors
- * carry them today; every other error leaves all three undefined.
+ * common/errors/coded-http.exception.ts). The withdrawal-code errors carry
+ * the two timing fields; the Lottery's purchase refusals carry `details`
+ * (which numbers are off sale, how many are left of a number, the balance);
+ * every other error leaves all of them undefined.
  */
 export interface ApiErrorDetails {
-  /** A stable machine code to branch on — e.g. "WITHDRAWAL_CODE_WRONG". */
+  /** A stable machine code to branch on — e.g. "WITHDRAWAL_CODE_WRONG", "LOTTERY_LIMIT_EXCEEDED". */
   code?: string;
   /** WITHDRAWAL_CODE_WRONG / _LOCKED: wrong tries left before the lock (0 while locked). */
   triesLeft?: number;
   /** WITHDRAWAL_CODE_LOCKED: when the lock opens again (ISO). */
   lockedUntil?: string;
+  /** A coded refusal's own payload, as the server sent it; the caller checks its shape (hooks/useBuyTickets). */
+  details?: unknown;
+  /** Every other top-level field of the envelope (LOTTERY_SALES_CLOSED's `status`, LOTTERY_IDEMPOTENCY_MISMATCH's `ref`). */
+  extra?: Record<string, unknown>;
 }
 
 export class ApiError extends Error {
@@ -18,6 +24,8 @@ export class ApiError extends Error {
   code?: string;
   triesLeft?: number;
   lockedUntil?: string;
+  details?: unknown;
+  extra?: Record<string, unknown>;
 
   constructor(message: string, status: number, details: ApiErrorDetails = {}) {
     super(message);
@@ -26,6 +34,8 @@ export class ApiError extends Error {
     this.code = details.code;
     this.triesLeft = details.triesLeft;
     this.lockedUntil = details.lockedUntil;
+    this.details = details.details;
+    this.extra = details.extra;
   }
 }
 

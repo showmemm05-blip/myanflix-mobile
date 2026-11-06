@@ -133,6 +133,7 @@ export function useFilterGroups(segment: ActivitySegment, value: SegmentFilters)
         { value: "subscription", label: t.wallet.transactionTypes.subscription },
         { value: "refund", label: t.wallet.transactionTypes.refund },
         { value: "adjustment", label: t.wallet.filterAdjustment },
+        { value: "lottery", label: t.wallet.filterLottery },
       ];
       groups.push({
         key: "type",

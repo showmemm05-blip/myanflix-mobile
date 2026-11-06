@@ -176,7 +176,7 @@ export function LandscapeRail({ title, subtitle, accessory, items, endTile }: Ra
         renderItem={renderItem}
         getItemLayout={getItemLayout}
         ItemSeparatorComponent={Separator}
-        ListFooterComponent={footer}
+        ListFooterComponent={footer ?? undefined}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.list}
         snapToInterval={LANDSCAPE_CARD_WIDTH + GAP}

@@ -22,6 +22,8 @@ export const en = {
   nav: {
     home: "Home",
     media: "Media",
+    /** The dock's fourth tab (owner, 2026-10-15). */
+    lottery: "Lottery",
     wallet: "Wallet",
     profile: "Profile",
   },
@@ -273,6 +275,24 @@ export const en = {
       "game-signal-thirty": "Thirty minutes of tape. One frequency. Untangle the broadcast before it loops.",
     },
   },
+  /**
+   * The movie / series TYPE the admin picks (owner, 2026-10-27: "English
+   * movies, Korean movies…"), stored as the plain word in `country` and shown
+   * through utils/mediaType.ts. `{type}` is the word from `names`.
+   */
+  mediaType: {
+    movie: "{type} movie",
+    series: "{type} series",
+    names: {
+      English: "English",
+      Korean: "Korean",
+      Chinese: "Chinese",
+      Thai: "Thai",
+      Japanese: "Japanese",
+      Indian: "Indian",
+      Myanmar: "Myanmar",
+    },
+  },
   movie: {
     rating: "Rating",
     watchButton: "Watch",
@@ -298,7 +318,8 @@ export const en = {
     cast: "Cast",
     /** Nullable metadata rows under the player — only shown once the admin has backfilled them. */
     director: "Director",
-    country: "Country",
+    /** The movie TYPE row ("Korean movie") — utils/mediaType.ts. */
+    type: "Type",
     ageRating: "Age rating",
     /** The kind line beside the access badge in a detail hero. */
     kindFilm: "Film",
@@ -355,6 +376,24 @@ export const en = {
     episodeCardLabel: "Episode {n}, {title}",
     /** Joins the extra facts read out on an episode card (runtime, Now Playing, Completed). */
     listSeparator: ", ",
+    /** The pre-roll advertisement's badge over the picture. */
+    adLabel: "Advertisement",
+    /** The countdown pill; {n} is the whole seconds left in the ad. */
+    adEndsIn: "Ad ends in {n}s",
+    /** The Skip control, shown once a skippable ad has run its skip-after seconds. */
+    skipAd: "Skip ad",
+    /** Stands in for Skip until then; {n} counts the seconds down. */
+    skipAdIn: "Skip in {n}",
+    /** The waiting pill before the ad's first frame. */
+    adLoading: "Loading ad…",
+    /** Under the countdown at a mid-roll break. */
+    adBreakNote: "The movie continues after the ad",
+    /** The corner picture's badge. */
+    adTag: "Ad",
+    /** Spoken on the corner picture's ✕. */
+    closeAd: "Close ad",
+    /** Spoken on a corner picture that carries a link; {title} is the ad's title. */
+    openAd: "{title}, opens in your browser",
   },
   series: {
     season: "Season {n}",
@@ -704,9 +743,9 @@ export const en = {
      * kind. "All" uses the movies wording because its panel lists movies and
      * committing there lands on the Movies tab; Music has no field at all.
      */
-    placeholderMovies: "Search movies…",
-    placeholderSeries: "Search series…",
-    placeholderBooks: "Search books…",
+    placeholderMovies: "Search movies",
+    placeholderSeries: "Search series",
+    placeholderBooks: "Search books",
     /** The actors list searches names, so its field must say so rather than promising movies. */
     placeholderPeople: "Search people…",
     /** Its books twin — the authors list searches author names. */
@@ -734,6 +773,8 @@ export const en = {
     idleErrorBody: "You can still type a search above.",
     /** The search screen's round back button, when it returns to the Media page (MediaSearch.dc.html). */
     backToMedia: "Back to Media",
+    /** The same button on a LOCKED search, which returns to the section page: "Back to Movies" (MediaSearchMovies.dc.html). */
+    backToSection: "Back to {kind}",
     filters: "Filters",
     /** The search screen's Books scope before a search — same wording the website's shelf uses. */
     newBooksRow: "New on the shelf",
@@ -909,6 +950,28 @@ export const en = {
     facetAny: "Any",
     ratingAnyA11y: "Any rating",
     ratingFloorA11y: "{n} and up",
+    /* ---- the Media hub's search (MediaSearch.dc.html / MediaSearchMovies.dc.html, 2026-10-22) ----
+       Opened from the hub (or Home, or Browse) the field searches everything;
+       opened from inside a section it is LOCKED to that section — no scope
+       pills, a scope line under the field instead, and a quiet way out. */
+    /** The unlocked field on the All scope. */
+    placeholderAll: "Search movies, series, books",
+    /** The line above the pills on the All scope: a bold "Everything", then the tail. */
+    everything: "Everything",
+    everythingTail: "movies, series and books",
+    /** The locked search's scope line — {kind} is Movies, Series or Books ("In Movies"). */
+    inScope: "In {kind}",
+    /** Its count, after " · " — `resultsCount` for more than one. */
+    resultsCountOne: "1 result",
+    /** The quiet link under a locked search's results or empty state: the same term, every section. */
+    searchEverythingFor: "Search everything for “{term}”",
+    /** A locked search's empty state, naming the section it looked in. */
+    noKindMatchMovies: "No movies match “{term}”",
+    noKindMatchSeries: "No series match “{term}”",
+    noKindMatchBooks: "No books match “{term}”",
+    lookElsewhereMovies: "Try a different spelling, or look in series and books too.",
+    lookElsewhereSeries: "Try a different spelling, or look in movies and books too.",
+    lookElsewhereBooks: "Try a different spelling, or look in movies and series too.",
   },
   actors: {
     /**
@@ -1012,6 +1075,28 @@ export const en = {
     /** The Music chip's page (MediaMusic.dc.html). */
     musicSoonTitle: "Music is coming soon",
     musicSoonBody: "Songs and albums will play right here.",
+    /* ---- the Media hub (MediaHub.dc.html, 2026-10-22) and the section pages' bar ---- */
+    /** The label over the four section cards. */
+    chooseSection: "Choose what to open",
+    /* A card's live line: "{count} · {new}". Movies count with `library.titlesCount`. */
+    showsCount: "{n} shows",
+    showsCountOne: "1 show",
+    booksCount: "{n} books",
+    booksCountOne: "1 book",
+    newCount: "{n} new",
+    /** The newest page was all new, so there may be more: "30+ new". */
+    newCountPlus: "{n}+ new",
+    /** The Books card's line for a guest — the library is members-only. */
+    membersOnly: "Members only",
+    /** The Music card's line (the tag says "Soon"). */
+    comingSoon: "Coming soon",
+    /** Beside the hub's "Continue watching" heading. */
+    pickUpHint: "Pick up where you left off",
+    /** The hub's Continue row with nothing part-watched. */
+    nothingInProgressTitle: "Nothing in progress yet",
+    nothingInProgressBody: "Anything you start watching or reading shows up here.",
+    /** The section row's greyed "Categories ▾" on Music, which has none (MediaMusic.dc.html): {type} is the section's name. */
+    categoriesUnavailableA11y: "Categories, not available for {type}",
   },
   /** Page-specific strings of each hub, one block per page (the shared ones are in `hub`). */
   hubs: {
@@ -1267,6 +1352,8 @@ export const en = {
       withdrawal: "Withdrawal",
       adjustment_credit: "Balance adjustment",
       adjustment_debit: "Balance adjustment",
+      lottery_purchase: "Lottery tickets",
+      lottery_prize: "Lottery prize",
     },
     depositButton: "Deposit",
     withdrawButton: "Withdraw",
@@ -1359,6 +1446,7 @@ export const en = {
     filterCompleted: "Completed",
     filterFailedRefunded: "Failed or refunded",
     filterAdjustment: "Adjustment",
+    filterLottery: "Lottery",
     range7: "Last 7 days",
     range30: "Last 30 days",
     range90: "Last 90 days",
@@ -1456,6 +1544,39 @@ export const en = {
     profileRow: "Withdrawal code",
     profileCreate: "Create code",
     profileChange: "Change code",
+  },
+  /**
+   * The Lottery's entry points on the dark MyanFlix side (owner, 2026-10-15,
+   * "A + B"): the Lottery tab's hub and the white banner on Home. The Thai
+   * lottery app itself is English sample copy for now (src/lottery/copy.ts).
+   * The Burmese words below still need the owner's check (open question 7).
+   */
+  lottery: {
+    chooseGame: "Choose a game",
+    thaiTitle: "Thai lottery",
+    /** {n} = the draw number, {time} = thaiTime. */
+    thaiLine: "Draw {n} · closes in {time}",
+    thaiTime: "{d}d {h}h",
+    /** The card's line when sales are not open, when the results are out, or when there is no draw yet. */
+    thaiLineClosed: "Draw {n} · sales closed",
+    thaiLinePaused: "Draw {n} · sales paused",
+    thaiLineSoon: "Draw {n} · opens soon",
+    thaiLineResults: "Draw {n} · results out",
+    thaiLineNone: "No draw on sale yet",
+    /** Spoken after the Thai card's name and line: what pressing does. */
+    thaiOpensHint: "Opens the Thai lottery",
+    twoD: "2D",
+    threeD: "3D",
+    luckyDraw: "Lucky draw",
+    /** Spoken after a "Soon" card's name and line (hub.comingSoon). */
+    soonHint: "Not open yet",
+    /** The link under the games when the draw could not be loaded. */
+    tryAgain: "Try again",
+    tryAgainHint: "Loads the draw again",
+    bannerKicker: "Lottery",
+    bannerTitle: "Thai lottery · 2D · 3D · Lucky draw",
+    bannerCta: "Open Lottery",
+    bannerA11y: "Open Lottery: Thai lottery, 2D, 3D and Lucky draw",
   },
 };
 

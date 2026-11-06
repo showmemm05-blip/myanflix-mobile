@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Share, StyleSheet, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Share, StyleSheet, View, type ScrollViewInstance } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAnimatedRef } from "react-native-reanimated";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
@@ -44,6 +44,7 @@ import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
 import { useDockClearance } from "@/hooks/useDockClearance";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { hasAccess } from "@/utils/access";
+import { mediaTypeLabel } from "@/utils/mediaType";
 import { theme } from "@/theme";
 import type { MediaDetailParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
 import type { Movie, MovieActorRef } from "@/types/movie";
@@ -111,7 +112,7 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
   const toggleWatchlist = useToggleWatchlist();
   const [selectedSeason, setSelectedSeason] = useState<number | null>(null);
   // An animated ref, so the glass bar can follow this page's scroll on the UI thread.
-  const scrollRef = useAnimatedRef<ScrollView>();
+  const scrollRef = useAnimatedRef<ScrollViewInstance>();
   // The glass bar (components/layout/GlassBar): back and share float over the
   // hero, transparent at the top, frosted once the page scrolls under them.
   const glass = useGlassBar();
@@ -370,7 +371,7 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
               {isSubscribed && series.accessType === "SUBSCRIPTION" && <UnlockedNote text={t.series.unlockedNote} />}
 
               <StatStrip items={stats} />
-              <MetaLine parts={[series.language, series.genre]} />
+              <MetaLine parts={[mediaTypeLabel(t, series.country, "series"), series.language, series.genre]} />
 
               <CategoryChips categories={series.categories} onSelect={goToCategory} />
 

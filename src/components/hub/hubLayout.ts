@@ -3,13 +3,15 @@ import { useWindowDimensions } from "react-native";
 
 /**
  * Shared geometry of the three hubs (Movies / Series / Books —
- * docs/mobile-media-page-2026-10-02/design), which ARE the Media tab's root:
- * each is the body of one chip, running full-bleed from the top of the screen
- * under the Media bar and its chip row, which are laid over the hero.
+ * docs/mobile-media-page-2026-10-02/design), which are the bodies of the
+ * Media tab's section page (screens/Media/Media.tsx, since 2026-10-22 under
+ * the hub): each runs full-bleed from the top of the screen under the
+ * page's two-row bar (the "Media" root bar and the "‹ Media | Movies |
+ * Categories ▾" row under it), which is laid over the hero.
  * LAYOUT ONLY: nothing here may fetch, cache or derive data.
  */
 
-/** Which hub a body is — the Media chip it belongs to. */
+/** Which hub a body is — the Media section it belongs to. */
 export type HubKind = "movies" | "series" | "books";
 
 /**

@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ScrollViewInstance,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -300,7 +301,7 @@ export function HubHero({
   const chromeHeight = useHubChromeHeight();
   const reduceMotion = useReducedMotion();
   const isFocused = useIsFocused();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const count = slides.length;
 
   const [index, setIndex] = useState(0);

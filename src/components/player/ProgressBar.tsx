@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PanResponder, View, StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from "react-native";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { ThemedText } from "@/components/ui/ThemedText";
@@ -11,6 +11,15 @@ interface Props {
   positionSeconds: number;
   bufferedSeconds: number;
   onSeek: (seconds: number) => void;
+  /** Seconds of the ad breaks still to come — a gold tick on the line for each. */
+  markers?: readonly number[];
+  /**
+   * Told `true` when a finger takes the thumb and `false` when the drag ends —
+   * released, taken away by the system, or cut short because the bar itself
+   * went away. The break schedule holds a break crossed meanwhile, so an ad
+   * never pulls the bar (and the seek) out from under the finger.
+   */
+  onScrubChange?: (dragging: boolean) => void;
 }
 
 /** Marquee seek line: a 4pt track, crimson played, white-at-45% buffered. */
@@ -24,6 +33,8 @@ const THUMB_SIZE = 14;
 const TOUCH_PADDING = 20;
 /** What a screen reader's swipe up/down moves — the same 10s the skip buttons use. */
 const A11Y_STEP_SECONDS = 10;
+/** An ad-break tick: a sliver of the line, full track height. */
+const MARKER_WIDTH = 3;
 
 /**
  * Played / buffered / unplayed scrub bar. Buffered comes straight from
@@ -31,9 +42,9 @@ const A11Y_STEP_SECONDS = 10;
  * segment cache to drive this, unlike the web player.
  *
  * Drag maths are unchanged from the first version: the PanResponder is frozen
- * on first render and reads duration/onSeek through refs.
+ * on first render and reads duration/onSeek/onScrubChange through refs.
  */
-export function ProgressBar({ durationSeconds, positionSeconds, bufferedSeconds, onSeek }: Props) {
+export function ProgressBar({ durationSeconds, positionSeconds, bufferedSeconds, onSeek, markers, onScrubChange }: Props) {
   const { t } = useLanguage();
   const reduceMotion = useReducedMotion();
   const [trackWidth, setTrackWidth] = useState(0);
@@ -47,6 +58,9 @@ export function ProgressBar({ durationSeconds, positionSeconds, bufferedSeconds,
   // stuck computing every touch against durationSeconds=0.
   const durationRef = useRef(durationSeconds);
   const onSeekRef = useRef(onSeek);
+  const onScrubChangeRef = useRef(onScrubChange);
+  /** Whether a drag is open as far as `onScrubChange` was told — each edge is reported once. */
+  const draggingRef = useRef(false);
   const thumbScale = useSharedValue(1);
   const bubbleOpacity = useSharedValue(0);
 
@@ -57,6 +71,21 @@ export function ProgressBar({ durationSeconds, positionSeconds, bufferedSeconds,
   useEffect(() => {
     onSeekRef.current = onSeek;
   }, [onSeek]);
+
+  useEffect(() => {
+    onScrubChangeRef.current = onScrubChange;
+  }, [onScrubChange]);
+
+  // Unmounted mid-drag (the controls hid, or fullscreen swapped to the other
+  // bar): no release will ever come, so the drag is reported over here.
+  useEffect(
+    () => () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      onScrubChangeRef.current?.(false);
+    },
+    [],
+  );
 
   useEffect(() => {
     const dragging = dragPosition !== null;
@@ -84,22 +113,56 @@ export function ProgressBar({ durationSeconds, positionSeconds, bufferedSeconds,
     return ratio * durationRef.current;
   };
 
+  /** Reads and writes refs only, so the frozen PanResponder below may hold its first copy. */
+  const reportDragging = (dragging: boolean) => {
+    if (draggingRef.current === dragging) return;
+    draggingRef.current = dragging;
+    onScrubChangeRef.current?.(dragging);
+  };
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (e) => setDragPosition(positionFromTouchX(e.nativeEvent.locationX)),
+      onPanResponderGrant: (e) => {
+        reportDragging(true);
+        setDragPosition(positionFromTouchX(e.nativeEvent.locationX));
+      },
       onPanResponderMove: (e) => setDragPosition(positionFromTouchX(e.nativeEvent.locationX)),
       onPanResponderRelease: (e) => {
         const seconds = positionFromTouchX(e.nativeEvent.locationX);
         setDragPosition(null);
+        // Over before the seek, so the seek is the one jump the schedule decides.
+        reportDragging(false);
         onSeekRef.current(seconds);
+      },
+      // Taken away mid-drag (a system gesture, another responder): no seek —
+      // the thumb goes back to the film's position — but the drag is over.
+      onPanResponderTerminate: () => {
+        setDragPosition(null);
+        reportDragging(false);
       },
     }),
   ).current;
 
   const displayedPosition = dragPosition ?? positionSeconds;
   const pct = (seconds: number) => (durationSeconds > 0 ? Math.min(100, (seconds / durationSeconds) * 100) : 0);
+
+  /**
+   * The break ticks, built once per marker list rather than on every tick of
+   * the playback clock (the list only changes when a break is played or the
+   * duration lands). None until the duration is known: every tick would sit
+   * at 0:00.
+   */
+  const markerViews = useMemo(() => {
+    if (!markers || markers.length === 0 || durationSeconds <= 0) return null;
+    return markers.map((seconds) => (
+      <View
+        key={seconds}
+        style={[styles.marker, { left: `${Math.min(100, (seconds / durationSeconds) * 100)}%` }]}
+      />
+    ));
+  }, [markers, durationSeconds]);
   const bubbleLeft = trackWidth > 0 ? (pct(displayedPosition) / 100) * trackWidth : 0;
 
   /**
@@ -156,6 +219,7 @@ export function ProgressBar({ durationSeconds, positionSeconds, bufferedSeconds,
       <View style={styles.track} pointerEvents="none">
         <View style={[styles.fill, styles.buffered, { width: `${pct(bufferedSeconds)}%` }]} />
         <View style={[styles.fill, styles.played, { width: `${pct(displayedPosition)}%` }]} />
+        {markerViews}
         <Animated.View style={[styles.thumb, { left: `${pct(displayedPosition)}%` }, thumbAnimatedStyle]} />
       </View>
     </View>
@@ -173,6 +237,16 @@ const styles = StyleSheet.create({
   fill: { position: "absolute", top: 0, bottom: 0, borderRadius: TRACK_HEIGHT / 2 },
   buffered: { backgroundColor: "rgba(255,255,255,0.45)" },
   played: { backgroundColor: theme.colors.primary },
+  // Gold, as on the website's seek bar: it reads on crimson and on the bare track alike.
+  marker: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: MARKER_WIDTH,
+    marginLeft: -MARKER_WIDTH / 2,
+    borderRadius: 1,
+    backgroundColor: theme.colors.premium,
+  },
   thumb: {
     position: "absolute",
     top: TRACK_HEIGHT / 2 - THUMB_SIZE / 2,

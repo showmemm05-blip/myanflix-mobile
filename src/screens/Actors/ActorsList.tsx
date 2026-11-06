@@ -282,7 +282,7 @@ export function ActorsListScreen({ navigation }: Props) {
               refreshControl={
                 <RefreshControl
                   refreshing={peopleQuery.isRefetching && !peopleQuery.isFetchingNextPage}
-                  onRefresh={() => peopleQuery.refetch()}
+                  onRefresh={() => void peopleQuery.refetch()}
                   tintColor={theme.colors.primary}
                   colors={[theme.colors.primary]}
                   progressBackgroundColor={theme.colors.surface}

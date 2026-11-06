@@ -18,7 +18,10 @@ export type TransactionType =
   | "SUBSCRIPTION"
   | "WITHDRAWAL"
   | "ADJUSTMENT_CREDIT"
-  | "ADJUSTMENT_DEBIT";
+  | "ADJUSTMENT_DEBIT"
+  /** The Lottery (2026-10-19): tickets bought in one purchase, and a prize paid out (phase 3). */
+  | "LOTTERY_PURCHASE"
+  | "LOTTERY_PRIZE";
 export type TransactionStatus = "COMPLETED" | "PENDING" | "FAILED";
 
 export interface Transaction {

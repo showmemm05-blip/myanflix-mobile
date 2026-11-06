@@ -44,7 +44,7 @@ export interface HubRowItem {
   meta?: Array<string | number | null | undefined>;
   /** Cover variant only: the bold line under the cover (the author). */
   byline?: string | null;
-  /** Landscape variant only: 0–100, the crimson progress line on the art (Home's Continue watching). */
+  /** Landscape and poster variants: 0–100, the crimson progress line on the art (Continue watching). */
   progress?: number | null;
   /** Landscape variant only: the spoken name of the card, when the title and tags are not enough. */
   accessibilityLabel?: string;
@@ -205,6 +205,8 @@ const HubRowCell = memo(function HubRowCell({
           accessType={item.accessType}
           rating={item.rating && item.rating > 0 ? item.rating : null}
           meta={item.meta}
+          // MediaCard's line is 0–1; the row's items say 0–100, as LandscapeCard's do.
+          progress={typeof item.progress === "number" ? item.progress / 100 : null}
           isNew={item.isNew}
           fallbackArt={<HubFallbackArt seed={item.key} format="poster" />}
           onPress={item.onPress}

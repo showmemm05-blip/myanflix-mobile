@@ -5,6 +5,7 @@ import {
   TextInput,
   View,
   type StyleProp,
+  type TextInputInstance,
   type TextInputProps,
   type ViewStyle,
 } from "react-native";
@@ -298,7 +299,7 @@ interface AccountFieldProps extends TextInputProps {
   revealAccessibilityLabel?: string;
   hideAccessibilityLabel?: string;
   /** Handed to the TextInput so a multi-field form can hop focus on "next". */
-  ref?: Ref<TextInput>;
+  ref?: Ref<TextInputInstance>;
 }
 
 /**

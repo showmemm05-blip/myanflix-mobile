@@ -109,7 +109,7 @@ export function WatchHistoryScreen({ navigation }: Props) {
     () => (
       <RefreshControl
         refreshing={historyQuery.isRefetching && !historyQuery.isFetchingNextPage}
-        onRefresh={() => historyQuery.refetch()}
+        onRefresh={() => void historyQuery.refetch()}
         tintColor={theme.colors.primary}
         colors={[theme.colors.primary]}
         progressBackgroundColor={theme.colors.surface}

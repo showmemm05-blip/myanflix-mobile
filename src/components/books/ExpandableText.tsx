@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Pressable, StyleSheet, View, type NativeSyntheticEvent, type TextLayoutEventData } from "react-native";
+import { Pressable, StyleSheet, View, type TextLayoutEvent } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -28,7 +28,7 @@ export function ExpandableText({ text, lines = 3 }: Props) {
   const [overflows, setOverflows] = useState(false);
 
   const measure = useCallback(
-    (event: NativeSyntheticEvent<TextLayoutEventData>) => {
+    (event: TextLayoutEvent) => {
       setOverflows(event.nativeEvent.lines.length > lines);
     },
     [lines],

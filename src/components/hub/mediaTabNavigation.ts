@@ -5,8 +5,8 @@ import type { MainTabParamList, RootStackParamList, SearchStackParamList } from 
 
 /**
  * The navigation a hub sees. The three hubs are the bodies of the Media tab's
- * Movies / Series / Books chips, rendered INSIDE the tab's root screen (the
- * route still called "Search"), so they push onto the Media tab's own stack
+ * section page (route "Search", pushed over the MediaHub root since
+ * 2026-10-22), so they push onto the Media tab's own stack
  * (details, the filters page, the people and author lists, Browse) — back
  * returns to the hub — and reach the root stack above the tabs for the
  * Player and the book reader.

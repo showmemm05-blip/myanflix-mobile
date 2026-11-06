@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, type RefObject } from "react";
 import {
   Keyboard,
   Platform,
@@ -6,9 +6,10 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  type ScrollView,
-  type View,
+  type ScrollViewInstance,
+  type ViewInstance,
 } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useKeyboardInset } from "@/hooks/useKeyboardInset";
 
@@ -18,6 +19,40 @@ import { useKeyboardInset } from "@/hooks/useKeyboardInset";
  * press next is visible".
  */
 const FIELD_CLEARANCE = 96;
+
+/** Air under a lifted block's bottom edge when the screen names none. */
+const BLOCK_CLEARANCE = 16;
+
+/**
+ * A block taller than the room the keyboard leaves: the focused field's top
+ * stays this far under the viewport's top edge, and the block's foot is what
+ * is cut — you must see what you type before what you press next.
+ */
+const FIELD_TOP_AIR = 12;
+
+/**
+ * A block lifted whole with its field: the field, its label and help line and
+ * the action row under it (the Draw page's ticket with Quick pick, Clear and
+ * Add). The lift puts the block's bottom edge — plus `clearance` — just above
+ * the keyboard and whatever floats on it, instead of the field's bottom plus
+ * FIELD_CLEARANCE.
+ */
+export interface KeyboardLiftBlock {
+  ref: RefObject<ViewInstance | null>;
+  /** Air under the block's bottom edge (16 by default). */
+  clearance?: number;
+}
+
+export interface KeyboardLiftOptions {
+  /**
+   * How much of the viewport's bottom edge something floating covers — the
+   * Lottery buy bar riding on the keyboard, gap included — so every lift
+   * keeps the field above IT, not only above the keyboard. 0 by default.
+   */
+  obstruction?: number;
+  /** The block the focused field belongs to, lifted whole; for a screen with one field. */
+  block?: KeyboardLiftBlock;
+}
 
 /**
  * How a field asks its screen to bring it into view. The screen's
@@ -55,12 +90,20 @@ export function useScrollIntoView(): () => void {
  *     it — into the part of the viewport the keyboard leaves.
  * Positions come from layout/scroll events rather than measuring against
  * the scroll view itself, which Fabric does not offset by scroll.
+ *
+ * The part of the viewport the lift scrolls into is what the keyboard leaves
+ * MINUS `obstruction` (what floats over the keyboard: the Lottery buy bar),
+ * and a screen with one field can name the `block` round it (label, field,
+ * help, action row) to be lifted whole — see KeyboardLiftOptions. A lift
+ * runs again when the obstruction lands or changes, as it does when the
+ * keyboard pad lands. Reduced motion: the scroll jumps instead of sliding.
  */
-export function useKeyboardLift() {
+export function useKeyboardLift({ obstruction = 0, block }: KeyboardLiftOptions = {}) {
   const insets = useSafeAreaInsets();
   const bottomInset = insets.bottom;
-  const scrollRef = useRef<ScrollView>(null);
-  const contentRef = useRef<View>(null);
+  const reduceMotion = useReducedMotion();
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const contentRef = useRef<ViewInstance>(null);
   const contentTop = useRef(0);
   const scrollY = useRef(0);
   const viewportHeight = useRef(0);
@@ -70,6 +113,13 @@ export function useKeyboardLift() {
   const keyboardInset = useKeyboardInset(true);
   const keyboardPad = Platform.OS === "android" ? keyboardInset : 0;
 
+  // What the lift reads at the moment it runs, not at the moment it was asked
+  // (the options change with the bar, the pad lands a render late).
+  const live = useRef({ obstruction, block, keyboardPad });
+  useEffect(() => {
+    live.current = { obstruction, block, keyboardPad };
+  }, [obstruction, block, keyboardPad]);
+
   /**
    * `strip` is how much of the full-height viewport the keyboard covers (the
    * event's height plus, on Android, the navigation bar it hides behind —
@@ -77,24 +127,45 @@ export function useKeyboardLift() {
    * inset hook rather than waited for from layout because the resized
    * window's onLayout and the keyboard event arrive in no fixed order; the
    * smaller of "what layout reports" and "full height minus the strip" is
-   * right whichever lands first.
+   * right whichever lands first. A field asking for itself passes nothing:
+   * the pad (the strip, where the window kept its height) stands in.
    */
-  const scrollFocusedFieldIntoView = useCallback((strip = 0) => {
-    const input = TextInput.State.currentlyFocusedInput();
-    const content = contentRef.current;
-    const scroll = scrollRef.current;
-    if (!input || !content || !scroll) return;
-    const viewport =
-      strip > 0 ? Math.min(viewportHeight.current, fullViewportHeight.current - strip) : viewportHeight.current;
-    if (viewport <= 0) return;
-    input.measureLayout(content, (_x, y, _w, h) => {
-      const fieldBottom = contentTop.current + y + h + FIELD_CLEARANCE;
-      const visibleBottom = scrollY.current + viewport;
-      if (fieldBottom > visibleBottom) {
-        scroll.scrollTo({ y: Math.max(0, fieldBottom - viewport), animated: true });
-      }
-    });
-  }, []);
+  const scrollFocusedFieldIntoView = useCallback(
+    (strip = live.current.keyboardPad) => {
+      const input = TextInput.State.currentlyFocusedInput();
+      const content = contentRef.current;
+      const scroll = scrollRef.current;
+      if (!input || !content || !scroll) return;
+      const viewport =
+        strip > 0 ? Math.min(viewportHeight.current, fullViewportHeight.current - strip) : viewportHeight.current;
+      // The room the keyboard, and what floats on it, leave.
+      const room = viewport - live.current.obstruction;
+      if (room <= 0) return;
+      const animated = !reduceMotion;
+      const block = live.current.block;
+      const blockNode = block?.ref.current ?? null;
+      input.measureLayout(content, (_x, y, _w, h) => {
+        const fieldTop = contentTop.current + y;
+        const visibleBottom = scrollY.current + room;
+        if (!blockNode) {
+          const fieldBottom = fieldTop + h + FIELD_CLEARANCE;
+          if (fieldBottom > visibleBottom) {
+            scroll.scrollTo({ y: Math.max(0, fieldBottom - room), animated });
+          }
+          return;
+        }
+        blockNode.measureLayout(content, (_bx, by, _bw, bh) => {
+          const blockBottom = contentTop.current + by + bh + (block?.clearance ?? BLOCK_CLEARANCE);
+          if (blockBottom <= visibleBottom) return;
+          // The smallest offset that shows the whole block above the cover;
+          // a block taller than the room keeps the field's top in view instead.
+          const wanted = Math.min(blockBottom - room, fieldTop - FIELD_TOP_AIR);
+          scroll.scrollTo({ y: Math.max(0, wanted), animated });
+        });
+      });
+    },
+    [reduceMotion],
+  );
 
   useEffect(() => {
     // `Did`, on both platforms: iOS's KeyboardAvoidingView has applied its
@@ -114,6 +185,12 @@ export function useKeyboardLift() {
     if (keyboardPad > 0) requestAnimationFrame(() => scrollFocusedFieldIntoView(keyboardPad));
   }, [keyboardPad, scrollFocusedFieldIntoView]);
 
+  useEffect(() => {
+    // The obstruction lands a render after the keyboard too (the bar measures
+    // itself and moves): a lift that ran before it stopped short of it.
+    if (obstruction > 0) requestAnimationFrame(() => scrollFocusedFieldIntoView());
+  }, [obstruction, scrollFocusedFieldIntoView]);
+
   const onViewportLayout = useCallback((event: LayoutChangeEvent) => {
     const { height } = event.nativeEvent.layout;
     viewportHeight.current = height;
@@ -127,7 +204,7 @@ export function useKeyboardLift() {
   }, []);
   // The context hands fields a no-argument version: a focus change under an
   // open keyboard has no event to read a height from, and by then layout has
-  // long since reported the reduced viewport.
+  // long since reported the reduced viewport (or the pad stands in for it).
   const scrollFocusedIntoView = useCallback(() => scrollFocusedFieldIntoView(), [scrollFocusedFieldIntoView]);
 
   return {

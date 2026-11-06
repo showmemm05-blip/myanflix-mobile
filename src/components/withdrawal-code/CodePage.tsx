@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View, type ScrollViewInstance } from "react-native";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { Rise } from "@/components/auth/AuthParts";
 import { CodeDisc, CodeStatusLine, type CodeStatus } from "@/components/withdrawal-code/CodeParts";
@@ -56,7 +56,7 @@ export function CodePage({
   action,
 }: Props) {
   const { compact, short } = useCodeLayout();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const firstReveal = useRef(true);
 
   useEffect(() => {

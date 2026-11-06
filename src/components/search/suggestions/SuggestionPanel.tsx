@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type ViewInstance } from "react-native";
 import Animated, {
   Easing,
   runOnJS,
@@ -77,7 +77,7 @@ interface Props {
    * Search screen passes its TAB STRIP (the Marquee board), so the tabs stay
    * tappable and the hint line under the field stays visible while typing.
    */
-  anchorRef: RefObject<View | null>;
+  anchorRef: RefObject<ViewInstance | null>;
   /**
    * Higher views to hang under instead, in order of preference (the screen
    * passes the hint line, then the field). Used only when `anchorRef` leaves
@@ -85,7 +85,7 @@ interface Props {
    * text — so the suggestions never vanish where the old field-anchored panel
    * still fitted. Must be a stable array: it is an effect dependency.
    */
-  fallbackAnchorRefs?: ReadonlyArray<RefObject<View | null>>;
+  fallbackAnchorRefs?: ReadonlyArray<RefObject<ViewInstance | null>>;
   /**
    * Changes whenever the anchor may have moved (the screen bumps it from the
    * anchor's onLayout), so the panel re-measures instead of hanging at a
@@ -93,7 +93,7 @@ interface Props {
    */
   anchorKey?: number;
   /** The screen's root view — the panel's own coordinate space. */
-  containerRef: RefObject<View | null>;
+  containerRef: RefObject<ViewInstance | null>;
   /**
    * A tap on the dimmed content behind the panel. The screen closes the panel
    * and puts the keyboard away; omitted, the dim simply lets taps through.
@@ -207,7 +207,7 @@ export function SuggestionPanel({
     const primary = anchorRef.current;
     if (!primary || !root) return;
     const views = [primary, ...(fallbackAnchorRefs ?? []).map((ref) => ref.current)].filter(
-      (view): view is View => view != null,
+      (view): view is ViewInstance => view != null,
     );
     let cancelled = false;
     root.measureInWindow((_rootX, rootY) => {

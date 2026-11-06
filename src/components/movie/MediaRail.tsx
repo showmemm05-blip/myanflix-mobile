@@ -153,7 +153,7 @@ export function MediaRail({
           windowSize={5}
           renderItem={renderItem}
           getItemLayout={getItemLayout}
-          ListFooterComponent={footer}
+          ListFooterComponent={footer ?? undefined}
         />
       )}
     </View>

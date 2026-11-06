@@ -18,9 +18,12 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ScrollViewInstance,
   type StyleProp,
+  type TextInputInstance,
   type TextInputProps,
   type TextStyle,
+  type ViewInstance,
   type ViewStyle,
 } from "react-native";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
@@ -110,8 +113,8 @@ interface SheetFormProps {
  */
 export function SheetForm({ children, action, contentStyle, actionStyle, actionPassThrough }: SheetFormProps) {
   const keyboardLift = useSheetKeyboardLift();
-  const scrollRef = useRef<ScrollView>(null);
-  const contentRef = useRef<View>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const contentRef = useRef<ViewInstance>(null);
   const scrollY = useRef(0);
   const viewport = useRef(0);
   const [actionHeight, setActionHeight] = useState(0);
@@ -269,7 +272,7 @@ interface FieldProps extends TextInputProps {
    * "next". Declared rather than relying on React 19's ref-as-a-prop, because
    * `TextInputProps` does not carry it and TypeScript would reject it.
    */
-  ref?: Ref<TextInput>;
+  ref?: Ref<TextInputInstance>;
 }
 
 /**

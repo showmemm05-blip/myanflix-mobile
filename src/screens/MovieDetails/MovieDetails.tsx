@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Share, StyleSheet, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Share, StyleSheet, View, type ScrollViewInstance } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAnimatedRef } from "react-native-reanimated";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -34,6 +34,7 @@ import { useLanguage } from "@/localization/LanguageProvider";
 import { formatDuration } from "@/utils/format";
 import { AGE_RATING_LABELS } from "@/utils/ageRating";
 import { hasAccess } from "@/utils/access";
+import { mediaTypeLabel } from "@/utils/mediaType";
 import { theme } from "@/theme";
 import type { MediaDetailParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
 import type { Movie, MovieActorRef } from "@/types/movie";
@@ -62,7 +63,7 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
   const isFavorite = useIsInWatchlist(movieId);
   const toggleWatchlist = useToggleWatchlist();
   // An animated ref, so the glass bar can follow this page's scroll on the UI thread.
-  const scrollRef = useAnimatedRef<ScrollView>();
+  const scrollRef = useAnimatedRef<ScrollViewInstance>();
   // The glass bar (components/layout/GlassBar): back and share float over the
   // hero, transparent at the top, frosted once the page scrolls under them.
   const glass = useGlassBar();
@@ -218,7 +219,7 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
               {!canWatch && <SubscribeBanner label={t.movie.subscriptionLocked} onPress={handleSubscribe} />}
 
               <StatStrip items={stats} />
-              <MetaLine quality={qualityBadgeLabel(movie.maxQuality)} parts={[movie.language, movie.genre, movie.country]} />
+              <MetaLine quality={qualityBadgeLabel(movie.maxQuality)} parts={[mediaTypeLabel(t, movie.country, "movie"), movie.language, movie.genre]} />
               {movie.director ? (
                 <ThemedText variant="caption" weight="regular" color={theme.colors.textMuted} style={styles.director}>
                   {`${t.movie.director} · ${movie.director}`}

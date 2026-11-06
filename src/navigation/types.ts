@@ -1,4 +1,5 @@
 import type { NavigatorScreenParams } from "@react-navigation/native";
+import type { LotteryTabParamList } from "@/lottery/navigation/types";
 
 export type AuthStackParamList = {
   /** `phone` pre-fills the number — set when "Forgot password" hands the user back to sign in. */
@@ -44,21 +45,34 @@ export type HomeStackParamList = MediaDetailParamList & {
 
 export type SearchStackParamList = MediaDetailParamList & {
   /**
-   * The Media tab's ROOT (screens/Media — the route keeps its old name so
-   * every existing navigation still lands): the hub page — the "Media" bar,
-   * the Movies / Series / Books / Music chips and the current chip's hub.
-   * `initialTab` opens (or, when the tab is already open, switches to) a
-   * chip — Home's Film / Series / Book / Music lanes and the search screen's
-   * "See all" send it; "all" opens Movies (the Media tab has no All chip).
+   * The Media tab's ROOT since 2026-10-22 (screens/Media/MediaHub — the
+   * owner: "the same flow as lottery"): the "Media" bar, a search field, the
+   * Movies / Series / Books / Music cards ("Choose what to open") and a
+   * Continue row. Re-tapping the Media tab pops back to it. No params.
+   */
+  MediaHub: undefined;
+  /**
+   * A SECTION page (screens/Media/Media.tsx — the route keeps its old name so
+   * every existing navigation still lands): one of the Movies / Series /
+   * Books hubs or the Music "coming soon" stage, under the Media root bar
+   * and its "‹ Media | Movies | Categories ▾" row. `initialTab` IS the
+   * section (the page reads it, never copies it): the hub's cards, Home's
+   * Film / Series / Book / Music lanes and the search screen's "See all"
+   * send it, and a Categories pick of another kind writes it with
+   * setParams; "all" and nothing both open Movies.
    */
   Search: { initialTab?: "all" | "movies" | "series" | "books" | "music" } | undefined;
   /**
-   * The search screen (screens/Search/Search.tsx), pushed over the Media
-   * root by its search button: the field, the All / Movies / Series / Books
-   * scope pills, suggestions, recents and the results. `scope` picks the pill
-   * it opens on (the root passes its current chip); without it, All.
+   * The search screen (screens/Search/Search.tsx), pushed over the hub or a
+   * section page by their search buttons: the field, the All / Movies /
+   * Series / Books scope pills, suggestions, recents and the results.
+   * `scope` picks the pill it opens on; without it, All. `lock` (a section
+   * page's search) fixes the search to `scope` — no pills, a scope line
+   * under the field, that section's results only, and a "Search everything"
+   * link that reopens the screen unlocked with the same `term`. Both are
+   * read on arrival only.
    */
-  MediaSearch: { scope?: "all" | "movies" | "series" | "books" } | undefined;
+  MediaSearch: { scope?: "all" | "movies" | "series" | "books"; lock?: boolean; term?: string } | undefined;
   /**
    * The full-screen filters page. It edits a draft of the shared
    * searchFiltersStore and commits on "Show results"; the params only say
@@ -117,6 +131,12 @@ export type WalletStackParamList = {
 export type MainTabParamList = {
   HomeTab: NavigatorScreenParams<HomeStackParamList>;
   SearchTab: NavigatorScreenParams<SearchStackParamList>;
+  /**
+   * The Lottery hub (screens/Lottery/LotteryHub — owner, 2026-10-15): "Choose
+   * a game". No stack: nothing is pushed in it — the Thai lottery opens as the
+   * root "Lottery" screen, above the tabs.
+   */
+  LotteryTab: undefined;
   WalletTab: NavigatorScreenParams<WalletStackParamList>;
 };
 
@@ -141,6 +161,13 @@ export type RootStackParamList = {
    * Profile page itself.
    */
   Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
+  /**
+   * The Thai lottery app (src/lottery — UI only, sample data): a ROOT screen
+   * so the main dock never shows inside it; its own five tabs and Ivory dock
+   * live in LotteryNavigator. Opened from the Lottery hub; `navigate("Lottery")`
+   * opens its Home.
+   */
+  Lottery: NavigatorScreenParams<LotteryTabParamList> | undefined;
 };
 
 declare global {

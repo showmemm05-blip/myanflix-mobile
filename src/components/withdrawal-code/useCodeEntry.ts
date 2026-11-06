@@ -76,8 +76,6 @@ export function useCodeDraft() {
   };
 }
 
-export type CodeDraft = ReturnType<typeof useCodeDraft>;
-
 /**
  * "Create a new code" then "Enter it again" — shared by the first code, the
  * forgot-code reset and the Profile change. Too-easy codes (and, when

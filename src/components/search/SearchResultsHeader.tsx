@@ -13,9 +13,12 @@ interface Props {
    * Already-phrased match count — "12 results for “inception”", "12 movies" —
    * or null while the number would be a lie: held-over placeholder results
    * belong to the PREVIOUS term. A null draws a skeleton bar in its place, so
-   * the row keeps its height and the list never jumps.
+   * the row keeps its height and the list never jumps. UNDEFINED draws no
+   * count at all — only the pills, right-aligned — for the locked search,
+   * whose scope line under the field already carries the number
+   * (MediaSearchMovies.dc.html has it once).
    */
-  countLabel: string | null;
+  countLabel: string | null | undefined;
   /**
    * The Sort & filter pill — passed only while the filter row under the tabs is NOT
    * showing (an idle, unfiltered list), so the control is never drawn twice.
@@ -43,8 +46,8 @@ interface Props {
  */
 export function SearchResultsHeader({ countLabel, filter, people }: Props) {
   return (
-    <View style={styles.row}>
-      {countLabel === null ? (
+    <View style={[styles.row, countLabel === undefined && styles.rowPillsOnly]}>
+      {countLabel === undefined ? null : countLabel === null ? (
         <View style={styles.count}>
           <Skeleton width="80%" height={16} radius="xs" style={styles.countSkeleton} />
         </View>
@@ -85,6 +88,8 @@ const styles = StyleSheet.create({
     minHeight: theme.layout.minTouch,
     paddingHorizontal: theme.layout.screenPadding,
   },
+  /** No count (the locked search): the pills keep their place on the right. */
+  rowPillsOnly: { justifyContent: "flex-end" },
   count: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 96 },
   countSkeleton: { maxWidth: 170 },
   /** Wraps too: two pills at 2× text can be wider than a 320pt phone. */

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Socket } from "socket.io-client";
+import { lotteryKeys } from "@/lottery/hooks/lotteryKeys";
 import { connectSocket, disconnectSocket } from "@/services/socket";
 import { tokenStore } from "@/services/token-store";
 import { useAuthStore } from "@/store/authStore";
@@ -50,8 +51,18 @@ export function useRealtimeWallet() {
     let activeSocket: Socket | null = null;
     let cancelled = false;
 
+    // The server emits a balance only when a ledger row was written (a
+    // deposit, a withdrawal, a purchase, a lottery prize), so the ledger is
+    // refetched too: Lottery history's "Prizes received" reads it from a
+    // tab screen that never remounts. A lottery prize is paid when the admin
+    // confirms the customer's claim (2026-10-24), so the claim views and the
+    // tickets' claim chips are re-read as well: the block on screen turns to
+    // Paid the moment the money lands.
     const handleBalanceUpdated = ({ balance }: WalletBalanceUpdatedPayload) => {
       queryClient.setQueryData<Wallet | undefined>(["wallet"], (prev) => (prev ? { ...prev, balance } : prev));
+      queryClient.invalidateQueries({ queryKey: ["wallet", "transactions"] });
+      queryClient.invalidateQueries({ queryKey: lotteryKeys.claims });
+      queryClient.invalidateQueries({ queryKey: lotteryKeys.tickets });
     };
 
     const handleDepositUpdated = (_payload: DepositUpdatedPayload) => {

@@ -8,6 +8,7 @@ import {
   useWindowDimensions,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ScrollViewInstance,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useReducedMotion } from "react-native-reanimated";
@@ -132,7 +133,7 @@ export function ChapterReader({
   const saver = useReadingProgressSaver(book.id, edition.id);
   const lastPositionRef = useRef<ReadingPosition | null>(null);
 
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   /* -------- chrome visibility -------- */
   const [chromeVisible, setChromeVisible] = useState(true);

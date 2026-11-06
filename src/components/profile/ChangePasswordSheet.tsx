@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ScrollView, StyleSheet, View, type TextInput } from "react-native";
+import { ScrollView, StyleSheet, View, type TextInputInstance } from "react-native";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { SheetForm } from "@/components/wallet/SheetForm";
 import {
@@ -52,8 +52,8 @@ export function ChangePasswordSheet({ visible, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [succeeded, setSucceeded] = useState(false);
 
-  const newRef = useRef<TextInput>(null);
-  const confirmRef = useRef<TextInput>(null);
+  const newRef = useRef<TextInputInstance>(null);
+  const confirmRef = useRef<TextInputInstance>(null);
 
   // An untouched field is never shown as wrong — the error only appears once
   // there is something to be wrong about.

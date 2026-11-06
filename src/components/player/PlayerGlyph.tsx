@@ -32,7 +32,8 @@ export type PlayerGlyphName =
   | "nowPlaying"
   | "lock"
   | "alert"
-  | "warning";
+  | "warning"
+  | "close";
 
 interface Props {
   name: PlayerGlyphName;
@@ -149,6 +150,8 @@ export const PlayerGlyph = memo(function PlayerGlyph({ name, size = 22, color = 
                 <Path d="M12 10v4M12 17.2v.1" {...stroke} strokeWidth={2.2} />
               </>
             );
+          case "close":
+            return <Path d="M6.5 6.5l11 11M17.5 6.5l-11 11" {...stroke} strokeWidth={2.4} />;
           default:
             return null;
         }

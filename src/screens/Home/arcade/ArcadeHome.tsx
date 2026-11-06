@@ -1,5 +1,5 @@
 import { useCallback, useRef } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, type ViewInstance } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { CompositeScreenProps } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
@@ -55,7 +55,7 @@ type Props = CompositeScreenProps<
 export function ArcadeHomeScreen({ navigation }: Props) {
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollY = useScrollOffset(scrollRef);
-  const blurTarget = useRef<View>(null);
+  const blurTarget = useRef<ViewInstance>(null);
   const featuredY = useRef(0);
   const topBarHeight = useArcadeTopBarHeight();
   const dockClearance = useDockClearance();
@@ -98,15 +98,15 @@ export function ArcadeHomeScreen({ navigation }: Props) {
   }, [scrollRef, topBarHeight, reduceMotion]);
 
   /**
-   * The explore tiles' lanes each open the Media tab's root on a chip — Film
-   * on Movies, Series on Series, Book on Books (each chip IS that catalogue's
-   * hub: hero, rows, the full list), Music on Music. Every one carries
-   * `initial: false` and `pop: true` for the reasons spelled out on
-   * `goToArcadeHub` above — a cold Media tab must still get its root
+   * The explore tiles' lanes each open the Media tab's section page on a
+   * section — Film on Movies, Series on Series, Book on Books (each IS that
+   * catalogue's hub: hero, rows, the full list), Music on Music. Every one
+   * carries `initial: false` and `pop: true` for the reasons spelled out on
+   * `goToArcadeHub` above — a cold Media tab must still get its MediaHub root
    * underneath, and a warm one must be popped back to (closing the search
-   * screen if it is open) rather than duplicated. The root reads
-   * `initialTab` on every arrival, so a Media tab already open on another
-   * chip switches too.
+   * screen if it is open) rather than duplicated. The page reads
+   * `initialTab` on every render, so a Media tab already open on another
+   * section switches too.
    */
   const openLane = useCallback(
     (id: LaneId) => {

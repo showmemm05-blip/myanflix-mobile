@@ -9,6 +9,11 @@ export interface Series {
   coverUrl: string | null;
   genre: string;
   language: string;
+  /**
+   * The series TYPE word ("Korean", "English"…; utils/mediaType.ts), null =
+   * not set. Optional only so an older backend row still type-checks.
+   */
+  country?: string | null;
   releaseYear: number;
   /** Admin-set 0–10, same meaning as Movie.rating: 0 = not rated, shown as nothing. */
   rating: number;

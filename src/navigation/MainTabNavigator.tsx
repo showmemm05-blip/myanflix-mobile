@@ -1,7 +1,9 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { StackActions } from "@react-navigation/native";
 import { HomeStackNavigator } from "@/navigation/HomeStackNavigator";
 import { SearchStackNavigator } from "@/navigation/SearchStackNavigator";
 import { WalletStackNavigator } from "@/navigation/WalletStackNavigator";
+import { LotteryHubScreen } from "@/screens/Lottery/LotteryHub";
 import { CustomTabBar } from "@/components/layout/TabBar";
 import { theme } from "@/theme";
 import type { MainTabParamList } from "@/navigation/types";
@@ -29,9 +31,32 @@ export function MainTabNavigator() {
       tabBar={(props) => <CustomTabBar {...props} />}
     >
       <Tab.Screen name="HomeTab" component={HomeStackNavigator} />
-      <Tab.Screen name="SearchTab" component={SearchStackNavigator} />
+      <Tab.Screen
+        name="SearchTab"
+        component={SearchStackNavigator}
+        /**
+         * Re-tapping the Media tab returns to its hub (owner, 2026-10-22).
+         * Nothing does this by itself: the JS bottom tabs only pop a stack on
+         * `popToTopOnBlur`, and CustomTabBar does not navigate to the tab
+         * already focused — it emits `tabPress` and stops. So the press on
+         * the focused tab pops its stack here, exactly like a "‹ Media" on
+         * every page of it at once. On the hub itself it is a no-op.
+         */
+        listeners={({ navigation, route }) => ({
+          tabPress: () => {
+            if (!navigation.isFocused()) return;
+            // The tab's nested stack state (a RouteProp carries no `state`).
+            const stack = navigation.getState().routes.find((entry) => entry.key === route.key)?.state;
+            if (stack?.type !== "stack" || typeof stack.key !== "string" || !stack.index) return;
+            navigation.dispatch({ ...StackActions.popToTop(), target: stack.key });
+          },
+        })}
+      />
+      <Tab.Screen name="LotteryTab" component={LotteryHubScreen} />
       <Tab.Screen name="WalletTab" component={WalletStackNavigator} />
-      {/* Three tabs only (owner, 2026-10-07): Home · Media · Wallet. Profile
+      {/* Four tabs (owner, 2026-10-15): Home · Media · Lottery · Wallet. The
+          Lottery tab is the dark hub ("Choose a game"); the Thai lottery
+          itself opens above the tabs as the root "Lottery" screen. Profile
           is not a tab — it opens from the avatar in the top bars as a root
           screen (RootNavigator), and it carries the "Your library" group that
           leads to Favorites, Watch History and Downloads. */}

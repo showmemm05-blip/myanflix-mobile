@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, View, type ScrollViewInstance } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
@@ -17,6 +17,7 @@ import { KeyboardLiftScrollView } from "@/components/common/KeyboardLiftScrollVi
 import { AGE_RATING_LABELS } from "@/utils/ageRating";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { formatDuration } from "@/utils/format";
+import { mediaTypeLabel } from "@/utils/mediaType";
 import { theme } from "@/theme";
 import type { Movie } from "@/types/movie";
 
@@ -58,7 +59,7 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
 }: Props) {
   const { t } = useLanguage();
   const reduceMotion = useReducedMotion();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   /**
    * A recommended title plays in place, so this list survives the swap — and
@@ -99,7 +100,8 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
   // no well at all.
   const facts: { label: string; value: string }[] = [];
   if (movie.director) facts.push({ label: t.movie.director, value: movie.director });
-  if (movie.country) facts.push({ label: t.movie.country, value: movie.country });
+  const typeLabel = mediaTypeLabel(t, movie.country, "movie");
+  if (typeLabel) facts.push({ label: t.movie.type, value: typeLabel });
   // `?? movie.ageRating`, the fallback the label map documents: a
   // rating the label map does not know yet shows its raw code rather than an
   // empty value cell.

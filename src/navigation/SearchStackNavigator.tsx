@@ -1,4 +1,5 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { MediaHubScreen } from "@/screens/Media/MediaHub";
 import { MediaScreen } from "@/screens/Media/Media";
 import { SearchScreen } from "@/screens/Search/Search";
 import { SearchFiltersScreen } from "@/screens/Search/SearchFilters";
@@ -19,11 +20,16 @@ const Stack = createNativeStackNavigator<SearchStackParamList>();
 
 export function SearchStackNavigator() {
   return (
-    <Stack.Navigator screenOptions={stackScreenOptions}>
-      {/* The Media tab's root — the hub page. The route keeps the name
-          "Search" so every existing navigation into the tab still lands. */}
+    <Stack.Navigator initialRouteName="MediaHub" screenOptions={stackScreenOptions}>
+      {/* The Media tab's root (owner, 2026-10-22: "the same flow as
+          lottery"): the hub — choose Movies, Series, Books or Music. */}
+      <Stack.Screen name="MediaHub" component={MediaHubScreen} />
+      {/* A section page, pushed over the hub by its cards. The route keeps
+          the name "Search" so every existing navigation into the tab (Home's
+          lanes, the search screen's "See all", all with `initial: false`)
+          still lands — on the section page, with the hub built underneath. */}
       <Stack.Screen name="Search" component={MediaScreen} />
-      {/* The search screen, pushed over the root by its search button. */}
+      {/* The search screen, pushed over the hub or a section page by their search buttons. */}
       <Stack.Screen name="MediaSearch" component={SearchScreen} />
       {/* The Media tab's one filter surface — a full page pushed over the
           root (a hub's "All …" Filter pill) or the search screen, editing the

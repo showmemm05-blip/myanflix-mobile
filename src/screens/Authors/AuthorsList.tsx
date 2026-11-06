@@ -215,7 +215,7 @@ export function AuthorsListScreen({ navigation }: Props) {
               refreshControl={
                 <RefreshControl
                   refreshing={authorsQuery.isRefetching && !authorsQuery.isFetchingNextPage}
-                  onRefresh={() => authorsQuery.refetch()}
+                  onRefresh={() => void authorsQuery.refetch()}
                   tintColor={theme.colors.primary}
                   colors={[theme.colors.primary]}
                   progressBackgroundColor={theme.colors.surface}

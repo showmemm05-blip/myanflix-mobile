@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Linking, StyleSheet, View } from "react-native";
+import { Linking, StyleSheet, View, type ViewInstance } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useIsFocused, type CompositeScreenProps } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
@@ -15,6 +15,7 @@ import { useHubScroll } from "@/components/hub/useHubScroll";
 import { isRecentlyAdded } from "@/components/movie/mediaItems";
 import { createMovieFilters, movieFiltersToQuery, type MovieFilters } from "@/components/search/filters";
 import { HomeSkeleton } from "@/components/home/HomeSkeleton";
+import { LotteryHomeBanner } from "@/components/lottery/LotteryHomeBanner";
 import { PromoArt } from "@/components/home/PromoArt";
 import {
   AlsoOnWeb,
@@ -76,6 +77,7 @@ type Props = CompositeScreenProps<
  * show renders nothing (the spotlight, coming soon, the web card).
  */
 type HomeRowKind =
+  | "lottery"
   | "value"
   | "continue"
   | "spotlight"
@@ -122,6 +124,8 @@ const rowKey = (kind: HomeRowKind) => kind;
  *      Subscribe, Add money, a title, a web link, or none. 7 s a slide,
  *      paused while touched / off screen / under reduce motion; the dots and
  *      arrows sit under it;
+ *      Right under it, the white Lottery banner (owner, 2026-10-15): one
+ *      "Open Lottery" button to the Lottery tab's hub — no request;
  *   2. "Why MyanFlix" — four static tiles;
  *   3. Continue watching (signed in; hidden when empty);
  *   4. the spotlight — the team's pick, else the newest movie;
@@ -159,7 +163,7 @@ export function HomeScreen({ navigation }: Props) {
   /* ---- the pinned chrome: the transparent bar, measured ---- */
   const [chromeHeight, onChromeLayout] = useMeasuredHeight(insets.top + GLASS_BAR_ROW);
   const scroll = useHubScroll(chromeHeight);
-  const blurTargetRef = useRef<View>(null);
+  const blurTargetRef = useRef<ViewInstance>(null);
 
   /* ---- access (the Media hubs' rule) ---- */
   // A guest has no subscription to ask about — and /subscriptions/me 401s a
@@ -204,8 +208,8 @@ export function HomeScreen({ navigation }: Props) {
     [navigation],
   );
   /**
-   * "See all" for a movie row: the Movies chip. With a patch (a sort, a
-   * genre, a category) the shared filters are set first, so the chip opens
+   * "See all" for a movie row: the Movies section page. With a patch (a sort,
+   * a genre, a category) the shared filters are set first, so the page opens
    * on that results view — exactly what its own shelves' See all does.
    * Without one, its browse.
    */
@@ -450,13 +454,15 @@ export function HomeScreen({ navigation }: Props) {
 
   /* ---- the rows ---- */
   // Continue watching is listed only while it has (or may still get)
-  // something to show (HomeRows explains). The value strip is always the
-  // first section under the hero, so it alone takes the first section's gap.
+  // something to show (HomeRows explains). The Lottery banner is always the
+  // first section under the hero (owner, 2026-10-15), so it alone takes the
+  // first section's gap; the value strip follows at the normal one.
   const continuePresent = useContinueWatchingPresent(isAuthenticated);
   const rows = useMemo<HomeRowKind[]>(
     () =>
       isAuthenticated
         ? [
+            "lottery",
             "value",
             ...(continuePresent ? (["continue"] as const) : []),
             "spotlight",
@@ -471,7 +477,7 @@ export function HomeScreen({ navigation }: Props) {
             "coming",
             "web",
           ]
-        : ["value", "spotlight", "recent", "series", "premium", "top10", "booksBand", "rated", "coming", "web"],
+        : ["lottery", "value", "spotlight", "recent", "series", "premium", "top10", "booksBand", "rated", "coming", "web"],
     [isAuthenticated, continuePresent],
   );
 
@@ -512,6 +518,8 @@ export function HomeScreen({ navigation }: Props) {
     (kind: HomeRowKind, index: number) => {
       const first = index === 0;
       switch (kind) {
+        case "lottery":
+          return <LotteryHomeBanner first={first} onOpen={() => navigation.navigate("LotteryTab")} />;
         case "value":
           return <ValueStrip first={first} />;
         case "spotlight":
@@ -579,6 +587,7 @@ export function HomeScreen({ navigation }: Props) {
       }
     },
     [
+      navigation,
       actions,
       newestMovies,
       newestSeries,

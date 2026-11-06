@@ -12,7 +12,15 @@ import type { Withdrawal } from "@/types/withdrawal";
  * server; only their search runs here (the server's search is admin-only).
  */
 
-export type LedgerTypeGroup = "all" | "deposit" | "withdrawal" | "purchase" | "subscription" | "refund" | "adjustment";
+export type LedgerTypeGroup =
+  | "all"
+  | "deposit"
+  | "withdrawal"
+  | "purchase"
+  | "subscription"
+  | "refund"
+  | "adjustment"
+  | "lottery";
 
 const LEDGER_TYPE_GROUPS: Record<Exclude<LedgerTypeGroup, "all">, readonly TransactionType[]> = {
   deposit: ["DEPOSIT"],
@@ -21,6 +29,8 @@ const LEDGER_TYPE_GROUPS: Record<Exclude<LedgerTypeGroup, "all">, readonly Trans
   subscription: ["SUBSCRIPTION"],
   refund: ["REFUND"],
   adjustment: ["ADJUSTMENT_CREDIT", "ADJUSTMENT_DEBIT"],
+  /** Tickets bought and prizes paid (the Lottery, 2026-10-19). */
+  lottery: ["LOTTERY_PURCHASE", "LOTTERY_PRIZE"],
 };
 
 export type LedgerStatusFilter = "all" | "completed" | "pending" | "failedRefunded";

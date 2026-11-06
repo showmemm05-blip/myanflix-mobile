@@ -14,19 +14,21 @@ type Glyph = keyof typeof Ionicons.glyphMap;
 
 /**
  * Filled when active, outlined when not. Media has no "play in a rounded
- * square" glyph in Ionicons; `play-circle` is the closest real one.
+ * square" glyph in Ionicons; `play-circle` is the closest real one. The
+ * Lottery is a ticket.
  */
 const ICONS: Record<string, { active: Glyph; inactive: Glyph }> = {
   HomeTab: { active: "home", inactive: "home-outline" },
   SearchTab: { active: "play-circle", inactive: "play-circle-outline" },
+  LotteryTab: { active: "ticket", inactive: "ticket-outline" },
   WalletTab: { active: "wallet", inactive: "wallet-outline" },
 };
 
 /**
- * Three tabs (owner, 2026-10-07): Home · Media · Wallet. Profile is not a tab
- * — it opens from the avatar in the top bars.
+ * Four tabs (owner, 2026-10-15): Home · Media · Lottery · Wallet. Profile is
+ * not a tab — it opens from the avatar in the top bars.
  */
-const ORDER = ["HomeTab", "SearchTab", "WalletTab"];
+const ORDER = ["HomeTab", "SearchTab", "LotteryTab", "WalletTab"];
 
 /** An inactive tab: a 44pt round icon target. */
 const ITEM = 44;
@@ -83,7 +85,7 @@ function useKeyboardShown(): boolean {
  * The Marquee DOCK — one floating capsule 16pt in from the sides and 20pt above
  * the safe-area bottom inset. The active tab grows into a crimson pill that
  * carries its label; the others are 44pt icon buttons whose names are spoken,
- * not shown. Three destinations, same `tabPress` contract as react-navigation's
+ * not shown. Four destinations, same `tabPress` contract as react-navigation's
  * own bar (plus its `tabLongPress` event).
  *
  * Scrolling roots clear it with `theme.layout.tabBarClearance` (static,
@@ -101,7 +103,8 @@ export function CustomTabBar({ state, navigation, insets }: BottomTabBarProps) {
    * pill meets a 44pt disc whose icon still sits 11pt in from its edge. Wider
    * than this (a small phone at a large text size), the label is set at a
    * smaller font size computed to fit, never truncated (see DockItem).
-   * With three tabs a 320pt phone leaves 118pt here, so every label fits.
+   * With four tabs a 320pt phone leaves 288 − 20 − 3 × 44 − 62 = 74pt here;
+   * a longer (Burmese) label is set smaller by that fit, never truncated.
    */
   const maxLabelWidth =
     rowWidth > 0 ? rowWidth - 2 * ROW_PADDING - (ORDER.length - 1) * ITEM - (LABEL_LEFT + PILL_RIGHT) : Infinity;
@@ -109,6 +112,7 @@ export function CustomTabBar({ state, navigation, insets }: BottomTabBarProps) {
   const labels: Record<string, string> = {
     HomeTab: t.nav.home,
     SearchTab: t.nav.media,
+    LotteryTab: t.nav.lottery,
     WalletTab: t.nav.wallet,
   };
 
@@ -317,8 +321,9 @@ const styles = StyleSheet.create({
    * `space-evenly`, not `space-between`: with three tabs, `space-between`
    * pinned Home and Wallet to the capsule's ends and left two wide holes in
    * the middle. Evenly, the free room is shared as equal gaps before, between
-   * and after the tabs, so the three sit balanced across the capsule while
-   * the open pill still grows and its neighbours slide along with it.
+   * and after the tabs, so they sit balanced across the capsule (three tabs
+   * then, four since 2026-10-15) while the open pill still grows and its
+   * neighbours slide along with it.
    */
   row: {
     flex: 1,

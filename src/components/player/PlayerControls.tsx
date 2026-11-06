@@ -77,6 +77,10 @@ interface Props {
    * a toggle.
    */
   onBottomClearance?: (clearance: number, fullscreen: boolean) => void;
+  /** Seconds of the ad breaks still to come, ticked on the seek line. */
+  breakMarkers?: readonly number[];
+  /** A drag on the seek line started (true) or ended (false) — whichever bar the layout shows. */
+  onScrubChange?: (dragging: boolean) => void;
 }
 
 /** One measurement per layout: the portrait bar and the fullscreen bar are different heights. */
@@ -135,6 +139,8 @@ export function PlayerControls({
   onNextEpisode,
   nextEpisodeLabel,
   onBottomClearance,
+  breakMarkers,
+  onScrubChange,
 }: Props) {
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
@@ -308,6 +314,8 @@ export function PlayerControls({
                 positionSeconds={positionSeconds}
                 bufferedSeconds={bufferedSeconds}
                 onSeek={onSeek}
+                markers={breakMarkers}
+                onScrubChange={onScrubChange}
               />
             </View>
             <Clock seconds={durationSeconds} large />
@@ -389,6 +397,8 @@ export function PlayerControls({
               positionSeconds={positionSeconds}
               bufferedSeconds={bufferedSeconds}
               onSeek={onSeek}
+              markers={breakMarkers}
+              onScrubChange={onScrubChange}
             />
           </View>
           <Clock seconds={durationSeconds} />
@@ -514,8 +524,12 @@ interface ChromeButtonProps {
   tag?: string;
 }
 
-/** One control of the chrome: a bare 44pt glyph (portrait), or glyph + label (fullscreen). */
-function ChromeButton({ glyph, glyphSize = 22, label, accessibilityLabel, onPress, showLabel, tag }: ChromeButtonProps) {
+/**
+ * One control of the chrome: a bare 44pt glyph (portrait), or glyph + label
+ * (fullscreen). Exported for PrerollAdPlayer, whose chrome is built from the
+ * same controls so the ad reads as the same stage.
+ */
+export function ChromeButton({ glyph, glyphSize = 22, label, accessibilityLabel, onPress, showLabel, tag }: ChromeButtonProps) {
   const reduceMotion = useReducedMotion();
   return (
     <Pressable

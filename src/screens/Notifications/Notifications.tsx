@@ -149,7 +149,7 @@ export function NotificationsScreen({ navigation }: Props) {
     () => (
       <RefreshControl
         refreshing={notificationsQuery.isRefetching && !notificationsQuery.isFetchingNextPage}
-        onRefresh={() => notificationsQuery.refetch()}
+        onRefresh={() => void notificationsQuery.refetch()}
         tintColor={theme.colors.primary}
         colors={[theme.colors.primary]}
         progressBackgroundColor={theme.colors.surface}

@@ -1,5 +1,5 @@
 import { useMemo, type RefObject } from "react";
-import type { View } from "react-native";
+import type { ViewInstance } from "react-native";
 import { useSeriesSuggestions } from "@/hooks/useSeries";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { SuggestionPanel } from "@/components/search/suggestions/SuggestionPanel";
@@ -11,12 +11,12 @@ interface Props {
   /** The RAW field value, every keystroke — debounced here, not by the screen. */
   term: string;
   visible: boolean;
-  anchorRef: RefObject<View | null>;
+  anchorRef: RefObject<ViewInstance | null>;
   /** Higher anchors for a short screen — see SuggestionPanel. */
-  fallbackAnchorRefs?: ReadonlyArray<RefObject<View | null>>;
+  fallbackAnchorRefs?: ReadonlyArray<RefObject<ViewInstance | null>>;
   /** Bumped by the screen when the anchor may have moved — see SuggestionPanel. */
   anchorKey?: number;
-  containerRef: RefObject<View | null>;
+  containerRef: RefObject<ViewInstance | null>;
   /** A tap on the dim behind the panel — see SuggestionPanel. */
   onDismiss?: () => void;
   onSelect: (series: SeriesListItem) => void;

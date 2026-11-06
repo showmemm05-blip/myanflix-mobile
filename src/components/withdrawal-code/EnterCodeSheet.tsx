@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
+import {
+  AccessibilityInfo,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type ScrollViewInstance,
+  type ViewInstance,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
@@ -86,8 +94,8 @@ export function EnterCodeSheet({
   const { height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const draft = useCodeDraft();
-  const titleRef = useRef<View>(null);
-  const scrollRef = useRef<ScrollView>(null);
+  const titleRef = useRef<ViewInstance>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   const once = useSingleFlight();
 
   const [lockedUntil, setLockedUntil] = useState<number | null>(initialLockedUntil);

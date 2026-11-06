@@ -85,6 +85,7 @@ interface Envelope<T> {
   code?: unknown;
   triesLeft?: unknown;
   lockedUntil?: unknown;
+  details?: unknown;
 }
 
 /**
@@ -94,10 +95,15 @@ interface Envelope<T> {
  */
 function errorDetails(body: Envelope<unknown> | undefined): ApiErrorDetails {
   if (!body) return {};
+  // Everything the envelope carries beside its fixed fields, untouched: only the caller that knows the code knows the shape.
+  const { success: _success, data: _data, message: _message, code, triesLeft, lockedUntil, details, ...extra } =
+    body as Envelope<unknown> & Record<string, unknown>;
   return {
-    code: typeof body.code === "string" ? body.code : undefined,
-    triesLeft: typeof body.triesLeft === "number" && Number.isFinite(body.triesLeft) ? body.triesLeft : undefined,
-    lockedUntil: typeof body.lockedUntil === "string" ? body.lockedUntil : undefined,
+    code: typeof code === "string" ? code : undefined,
+    triesLeft: typeof triesLeft === "number" && Number.isFinite(triesLeft) ? triesLeft : undefined,
+    lockedUntil: typeof lockedUntil === "string" ? lockedUntil : undefined,
+    details,
+    extra,
   };
 }
 

@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type Component, type ReactNode, type RefObject } from "react";
-import { Platform, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from "react-native";
+import {
+  Platform,
+  StyleSheet,
+  type LayoutChangeEvent,
+  type ScrollViewInstance,
+  type StyleProp,
+  type ViewInstance,
+  type ViewStyle,
+} from "react-native";
 import { BlurTargetView, BlurView } from "expo-blur";
 import Animated, {
   Extrapolation,
@@ -104,8 +112,8 @@ const GLASS_BLUR_HOLD = 10;
 const AnimatedBlurView = Animated.createAnimatedComponent(BlurView);
 
 interface GlassTargetProps {
-  /** The ref GlassBarBackground blurs — from `useGlassBar()` / `useRef<View>(null)`. */
-  targetRef: RefObject<View | null>;
+  /** The ref GlassBarBackground blurs — from `useGlassBar()` / `useRef<ViewInstance>(null)`. */
+  targetRef: RefObject<ViewInstance | null>;
   children?: ReactNode;
   /** Defaults to `flex: 1` one physical pixel down from the top — see `styles.body`. */
   style?: StyleProp<ViewStyle>;
@@ -134,7 +142,7 @@ interface GlassBarBackgroundProps {
   /** How tall the bar is, safe-area inset included — the glass covers exactly that. */
   height: number;
   /** The GlassTarget's ref: what the glass blurs on Android. */
-  blurTarget: RefObject<View | null>;
+  blurTarget: RefObject<ViewInstance | null>;
 }
 
 /**
@@ -227,7 +235,7 @@ function GlassBlur({ scrollY, height, blurTarget }: GlassBarBackgroundProps) {
   );
 }
 
-interface GlassScrollFeedProps<T extends Component> {
+interface GlassScrollFeedProps<T extends Component | ScrollViewInstance> {
   /** An animated ref (`useAnimatedRef`) on the scroll view or list the bar sits over. */
   scrollRef: AnimatedRef<T>;
   /** The glass's scroll value — `useGlassBar().scrollY`. */
@@ -242,7 +250,7 @@ interface GlassScrollFeedProps<T extends Component> {
  * goes away the glass goes back to the top-of-page state with it. A screen
  * whose scroll view is always mounted can call useScrollOffset itself.
  */
-export function GlassScrollFeed<T extends Component>({ scrollRef, scrollY }: GlassScrollFeedProps<T>) {
+export function GlassScrollFeed<T extends Component | ScrollViewInstance>({ scrollRef, scrollY }: GlassScrollFeedProps<T>) {
   useScrollOffset(scrollRef, scrollY);
   useEffect(
     () => () => {
@@ -269,7 +277,7 @@ export function useMeasuredHeight(estimate: number): [number, (event: LayoutChan
 
 export interface GlassBar {
   /** Hand to GlassTarget (`targetRef`) and GlassBarBackground (`blurTarget`). */
-  blurTarget: RefObject<View | null>;
+  blurTarget: RefObject<ViewInstance | null>;
   /** Feed it from the page's scroll — e.g. `useScrollOffset(listRef, glass.scrollY)`. */
   scrollY: SharedValue<number>;
   /** The bar's height, safe-area inset included: the glass's height and the page's top padding. */
@@ -287,7 +295,7 @@ export interface GlassBar {
  */
 export function useGlassBar(rowsEstimate: number = GLASS_BAR_ROW): GlassBar {
   const insets = useSafeAreaInsets();
-  const blurTarget = useRef<View>(null);
+  const blurTarget = useRef<ViewInstance>(null);
   const scrollY = useSharedValue(0);
   const [barHeight, onBarLayout] = useMeasuredHeight(insets.top + rowsEstimate);
   return { blurTarget, scrollY, barHeight, onBarLayout };
