@@ -30,6 +30,7 @@ import { DeleteAccountSheet } from "@/components/profile/DeleteAccountSheet";
 import { WithdrawalCodeSheet } from "@/components/withdrawal-code/WithdrawalCodeSheet";
 import { CodeGlyph } from "@/components/withdrawal-code/CodeGlyph";
 import { FeedbackSheet } from "@/components/feedback/FeedbackSheet";
+import { AboutSheet } from "@/components/about/AboutSheet";
 import { LANGUAGE_OPTIONS, LanguageSheet } from "@/components/settings/LanguageSheet";
 import { PRIVACY_POLICY_URL } from "@/utils/websiteLinks";
 import { formatKyat } from "@/utils/currency";
@@ -74,6 +75,7 @@ export function ProfileOverviewScreen({ navigation }: Props) {
   const [withdrawalCodeOpen, setWithdrawalCodeOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   /**
    * "Create code" with no code yet, "Change code" once there is one — and no
    * second line at all until the status is known, never a guess.
@@ -346,6 +348,17 @@ export function ProfileOverviewScreen({ navigation }: Props) {
                   external
                 />
               )}
+              {/* The app's version and the TMDB credit (owner, 2026-11-06): TMDB's
+                  terms ask every app that uses their data to credit them in an
+                  About place. A sheet inside the app, unlike the row above, so
+                  it is there in a build with no website address too. */}
+              <SettingsRow
+                icon="information-circle-outline"
+                label={t.settings.about}
+                subtitle={t.settings.aboutSubtitle}
+                onPress={() => setAboutOpen(true)}
+                accessibilityLabel={t.settings.about}
+              />
             </SettingsGroup>
           </View>
 
@@ -425,6 +438,7 @@ export function ProfileOverviewScreen({ navigation }: Props) {
           only reachable while signed in. */}
       <LanguageSheet visible={languageOpen} onClose={() => setLanguageOpen(false)} />
       <FeedbackSheet visible={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      <AboutSheet visible={aboutOpen} onClose={() => setAboutOpen(false)} />
       {user ? (
         <>
           <EditProfileSheet user={user} visible={editingProfile} onClose={() => setEditingProfile(false)} />

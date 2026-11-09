@@ -62,6 +62,7 @@ import { useLanguage } from "@/localization/LanguageProvider";
 import { hasAccess } from "@/utils/access";
 import { formatDuration } from "@/utils/format";
 import { formatKyat } from "@/utils/currency";
+import { localizedDescription } from "@/utils/localizedDescription";
 import { theme, withAlpha } from "@/theme";
 import type { HomePromoArtPreset, ShowcasePromo, ShowcaseTitle } from "@/types/home";
 import type { HomeStackParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
@@ -388,7 +389,7 @@ export function HomeScreen({ navigation }: Props) {
           kicker: isNew ? t.browse.recentlyAdded : t.hub.featured,
           rating: series.rating > 0 ? series.rating : null,
           meta: [yearOf(series), episodesOf(series.episodeCount), series.genre || null],
-          blurb: series.description || null,
+          blurb: localizedDescription(series, language) || null,
           primary: {
             kind: "play",
             label: t.player.play,
@@ -424,7 +425,7 @@ export function HomeScreen({ navigation }: Props) {
         kicker: isNew ? t.browse.recentlyAdded : t.hub.featured,
         rating: movie.rating > 0 ? movie.rating : null,
         meta: [yearOf(movie), formatDuration(movie.duration), movie.genre || null],
-        blurb: movie.description || null,
+        blurb: localizedDescription(movie, language) || null,
         primary: {
           kind: "play",
           label: t.player.play,
@@ -446,7 +447,7 @@ export function HomeScreen({ navigation }: Props) {
     const titleSlides = heroPicks(newestMovies ?? [], newestSeries ?? []).map(build);
     const promoSlides = (showcase?.hero ?? []).slice(0, HOME_HERO_MAX_PROMOS).map(buildPromo);
     return interleave(titleSlides, promoSlides);
-  }, [newestMovies, newestSeries, showcase, buildPromo, t, savedIds, isSubscribed, subscriptionPending, openSeries, openMovie, playMovie, toggleSaved]);
+  }, [newestMovies, newestSeries, showcase, buildPromo, t, language, savedIds, isSubscribed, subscriptionPending, openSeries, openMovie, playMovie, toggleSaved]);
   const heroEmpty = useMemo(
     () => ({ title: t.hub.emptyMoviesTitle, message: t.hub.emptyMoviesBody, seed: "home" }),
     [t],

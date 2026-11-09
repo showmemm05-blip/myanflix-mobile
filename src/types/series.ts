@@ -4,7 +4,14 @@ import type { MovieCategoryRef } from "@/types/category";
 export interface Series {
   id: string;
   title: string;
+  /** The English / default text (TMDB's, or typed by staff). May be "" when only a Burmese one exists. */
   description: string;
+  /**
+   * The Burmese description staff type by hand (2026-11-06); null = none
+   * added. Optional because an older backend omits the key. Never drawn on
+   * its own: utils/localizedDescription picks between the two.
+   */
+  descriptionMm?: string | null;
   posterUrl: string | null;
   coverUrl: string | null;
   genre: string;

@@ -48,3 +48,18 @@ inside its 288 dp icon area masked to a 192 dp circle; the bar's far corner is
 The icon, the native splash and `app.json`'s plugin entry only take effect in
 a **new native build** (`npx expo prebuild` / EAS); a JS reload cannot show
 them.
+
+## The TMDB logo (not here yet)
+
+Movie and series details can come from TMDB, and TMDB's terms ask for a credit
+inside the app: their logo, less prominent than MyanFlix's own mark, and their
+sentence. Profile › Support › About shows it
+(`src/components/about/AboutSheet.tsx`).
+
+The logo must be **TMDB's own file** from their "Logos & Attribution" page,
+never a redrawn one, and nothing is fetched from the internet without the
+owner's OK — so today the credit is the sentence alone. Once the file is saved
+here as `tmdb-logo.svg`, point `TMDB_LOGO` in
+`src/components/about/tmdbCredit.ts` at it (the comment there gives the line)
+and the sheet draws it in an 84 x 28 box, smaller than the wordmark above it.
+That takes a JavaScript reload, not a native build.

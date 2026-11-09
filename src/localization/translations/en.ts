@@ -1298,6 +1298,16 @@ export const en = {
     support: "Support",
     privacyPolicy: "Privacy policy",
     privacyPolicySubtitle: "How MyanFlix handles your data",
+    /** The Support group's last row; opens components/about/AboutSheet. */
+    about: "About",
+    aboutSubtitle: "App version and credits",
+    /** Under the app's name in the About sheet. */
+    aboutVersion: "Version {version}",
+    /**
+     * Heads the TMDB credit. The credit's own sentence is fixed English in
+     * both languages and so is not a key here (components/about/tmdbCredit).
+     */
+    aboutMovieInfo: "Movie information",
   },
   feedback: {
     entryTitle: "Send feedback",

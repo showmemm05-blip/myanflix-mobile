@@ -34,6 +34,7 @@ import { useLanguage } from "@/localization/LanguageProvider";
 import { formatDuration } from "@/utils/format";
 import { AGE_RATING_LABELS } from "@/utils/ageRating";
 import { hasAccess } from "@/utils/access";
+import { localizedDescription } from "@/utils/localizedDescription";
 import { mediaTypeLabel } from "@/utils/mediaType";
 import { theme } from "@/theme";
 import type { MediaDetailParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
@@ -55,7 +56,7 @@ const TOP_BAR_ROW = 60;
 
 export function MovieDetailsScreen({ route, navigation }: Props) {
   const { movieId } = route.params;
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const insets = useSafeAreaInsets();
   const dockClearance = useDockClearance();
   const movieQuery = useMovie(movieId);
@@ -228,7 +229,12 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
 
               <CategoryChips categories={movie.categories} onSelect={goToCategory} />
 
-              <ExpandableText text={movie.description} moreLabel={t.common.showMore} lessLabel={t.common.showLess} />
+              {/* In the app language, or the other one when that is all the movie has. */}
+              <ExpandableText
+                text={localizedDescription(movie, language)}
+                moreLabel={t.common.showMore}
+                lessLabel={t.common.showLess}
+              />
 
               <DetailActions actions={actions} />
             </FadeInView>

@@ -959,6 +959,10 @@ export const mm = {
     support: "အကူအညီ",
     privacyPolicy: "ကိုယ်ရေးအချက်အလက် မူဝါဒ",
     privacyPolicySubtitle: "MyanFlix က သင့်အချက်အလက်များကို ကိုင်တွယ်ပုံ",
+    about: "MyanFlix အကြောင်း",
+    aboutSubtitle: "အက်ပ်ဗားရှင်းနှင့် အသိအမှတ်ပြုချက်များ",
+    aboutVersion: "ဗားရှင်း {version}",
+    aboutMovieInfo: "ရုပ်ရှင်အချက်အလက်များ",
   },
   feedback: {
     entryTitle: "အကြံပြုချက် ပို့ရန်",

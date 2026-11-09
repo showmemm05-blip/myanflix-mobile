@@ -38,6 +38,7 @@ import { useLanguage } from "@/localization/LanguageProvider";
 import type { TranslationShape } from "@/localization/translations";
 import { hasAccess } from "@/utils/access";
 import { formatDuration } from "@/utils/format";
+import { localizedDescription } from "@/utils/localizedDescription";
 import { theme } from "@/theme";
 import type { Movie, MovieQuery } from "@/types/movie";
 
@@ -145,7 +146,7 @@ function resultsTitle(t: TranslationShape, f: MovieFilters, categoryName: string
  * land; a new genre cross-fades in from the top.
  */
 export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll, results }: Props) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const navigation = useMediaTabNavigation();
   const queryClient = useQueryClient();
   const chromeHeight = useHubChromeHeight();
@@ -216,7 +217,7 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
           kicker: isNew ? t.browse.recentlyAdded : t.hub.featured,
           rating: movie.rating > 0 ? movie.rating : null,
           meta: [yearOf(movie), formatDuration(movie.duration), movie.genre || null],
-          blurb: movie.description || null,
+          blurb: localizedDescription(movie, language) || null,
           primary: {
             kind: locked ? "subscribe" : "play",
             label: action,
@@ -235,7 +236,7 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
           },
         };
       }),
-    [isSubscribed, subscriptionPending, savedIds, t, playMovie, openSubscribe, openMovie, toggleSaved],
+    [isSubscribed, subscriptionPending, savedIds, t, language, playMovie, openSubscribe, openMovie, toggleSaved],
   );
   const browseSlides = useMemo(() => buildSlides(newestPage?.items ?? []), [buildSlides, newestPage]);
   const heroEmpty = useMemo(

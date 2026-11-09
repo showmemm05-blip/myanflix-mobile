@@ -44,6 +44,7 @@ import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
 import { useDockClearance } from "@/hooks/useDockClearance";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { hasAccess } from "@/utils/access";
+import { localizedDescription } from "@/utils/localizedDescription";
 import { mediaTypeLabel } from "@/utils/mediaType";
 import { theme } from "@/theme";
 import type { MediaDetailParamList, MainTabParamList, RootStackParamList } from "@/navigation/types";
@@ -102,7 +103,7 @@ function mergeSimilar(pages: SeriesListItem[][], currentId: string): SeriesListI
  */
 export function SeriesDetailsScreen({ route, navigation }: Props) {
   const { seriesId } = route.params;
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const insets = useSafeAreaInsets();
   const dockClearance = useDockClearance();
   const seriesQuery = useSeries(seriesId);
@@ -375,7 +376,12 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
 
               <CategoryChips categories={series.categories} onSelect={goToCategory} />
 
-              <ExpandableText text={series.description} moreLabel={t.common.showMore} lessLabel={t.common.showLess} />
+              {/* In the app language, or the other one when that is all the show has. */}
+              <ExpandableText
+                text={localizedDescription(series, language)}
+                moreLabel={t.common.showMore}
+                lessLabel={t.common.showLess}
+              />
 
               <DetailActions actions={actions} />
             </FadeInView>
@@ -444,7 +450,8 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
                         episodeNumber={episode.episodeNumber}
                         durationMinutes={episode.duration}
                         thumbnailUrl={episode.coverUrl ?? episode.posterUrl}
-                        description={episode.description}
+                        // Episodes are movie rows, so they carry both texts too.
+                        description={localizedDescription(episode, language)}
                         locked={!canWatch}
                         onLockedPress={handleSubscribe}
                         onPress={handleEpisodePress}

@@ -17,6 +17,7 @@ import { KeyboardLiftScrollView } from "@/components/common/KeyboardLiftScrollVi
 import { AGE_RATING_LABELS } from "@/utils/ageRating";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { formatDuration } from "@/utils/format";
+import { localizedDescription } from "@/utils/localizedDescription";
 import { mediaTypeLabel } from "@/utils/mediaType";
 import { theme } from "@/theme";
 import type { Movie } from "@/types/movie";
@@ -57,7 +58,7 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
   onPlaySimilar,
   bottomInset,
 }: Props) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const reduceMotion = useReducedMotion();
   const scrollRef = useRef<ScrollViewInstance>(null);
 
@@ -197,7 +198,7 @@ export const MoviePortraitDetails = memo(function MoviePortraitDetails({
           )}
 
           <View style={styles.section}>
-            <Synopsis text={movie.description} title={t.movie.synopsis} collapsedLines={3} />
+            <Synopsis text={localizedDescription(movie, language)} title={t.movie.synopsis} collapsedLines={3} />
           </View>
 
           {facts.length > 0 && (

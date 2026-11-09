@@ -22,6 +22,12 @@ export interface ShowcaseTitle {
   title: string;
   /** Up to 300 characters, whitespace collapsed. */
   description: string;
+  /**
+   * The Burmese description, shortened the same way (movies and series;
+   * books have none). Optional because an older backend omits the key —
+   * utils/localizedDescription picks between the two.
+   */
+  descriptionMm?: string | null;
   posterUrl: string | null;
   coverUrl: string | null;
   /** Movies only. */

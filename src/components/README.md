@@ -12,7 +12,7 @@ that reads `AccessType`, a `MediaCard` that lays out a poster, an
 `ActorAvatar` that knows a person's initials. Used by more than one feature
 folder.
 
-**`<feature>/` — everything used by exactly one screen family:** `arcade`,
+**`<feature>/` — everything used by exactly one screen family:** `about`, `arcade`,
 `auth`, `books`, `comments`, `detail`, `feedback`, `layout`, `lottery`, `movie`,
 `player`, `profile`, `search`, `series`, `splash`, `wallet`. `lottery` holds
 the Lottery tab hub's card and the Home banner; the Ivory Lottery app itself

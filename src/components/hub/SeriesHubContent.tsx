@@ -39,6 +39,7 @@ import { useAuthStore } from "@/store/authStore";
 import { useLanguage } from "@/localization/LanguageProvider";
 import type { TranslationShape } from "@/localization/translations";
 import { hasAccess } from "@/utils/access";
+import { localizedDescription } from "@/utils/localizedDescription";
 import { theme } from "@/theme";
 import type { Movie } from "@/types/movie";
 import type { MovieCategoryRef } from "@/types/category";
@@ -247,7 +248,7 @@ function resultsTitle(t: TranslationShape, f: SeriesFilters, categoryName: strin
  * state, with "All series" to go back.
  */
 export const SeriesHubContent = memo(function SeriesHubContent({ active, scroll, results }: Props) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const navigation = useMediaTabNavigation();
   const queryClient = useQueryClient();
   const chromeHeight = useHubChromeHeight();
@@ -502,7 +503,7 @@ export const SeriesHubContent = memo(function SeriesHubContent({ active, scroll,
           kicker: resuming ? t.series.continueWatching : isNew ? t.browse.recentlyAdded : t.hubs.series.featured,
           rating: series.rating > 0 ? series.rating : null,
           meta: [series.releaseYear > 0 ? series.releaseYear : null, counts, series.genre || null],
-          blurb: series.description || null,
+          blurb: localizedDescription(series, language) || null,
           primary: {
             kind: locked ? "subscribe" : "play",
             label,
@@ -532,6 +533,7 @@ export const SeriesHubContent = memo(function SeriesHubContent({ active, scroll,
       watchInfo,
       savedIds,
       t,
+      language,
       episodesLabel,
       openSubscribe,
       playEpisode,

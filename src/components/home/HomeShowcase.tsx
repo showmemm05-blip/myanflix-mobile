@@ -30,6 +30,7 @@ import { useSubscriptionPlans, useSubscriptionStatus } from "@/hooks/useSubscrip
 import { useLanguage } from "@/localization/LanguageProvider";
 import { formatDuration } from "@/utils/format";
 import { formatKyat } from "@/utils/currency";
+import { localizedDescription } from "@/utils/localizedDescription";
 import { theme, withAlpha } from "@/theme";
 import type { HomeSettings, ShowcasePromo, ShowcaseSpotlight, ShowcaseTitle } from "@/types/home";
 
@@ -182,7 +183,8 @@ export const SpotlightBanner = memo(function SpotlightBanner({
   const picked = spotlight.source === "PROMO";
   const chip = (promo && promoText(language, promo.kickerEn, promo.kickerMm)) ?? (picked ? t.home.spotlightChip : t.home.spotlightNewestChip);
   const aside = picked ? t.home.spotlightPicked : t.home.spotlightNewest;
-  const line = (promo && promoText(language, promo.bodyEn, promo.bodyMm)) ?? (title.description || null);
+  // The team's own line first; else the title's description in the app language.
+  const line = (promo && promoText(language, promo.bodyEn, promo.bodyMm)) ?? (localizedDescription(title, language) || null);
   const meta = joinMeta([
     title.type === "BOOK" ? title.author : null,
     title.releaseYear && title.releaseYear > 0 ? title.releaseYear : null,
