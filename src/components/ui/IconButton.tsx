@@ -1,9 +1,9 @@
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { BlurView } from "expo-blur";
 import { useReducedMotion } from "react-native-reanimated";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { GlassFace } from "@/components/layout/GlassFace";
 import { onSolid, theme, withAlpha } from "@/theme";
 
 /**
@@ -27,8 +27,11 @@ interface Props {
   /** Small dot in the top-right corner (unread / attention). */
   badge?: boolean;
   /**
-   * Sits on ARTWORK (a hero, a poster): a blurred dark disc instead of the
-   * variant's fill, so the glyph stays legible on any image.
+   * A top-bar control over artwork (the Subscribe sheet's close): the top
+   * bars' Liquid Glass circle (GlassFace) instead of the variant's fill, so
+   * the glyph stays legible on any image. Pressed, it shrinks but never dims
+   * (an iOS blur under a parent with alpha < 1 renders broken); disabled, its
+   * glass is solid for the same reason.
    */
   overlay?: boolean;
   accessibilityLabel?: string;
@@ -87,7 +90,7 @@ export function IconButton({
         { width: dims.box, height: dims.box, borderRadius: dims.box / 2 },
         fill,
         disabled && styles.disabled,
-        pressed && !disabled && (reduceMotion ? styles.pressedStill : styles.pressed),
+        pressed && !disabled && (reduceMotion ? (overlay ? null : styles.pressedStill) : styles.pressed),
         style,
       ]}
       onPress={onPress}
@@ -97,22 +100,21 @@ export function IconButton({
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: !!disabled }}
     >
-      {overlay && (
-        <View style={[StyleSheet.absoluteFill, styles.overlayClip, { borderRadius: dims.box / 2 }]} pointerEvents="none">
-          <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-          <View style={[StyleSheet.absoluteFill, styles.overlayFill]} />
-        </View>
+      {({ pressed }) => (
+        <>
+          {overlay && (
+            <GlassFace radius={dims.box / 2} solid={disabled} pressed={reduceMotion && pressed && !disabled} />
+          )}
+          <Ionicons name={icon} size={dims.icon} color={iconColor} />
+          {badge && <View style={styles.badge} />}
+        </>
       )}
-      <Ionicons name={icon} size={dims.icon} color={iconColor} />
-      {badge && <View style={styles.badge} />}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   base: { alignItems: "center", justifyContent: "center" },
-  overlayClip: { overflow: "hidden" },
-  overlayFill: { backgroundColor: theme.colors.onArt },
   disabled: { opacity: 0.45 },
   pressed: { transform: [{ scale: 0.96 }] },
   pressedStill: { opacity: 0.7 },

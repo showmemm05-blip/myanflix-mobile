@@ -1,50 +1,53 @@
 import type { ReactNode, RefObject } from "react";
 import { Pressable, StyleSheet, View, type ViewInstance } from "react-native";
-import { BlurView } from "expo-blur";
 import { useReducedMotion } from "react-native-reanimated";
-import { theme, withAlpha } from "@/theme";
+import { GlassFace } from "@/components/layout/GlassFace";
+import { theme } from "@/theme";
 
-/** Boards: a 36pt chip, radius 18, inside a 44pt target. */
-export const GLASS_CHIP_HEIGHT = 36;
-/** Resting chip fill over the art: white at 14% on a dark blur (boards). */
-const RESTING_FILL = withAlpha(theme.colors.text, 0.14);
-/** The picked genre's ring — "this is what you are looking at". */
-const PICK_RING = withAlpha(theme.colors.text, 0.9);
+/** The "Top bar" board (2026-11-10): a 40pt pill with 20pt round ends, inside a 44pt target. */
+export const GLASS_CHIP_HEIGHT = 40;
 
 interface Props {
   /** The pressable's view, so a screen can hand screen-reader focus back to the chip (the Categories chip). */
   chipRef?: RefObject<ViewInstance | null>;
   /** Solid white with near-black ink — "where you are". */
   selected?: boolean;
-  /** The picked genre / category: a white ring over the glass. */
-  ringed?: boolean;
-  /** The ✕: a 36pt circle. */
+  /** The picked genre / category: the same glass tinted red (the board's picked pill). */
+  picked?: boolean;
+  /** The ✕: a 40pt glass circle. */
   round?: boolean;
   /** Omitted: a label, not a control. */
   onPress?: () => void;
   accessibilityLabel: string;
   /** A chip that opens a menu says whether it is open. */
   expanded?: boolean;
-  /** A tighter right edge before a trailing chevron (the boards' 14 / 12). */
+  /** A tighter right edge before a trailing chevron (the board's 16 / 12: the picked name). */
   trailingPad?: boolean;
-  /** A tighter left edge before a leading chevron (the "‹ Media" back chip: 6 / 12). */
+  /** A tighter left edge before a leading glyph (the board's 10 / 16: "‹ Media"). */
   leadingPad?: boolean;
-  /** Greyed and not pressable — the "Categories ▾" pill on Music, which has no categories (MediaMusic.dc.html). */
+  /** Greyed and not pressable — the Categories button on Music, which has no categories (MediaMusic.dc.html). */
   disabled?: boolean;
   children: ReactNode;
 }
 
 /**
- * The Media pages' chip over the hero (the hub boards): dark glass — white at
- * 14% over a blur — with white ink, or solid white with near-black ink when
- * `selected`. It carries the "‹ Media" back control, "Categories ▾" (greyed
- * on Music), the picked genre and the results view's ✕; every one keeps a
- * 44pt target, and at 2× text the chip grows rather than clipping.
+ * The word control in the top bars' rows (the "Top bar" board, 2026-11-10):
+ * a 40pt Liquid Glass pill (GlassFace) with white ink — red-tinted glass when
+ * `picked`, or solid white with near-black ink when `selected`. It carries
+ * the "‹ Media" back control, "Categories ▾" (greyed on Music), the picked
+ * genre, the results view's ✕ (a 40pt glass circle) and the Filters page's
+ * Reset; every one keeps a 44pt target, and at 2× text the pill grows rather
+ * than clipping.
+ *
+ * Pressed, it shrinks to 96% (Reduce Motion: it stays put and lights up
+ * instead). It never dims under a finger, and a greyed pill is drawn with the
+ * solid glass (no blur), because an iOS blur under a parent with alpha < 1
+ * renders broken.
  */
 export function GlassChip({
   chipRef,
   selected = false,
-  ringed = false,
+  picked = false,
   round = false,
   onPress,
   accessibilityLabel,
@@ -55,7 +58,7 @@ export function GlassChip({
   children,
 }: Props) {
   const reduceMotion = useReducedMotion();
-  const face = (
+  const face = (pressed: boolean) => (
     <View
       style={[
         styles.chip,
@@ -63,14 +66,10 @@ export function GlassChip({
         leadingPad && styles.chipLeading,
         round && styles.chipRound,
         selected && styles.chipSelected,
-        ringed && styles.chipRinged,
       ]}
     >
       {selected ? null : (
-        <View style={styles.glass} pointerEvents="none">
-          <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-          <View style={[StyleSheet.absoluteFill, styles.glassFill]} />
-        </View>
+        <GlassFace radius={GLASS_CHIP_HEIGHT / 2} picked={picked} solid={disabled} pressed={reduceMotion && pressed} />
       )}
       {children}
     </View>
@@ -79,7 +78,7 @@ export function GlassChip({
   if (!onPress) {
     return (
       <View style={styles.target} accessible accessibilityLabel={accessibilityLabel} accessibilityState={{ selected }}>
-        {face}
+        {face(false)}
       </View>
     );
   }
@@ -101,31 +100,36 @@ export function GlassChip({
         styles.target,
         round && styles.targetRound,
         disabled && styles.disabled,
-        pressed && (reduceMotion ? styles.pressedStill : styles.pressed),
+        pressed && !reduceMotion && styles.pressed,
       ]}
     >
-      {face}
+      {({ pressed }) => face(pressed)}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   target: { minHeight: theme.layout.minTouch, justifyContent: "center" },
-  /** The ✕'s 44pt square target around its 36pt disc. */
+  /** The ✕'s 44pt square target around its 40pt circle. */
   targetRound: { minWidth: theme.layout.minTouch, alignItems: "center" },
-  /** A minimum, so 2× text grows the chip rather than clipping its label. */
+  /**
+   * A minimum, so 2× text grows the chip rather than clipping its label. Not
+   * clipped itself: the glass clips its own layers, and its shadow has to
+   * fall outside the pill.
+   */
   chip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: theme.spacing.xs,
     minHeight: GLASS_CHIP_HEIGHT,
     paddingHorizontal: theme.layout.screenPadding,
     paddingVertical: 4,
     borderRadius: GLASS_CHIP_HEIGHT / 2,
-    overflow: "hidden",
   },
-  chipTrailing: { paddingLeft: 14, paddingRight: 12 },
-  chipLeading: { paddingLeft: 6, paddingRight: 12, gap: 2 },
+  /** The board: 16pt on the word side, 12pt before the ▾. */
+  chipTrailing: { paddingLeft: theme.layout.screenPadding, paddingRight: 12 },
+  /** The board: 10pt before the ‹, 16pt on the word side. */
+  chipLeading: { paddingLeft: 10, paddingRight: theme.layout.screenPadding },
   chipRound: {
     width: GLASS_CHIP_HEIGHT,
     height: GLASS_CHIP_HEIGHT,
@@ -134,11 +138,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   chipSelected: { backgroundColor: theme.colors.play },
-  chipRinged: { borderWidth: 1.5, borderColor: PICK_RING },
-  glass: { ...StyleSheet.absoluteFill, borderRadius: GLASS_CHIP_HEIGHT / 2, overflow: "hidden" },
-  glassFill: { backgroundColor: RESTING_FILL },
   pressed: { transform: [{ scale: 0.96 }] },
-  pressedStill: { opacity: 0.75 },
-  /** The board's greyed pill: the whole target at 45%. */
+  /** The board's greyed pill: the whole target at 45% (its glass is solid, so this is safe on iOS). */
   disabled: { opacity: 0.45 },
 });

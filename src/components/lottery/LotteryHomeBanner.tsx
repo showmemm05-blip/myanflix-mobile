@@ -55,7 +55,7 @@ export const LotteryHomeBanner = memo(function LotteryHomeBanner({
 
 const styles = StyleSheet.create({
   section: { paddingHorizontal: theme.layout.screenPadding },
-  /** First under the hero: the gap the value strip used to take there (HomeShowcase `valueFirst`). */
+  /** First under the hero: 20pt under the hero's dots row (the board's gap there). */
   first: { marginTop: 20 },
   later: { marginTop: HUB_SECTION_GAP },
   card: {

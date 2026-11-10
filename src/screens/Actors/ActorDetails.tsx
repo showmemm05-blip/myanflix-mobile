@@ -77,9 +77,9 @@ export function ActorDetailsScreen({ route, navigation }: Props) {
   const grid = usePosterGrid();
   const dockClearance = useDockClearance();
   // The glass bar (components/layout/GlassBar): the back button floats over
-  // the hero, transparent at the top, frosted once the page scrolls under it.
-  // Two pages can scroll — the poster grid, or the "no titles" page — and
-  // whichever is showing feeds the glass.
+  // the hero, clear at the top, the scroll-edge fade behind it once the page
+  // scrolls under it. Two pages can scroll — the poster grid, or the "no
+  // titles" page — and whichever is showing feeds the fade.
   const glass = useGlassBar();
   const gridRef = useAnimatedRef<FlatList<Movie>>();
   const emptyRef = useAnimatedRef<ScrollViewInstance>();

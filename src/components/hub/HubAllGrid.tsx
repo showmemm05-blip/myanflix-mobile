@@ -385,7 +385,7 @@ export function HubAllGrid<T>({
  * and the hero's pager read. A new list (first mount, a view switch, or the
  * remount a rotation forces — `remountKey`) starts at the top without a
  * scroll event, so the value is reset with it — and so is a list that goes
- * away, or the bar would stay frosted over a page with nothing scrolled.
+ * away, or the bar's fade would stay on over a page with nothing scrolled.
  * Only ONE list per hub is mounted at a time: they share `scroll.listRef`.
  */
 export function useHubListScroll(scroll: HubScroll, remountKey: string | number): void {

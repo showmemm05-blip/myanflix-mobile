@@ -158,10 +158,10 @@ export function TransactionsScreen({ navigation }: Props) {
   const dockClearance = useDockClearance();
   /**
    * The glass bar (components/layout/GlassBar): back, the title, search and
-   * the ledger tabs float over the list, transparent at the top and frosted
-   * once rows scroll under them. One ref for whichever ledger list is
-   * mounted — a tab switch remounts the list (its `key`), the ref re-attaches
-   * to the new one, and the glass starts again from the top.
+   * the ledger tabs float over the list, clear at the top, the scroll-edge
+   * fade behind them once rows scroll under them. One ref for whichever
+   * ledger list is mounted — a tab switch remounts the list (its `key`), the
+   * ref re-attaches to the new one, and the fade starts again from the top.
    */
   const glass = useGlassBar(BACK_ROW + PINNED_REST_ESTIMATE);
   // Untyped items, as in useHubScroll: one ref serves all three ledgers.
@@ -629,14 +629,17 @@ const styles = StyleSheet.create({
    * one pixel lower, so TalkBack still reads the header first.
    */
   top: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 1 },
-  /** The 44pt back target sits 8pt in from the edge, its 40pt disc 2pt further. */
+  /**
+   * The back button's 44pt glass circle sits 16pt in from the edge, in line
+   * with every other top bar's controls (the "Top bar" board, 2026-11-10).
+   */
   backRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing.xs,
     paddingTop: 6,
     paddingBottom: 6,
-    paddingHorizontal: theme.spacing.sm,
+    paddingHorizontal: theme.layout.screenPadding,
   },
   title: { marginTop: theme.spacing.xs, paddingHorizontal: ROW_INSET },
   /** The app bar's pushed-screen title (17pt ExtraBold, centred), for tight screens. */

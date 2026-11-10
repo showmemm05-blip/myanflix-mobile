@@ -23,7 +23,12 @@ import {
   type CategoryPick,
 } from "@/components/hub/CategoriesOverlay";
 import { useMovieResults, useSeriesResults } from "@/components/hub/useMediaResults";
-import { selectionLabel } from "@/components/search/filters";
+import {
+  movieLanguagePick,
+  movieSelectionName,
+  seriesLanguagePick,
+  seriesSelectionName,
+} from "@/components/search/filters";
 import { useCategories } from "@/hooks/useCategories";
 import { MoviesHubContent } from "@/components/hub/MoviesHubContent";
 import { SeriesHubContent } from "@/components/hub/SeriesHubContent";
@@ -31,7 +36,6 @@ import { BooksHubContent } from "@/components/hub/BooksHubContent";
 import { MusicComingSoon } from "@/components/hub/MusicComingSoon";
 import { HubChromeContext } from "@/components/hub/hubLayout";
 import { useHubScroll } from "@/components/hub/useHubScroll";
-import { ThemedText } from "@/components/ui/ThemedText";
 import { useAuthStore } from "@/store/authStore";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme } from "@/theme";
@@ -94,16 +98,19 @@ function ChipLayer({ visible, children }: { visible: boolean; children: ReactNod
  *   Pinned on top   two rows (the owner, 2026-10-22: the canvas, v8). Row 1
  *                   is the Media tab's own root bar, exactly the hub's: the
  *                   big "Media" heading, the search button, the bell and the
- *                   avatar (AppTopBar). Row 2 (CenteredTitleRow): "‹ Media"
+ *                   avatar (AppTopBar). Row 2 (CenteredTitleRow): the round ‹
  *                   (back to the hub) on the left, the section's name
- *                   centred, "Categories ▾" on the right — greyed on Music;
+ *                   centred, the Categories grid button on the right — greyed on Music;
  *                   on a Movies / Series results view the Netflix pair
  *                   instead: ✕ · "Drama ▾". Nothing else — no Switch, no
- *                   third row; the page starts right under row 2. Both rows
- *                   are TRANSPARENT at the top of the page and gain the
- *                   frosted glass as it scrolls (components/layout/GlassBar);
- *                   never a black bar (the owner, 2026-10-02). The bar's
- *                   empty space always passes touches through to the page.
+ *                   third row; the page starts right under row 2. Every
+ *                   control in both rows is its own Liquid Glass button
+ *                   (the "Top bar" board, 2026-11-10); the heading stays
+ *                   plain. The rows are TRANSPARENT at the top of the page
+ *                   and gain the scroll-edge fade as it scrolls
+ *                   (components/layout/GlassBar); never a black bar (the
+ *                   owner, 2026-10-02). The bar's empty space always passes
+ *                   touches through to the page.
  *   Body           the section's page: MoviesHubContent / SeriesHubContent
  *                   (browse: hero + shelves; results: a genre's hero + a
  *                   self-paging grid with Sort & filter) / BooksHubContent,
@@ -125,20 +132,20 @@ function ChipLayer({ visible, children }: { visible: boolean; children: ReactNod
  * recreates — it, so the user is never stuck. Android's back on a results
  * view goes back to browse first (the ✕'s job).
  *
- * Categories ▾ (the owner, 2026-10-07): from Movies, Series or Books it
- * opens the Categories pop-up, with a Movies · Series · Books switch at its
- * top. It opens on the section showing and the switch changes the list in
- * place. Music has no categories, so there the pill is greyed and says so
- * (MediaMusic.dc.html). A Movies or Series pick (a genre, or any admin
- * category, empty ones included) moves to that section and opens its
- * results — a Movies category is sent to the server as categoryId, a Series
- * one is applied on the client (GET /series has no category filter;
- * useSeriesResults). A Books pick (one of the books' own categories) moves
- * to Books and shows its All books grid on that category, scrolled into
- * view. A guest's Books segment asks them to sign in instead. Each of
- * Movies and Series remembers its own view (useMovieResults /
- * useSeriesResults over the shared searchFiltersStore); Books' All books
- * category is held here (`bookCategory`), so the pop-up can highlight it.
+ * Categories (the grid button; the owner, 2026-10-07 and 2026-11-10): from
+ * Movies, Series or Books it opens the Categories pop-up for THAT section
+ * only — colour tiles under "Genres", and on Movies "Movie type" and
+ * "Language" (Series: "Language"). Music has no categories, so there the
+ * button is greyed and says so (MediaMusic.dc.html). A Movies or Series
+ * pick (a genre, an admin category, a movie type or a language) opens that
+ * section's results — every one of them is a server filter (categoryId,
+ * genres, countries, languages; a Series category is held beside the shared
+ * filters, useSeriesResults). A Books pick (one of the books' own
+ * categories) shows its All books grid on that category, scrolled into
+ * view; a guest's Books pop-up asks them to sign in instead. Each of Movies
+ * and Series remembers its own view (useMovieResults / useSeriesResults over
+ * the shared searchFiltersStore); Books' All books category is held here
+ * (`bookCategory`), so the pop-up can tick it.
  *
  * Search lives on its own screen ("MediaSearch"), LOCKED to this section
  * (Music: everything); nothing here holds search state. Its results use the
@@ -173,10 +180,11 @@ export function MediaScreen({ navigation, route }: Props) {
           : musicScrollY;
 
   /**
-   * The frosted bar (components/layout/GlassBar — this screen is its
-   * reference): fully transparent at the top, then the page blurred under a
-   * 40% tint, fading in with the CURRENT page's scroll and back out on the
-   * way up. The target wraps every section's page.
+   * The scroll-edge fade behind the bar (components/layout/GlassBar — this
+   * screen is its reference, the "Top bar" board): nothing at the top, then
+   * a soft dark fade with a light blur, coming in with the CURRENT page's
+   * scroll and going back out on the way up. The target wraps every
+   * section's page.
    */
   const blurTargetRef = useRef<ViewInstance>(null);
 
@@ -209,26 +217,30 @@ export function MediaScreen({ navigation, route }: Props) {
   const selection = useMemo<MediaCategoriesSelection | null>(() => {
     if (section === "movies" && movieResults.showResults) {
       return {
-        pick: selectionLabel(movieResults.filters.genres, movieCategoryName),
+        pick: movieSelectionName(t, movieResults.filters, movieCategoryName, movieResults.languagePick),
         onClear: closeMovieResults,
       };
     }
     if (section === "series" && seriesResults.showResults) {
       return {
-        pick: selectionLabel(seriesResults.filters.genres, seriesCategoryName),
+        pick: seriesSelectionName(seriesResults.filters, seriesCategoryName, seriesCategoryId, seriesResults.languagePick),
         onClear: closeSeriesResults,
       };
     }
     return null;
   }, [
+    t,
     section,
     movieResults.showResults,
-    movieResults.filters.genres,
+    movieResults.filters,
+    movieResults.languagePick,
     movieCategoryName,
     closeMovieResults,
     seriesResults.showResults,
-    seriesResults.filters.genres,
+    seriesResults.filters,
+    seriesResults.languagePick,
     seriesCategoryName,
+    seriesCategoryId,
     closeSeriesResults,
   ]);
 
@@ -283,57 +295,95 @@ export function MediaScreen({ navigation, route }: Props) {
   /**
    * Mounted on its first opening (in the same render — React's "adjust state
    * while rendering") and then kept, so its fade-out still plays: a visit
-   * that never opens it asks for nothing, and each kind's list only asks for
-   * its own data while its segment shows.
+   * that never opens it asks for nothing, and it only asks for the data of
+   * the section it is opened from.
    */
   const [overlayUsed, setOverlayUsed] = useState(false);
   if (overlayOpen && !overlayUsed) setOverlayUsed(true);
   /** It opens on the section showing. (Music's pill is disabled; Movies is only the type's fallback there.) */
   const overlayKind: CategoryKind = section === "series" ? "series" : section === "books" ? "books" : "movies";
-  /** The name highlighted per kind — only for the section the user is looking at. */
+  /** The tile ticked per kind — only for the section the user is looking at ("All …" when nothing is picked). */
+  const movieLanguageTile = movieResults.languagePick;
+  const seriesLanguageTile = seriesResults.languagePick;
   const overlaySelected = useMemo<Record<CategoryKind, string | null>>(
     () => ({
       movies:
         section === "movies"
-          ? categorySelectionKey(movieResults.filters.genres, movieCategoryId, movieResults.showResults)
+          ? categorySelectionKey({
+              genres: movieResults.filters.genres,
+              categoryId: movieCategoryId,
+              countries: movieResults.filters.countries,
+              languagePick: movieLanguageTile,
+            })
           : null,
       series:
         section === "series"
-          ? categorySelectionKey(seriesResults.filters.genres, seriesCategoryId, seriesResults.showResults)
+          ? categorySelectionKey({
+              genres: seriesResults.filters.genres,
+              categoryId: seriesCategoryId,
+              languagePick: seriesLanguageTile,
+            })
           : null,
       books: section === "books" ? bookCategorySelectionKey(bookCategory) : null,
     }),
     [
       section,
-      movieResults.filters.genres,
+      movieResults.filters,
       movieCategoryId,
-      movieResults.showResults,
-      seriesResults.filters.genres,
+      movieLanguageTile,
+      seriesResults.filters,
       seriesCategoryId,
-      seriesResults.showResults,
+      seriesLanguageTile,
       bookCategory,
     ],
   );
   const openMovieResults = movieResults.open;
   const openSeriesResults = seriesResults.open;
-  /** A pick opens (or switches) the results view; the refinements already chosen stay. */
+  /**
+   * A pick opens (or switches) the results view and replaces the last pick —
+   * a genre, category, movie type or language; the refinements already
+   * chosen stay. A language that was itself the last pick (the Language
+   * tile's, movieLanguagePick) goes with it; languages set in Sort & filter
+   * stay. Only a Language tile's pick is remembered as one.
+   */
   const pickMovies = useCallback(
     (pick: CategoryPick) =>
-      openMovieResults((f) => ({
-        ...f,
-        genres: pick.kind === "genre" ? [pick.genre] : [],
-        categoryId: pick.kind === "category" ? pick.id : null,
-      })),
-    [openMovieResults],
+      openMovieResults(
+        (f) => ({
+          ...f,
+          genres: pick.kind === "genre" ? [pick.genre] : [],
+          categoryId: pick.kind === "category" ? pick.id : null,
+          countries: pick.kind === "type" ? [pick.value] : [],
+          languages:
+            pick.kind === "language" ? [pick.value] : movieLanguagePick(f, movieLanguageTile) ? [] : f.languages,
+        }),
+        { languageTile: pick.kind === "language" ? pick.value : null },
+      ),
+    [openMovieResults, movieLanguageTile],
   );
-  /** The same for Series — its category is kept beside the shared filters, never sent (useSeriesResults). */
+  /**
+   * The same for Series (no movie type there) — its category is kept beside
+   * the shared filters and sent by SeriesHubContent (useSeriesResults).
+   */
   const pickSeries = useCallback(
     (pick: CategoryPick) =>
       openSeriesResults(
-        (f) => ({ ...f, genres: pick.kind === "genre" ? [pick.genre] : [] }),
-        pick.kind === "category" ? pick.id : null,
+        (f) => ({
+          ...f,
+          genres: pick.kind === "genre" ? [pick.genre] : [],
+          languages:
+            pick.kind === "language"
+              ? [pick.value]
+              : seriesLanguagePick(f, seriesCategoryId, seriesLanguageTile)
+                ? []
+                : f.languages,
+        }),
+        {
+          categoryId: pick.kind === "category" ? pick.id : null,
+          languageTile: pick.kind === "language" ? pick.value : null,
+        },
       ),
-    [openSeriesResults],
+    [openSeriesResults, seriesCategoryId, seriesLanguageTile],
   );
   /** A pick for any kind: that kind's section, then its genre / category. */
   const pickCategory = useCallback(
@@ -349,7 +399,7 @@ export function MediaScreen({ navigation, route }: Props) {
     [setSection, pickMovies, pickSeries],
   );
   /**
-   * A guest's "Sign in" in the Books segment. Today it cannot be reached: a
+   * A guest's "Sign in" in the Books pop-up. Today it cannot be reached: a
    * signed-out user never sees this tab, because the root stack swaps the
    * whole app for the sign-in screens (RootNavigator). The prompt is kept
    * for the owner's rule (book categories are members-only) in case guest
@@ -420,33 +470,33 @@ export function MediaScreen({ navigation, route }: Props) {
         </GlassTarget>
       </HubChromeContext.Provider>
 
-      {/* Frosted glass behind the two rows (the owner's choice, 2026-10-02):
-          transparent at the top, then the page blurred under a 40% dark tint
-          as it scrolls — never solid. Rendered after the body, as expo-blur
-          needs for scrolling content. */}
+      {/* The scroll-edge fade behind the two rows (the "Top bar" board,
+          2026-11-10): nothing at the top, then dark at the top edge and gone
+          32pt under row 2 as the page scrolls — never a solid bar (the owner,
+          2026-10-02). Rendered after the body, as expo-blur needs for
+          scrolling content. */}
       <GlassBarBackground scrollY={activeScrollY} height={chromeHeight} blurTarget={blurTargetRef} />
       {/* Row 1: the tab's root bar with the SECTION as its heading (owner,
           2026-10-22: "when i click Movies the navbar should change to the
           movies"), transparent over the hero. Row 2, as the bar's children
-          and so inside its measured box: "‹ Media" and "Categories ▾" at the
+          and so inside its measured box: the round ‹ (back to the hub) and the Categories grid button at the
           two ends; no centre title, the heading above already names the page. */}
       <AppTopBar
         transparent
         touchThrough
         heading={typeLabel}
         onLayout={onChromeLayout}
-        trailing={<AppBarAction icon="search" overlay onPress={openSearch} accessibilityLabel={searchA11y} />}
+        trailing={<AppBarAction icon="search" onPress={openSearch} accessibilityLabel={searchA11y} />}
       >
         <CenteredTitleRow
           title=""
           touchThrough
           style={styles.sectionRow}
           leading={
-            <GlassChip onPress={backToHub} accessibilityLabel={t.search.backToMedia} leadingPad>
-              <Ionicons name="chevron-back" size={18} color={theme.colors.text} />
-              <ThemedText variant="muted" weight="bold" color={theme.colors.text} numberOfLines={1}>
-                {t.nav.media}
-              </ThemedText>
+            // A round glass ‹ with no words (the owner, 2026-11-10: icon 1 and
+            // layout B1 on the "Back icon" board), still spoken "Back to Media".
+            <GlassChip round onPress={backToHub} accessibilityLabel={t.search.backToMedia}>
+              <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
             </GlassChip>
           }
           trailing={

@@ -13,7 +13,8 @@ import {
   createMovieFilters,
   movieFilterChips,
   movieFiltersToQuery,
-  selectionLabel,
+  movieLanguagePick,
+  movieSelectionName,
   sortChoiceLabel,
   type MovieFilters,
 } from "@/components/search/filters";
@@ -105,12 +106,17 @@ function interleave(genres: MovieShelf[], categories: MovieShelf[]): MovieShelf[
 }
 
 /**
- * The results view's heading: the category, the genre(s), or — for the four
- * sorts that are shelves of their own — the sort, under the very name its
- * chip and the sheet give it.
+ * The results view's heading: the category, the movie type, the genre(s) or
+ * the Language tile's pick, or — for the four sorts that are shelves of
+ * their own — the sort, under the very name its chip and the sheet give it.
  */
-function resultsTitle(t: TranslationShape, f: MovieFilters, categoryName: string | null): string {
-  const picked = selectionLabel(f.genres, f.categoryId ? (categoryName ?? t.browse.categoryOverline) : null);
+function resultsTitle(
+  t: TranslationShape,
+  f: MovieFilters,
+  categoryName: string | null,
+  languageTile: string | null,
+): string {
+  const picked = movieSelectionName(t, f, f.categoryId ? (categoryName ?? t.browse.categoryOverline) : null, languageTile);
   if (picked) return picked;
   switch (f.sort) {
     case "trending":
@@ -136,8 +142,8 @@ function resultsTitle(t: TranslationShape, f: MovieFilters, categoryName: string
  * the admin categories (GET /categories), each asking for its titles as it
  * scrolls into view. Every "See all" opens the RESULTS view.
  *
- * RESULTS (a genre or category from the Categories overlay, a shelf's See
- * all, or any active filter): that genre's hero when it has titles, the
+ * RESULTS (a genre, category, movie type or language from the Categories
+ * pop-up, a shelf's See all, or any active filter): that pick's hero when it has titles, the
  * heading, the count, the filter row — "Sort & filter", a removable chip
  * per refinement, Clear all — and a 3-column grid that pages by itself,
  * keeping what is loaded while the next page comes (skeleton cells), never
@@ -184,7 +190,7 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
   );
 
   /* ---- the shared data ---- */
-  const { filters, showResults } = results;
+  const { filters, showResults, languagePick } = results;
   // Browse rows change a few times a day: a 5-minute window keeps "back to
   // the app" from re-asking every loaded page (pull-to-refresh still does).
   const newestQuery = useMoviesInfinite(NEWEST_QUERY, BROWSE_OPTIONS);
@@ -376,14 +382,21 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
     { ...movieFiltersToQuery(filters), limit: LIST_PAGE_SIZE },
     { enabled: showResults },
   );
-  const hasSelection = countMovieSelection(filters) > 0;
-  /** The genre / category being shown — a change is a new page, not a re-sort. */
-  const viewKey = `${filters.categoryId ?? ""}|${filters.genres.join(",")}`;
-  // The genre's hero: its newest titles, whatever the grid is sorted by. With
+  // A Language tile's pick (`languagePick`, movieLanguagePick) names the view rather than refining it.
+  const hasSelection = countMovieSelection(filters) > 0 || !!languagePick;
+  /** The genre / category / type / language being shown — a change is a new page, not a re-sort. */
+  const viewKey = `${filters.categoryId ?? ""}|${filters.genres.join(",")}|${filters.countries.join(",")}|${languagePick ?? ""}`;
+  // The pick's hero: its newest titles, whatever the grid is sorted by. With
   // no refinements this IS the grid's first page (one request for both).
   const heroQuery = useMoviesInfinite(
     {
-      ...movieFiltersToQuery({ ...createMovieFilters(), genres: filters.genres, categoryId: filters.categoryId }),
+      ...movieFiltersToQuery({
+        ...createMovieFilters(),
+        genres: filters.genres,
+        categoryId: filters.categoryId,
+        countries: filters.countries,
+        languages: languagePick ? [languagePick] : [],
+      }),
       limit: LIST_PAGE_SIZE,
     },
     { enabled: showResults && hasSelection },
@@ -424,15 +437,25 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
     () => (filters.categoryId ? (categoriesQuery.data?.find((c) => c.id === filters.categoryId)?.name ?? null) : null),
     [filters.categoryId, categoriesQuery.data],
   );
-  const refinements = countMovieRefinements(filters);
-  const chips = useMemo(
-    () => movieFilterChips(t, filters, results.update, { selection: false }),
-    [t, filters, results.update],
+  // The Language tile's pick is the view's name (the red pill, the heading),
+  // so it is neither counted as a refinement nor repeated as a chip, and
+  // Clear all keeps it.
+  const refinements = countMovieRefinements(filters) - (languagePick ? 1 : 0);
+  const chips = useMemo(() => {
+    const all = movieFilterChips(t, filters, results.update, { selection: false });
+    return languagePick ? all.filter((chip) => chip.key !== `language:${languagePick}`) : all;
+  }, [t, filters, results.update, languagePick]);
+  const clearRefinements = useCallback(
+    () =>
+      results.update((f) => ({
+        ...clearMovieRefinements(f),
+        languages: movieLanguagePick(f, languagePick) ? f.languages : [],
+      })),
+    [results.update, languagePick],
   );
-  const clearRefinements = useCallback(() => results.update(clearMovieRefinements), [results.update]);
   const clearSelection = useCallback(
-    () => results.update((f) => ({ ...f, genres: [], categoryId: null })),
-    [results.update],
+    () => results.update((f) => clearSelectionOf(f, languagePick)),
+    [results.update, languagePick],
   );
   const [sheetOpen, setSheetOpen] = useState(false);
   const openSheet = useCallback(() => setSheetOpen(true), []);
@@ -447,7 +470,7 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
    * past its heading, the heading comes back up under the pinned chrome.
    * (A new genre remounts the list at the top anyway.)
    */
-  const refinementKey = JSON.stringify(movieFiltersToQuery(clearSelectionOf(filters)));
+  const refinementKey = JSON.stringify(movieFiltersToQuery(clearSelectionOf(filters, languagePick)));
   useEffect(() => {
     if (!showResults) return;
     const headingTop = scroll.allY.current - chromeHeight;
@@ -471,9 +494,12 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
         ? categoryName
           ? t.hub.noMoviesInNamedCategory.replace("{category}", categoryName)
           : t.hub.noMoviesInCategory
-        : hasSelection
-          ? t.hub.noMoviesInGenre
-          : t.hub.noMoviesYet;
+        : filters.genres.length === 0 && hasSelection
+          ? // A movie type or a language: named, as a category is.
+            t.hub.noMoviesInNamedCategory.replace("{category}", movieSelectionName(t, filters, null, languagePick) ?? "")
+          : hasSelection
+            ? t.hub.noMoviesInGenre
+            : t.hub.noMoviesYet;
   const emptyAction =
     refinements > 0
       ? { label: t.search.clearFiltersButton, onPress: clearRefinements }
@@ -563,7 +589,7 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
             <View style={{ height: chromeHeight }} />
           )
         }
-        title={resultsTitle(t, filters, categoryName)}
+        title={resultsTitle(t, filters, categoryName, languagePick)}
         titleVariant={showHero ? "section" : "title"}
         compactTop={!showHero}
         focusTitleOnMount
@@ -614,9 +640,19 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
   );
 });
 
-/** The filters without the genre / category — what the Sort & filter sheet edits. */
-function clearSelectionOf(f: MovieFilters): MovieFilters {
-  return { ...f, genres: [], categoryId: null };
+/**
+ * The filters without the selection — the genre, category, type and the
+ * Language tile's pick (`languageTile`, movieLanguagePick): what the Sort &
+ * filter sheet edits.
+ */
+function clearSelectionOf(f: MovieFilters, languageTile: string | null): MovieFilters {
+  return {
+    ...f,
+    genres: [],
+    categoryId: null,
+    countries: [],
+    languages: movieLanguagePick(f, languageTile) ? [] : f.languages,
+  };
 }
 
 /**

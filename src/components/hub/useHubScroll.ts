@@ -11,7 +11,7 @@ import { theme } from "@/theme";
  *   mounted yet — the loading and error states have none) and records `allY`
  *   (where its "All …" section starts);
  * - HubHero pauses its story pager once `scrollY` has taken it off screen;
- * - the Media screen fades its bar's frosted glass in from `scrollY`, and a
+ * - the Media screen brings its bar's scroll-edge fade in from `scrollY`, and a
  *   Books pick in its Categories pop-up asks Books for `requestScrollToAll()`;
  * - the hub calls `scrollToAll()` from a row's "See all".
  */

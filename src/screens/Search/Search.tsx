@@ -305,7 +305,8 @@ export function SearchScreen({ navigation, route }: Props) {
   /**
    * The glass bar (components/layout/GlassBar): the Media bar, the field, its
    * hint line, the scope pills and the filter row all float over the page,
-   * transparent at the top and frosted once results scroll under them. Every
+   * clear at the top, the scroll-edge fade behind them once results scroll
+   * under them. Every
    * body state starts below the measured bar. Only one of the body's scrolls
    * is ever mounted; each has its ref and a GlassScrollFeed beside it.
    */
@@ -1730,18 +1731,27 @@ export function SearchScreen({ navigation, route }: Props) {
   );
 }
 
-/** Back button (6pt in + 44) + its 4pt gap + the field's own 18pt to its glyph — the board's 72. */
-const HINT_INSET = 6 + theme.layout.minTouch + 4 + 18;
+/**
+ * Back button (16pt in + 44) + its 8pt gap + the field's own 18pt to its
+ * glyph: 86pt (the MediaSearch board's 72 was for a back button 6pt in and
+ * 4pt from the field, before the glass circles lined up 16pt in).
+ */
+const HINT_INSET = theme.layout.screenPadding + theme.layout.minTouch + theme.spacing.sm + 18;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   fill: { flex: 1 },
-  /** The board: the round back button 6pt from the edge, 4pt to the field, the field 16pt from the right; 8pt under the bar. */
+  /**
+   * The back button's glass circle 16pt from the edge and 8pt from the field,
+   * in line with the circles in the bar above (the "Top bar" board's "16pt
+   * in, 8pt apart", 2026-11-10; the MediaSearch board had 6 and 4); the
+   * field 16pt from the right; 8pt under the bar.
+   */
   fieldRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing.xs,
-    paddingLeft: 6,
+    gap: theme.spacing.sm,
+    paddingLeft: theme.layout.screenPadding,
     paddingRight: theme.layout.screenPadding,
     paddingTop: theme.spacing.sm,
   },

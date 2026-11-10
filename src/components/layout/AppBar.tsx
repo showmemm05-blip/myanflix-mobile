@@ -2,12 +2,12 @@ import type { ReactNode } from "react";
 import { Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
 import { useReducedMotion } from "react-native-reanimated";
 // Deep import, not the "@expo/vector-icons" root: that barrel statically
 // require()s all 15 icon sets, bundling 19 TTFs (4 MB). Don't "tidy" it back.
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
+import { GlassFace } from "@/components/layout/GlassFace";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { theme, withAlpha } from "@/theme";
 
@@ -46,14 +46,14 @@ interface Props {
   touchThrough?: boolean;
   /**
    * Lays the bar OVER the page instead of in the layout flow, in its own
-   * posture (`compact` or `large`) and with its ground controls: absolutely
-   * positioned, clear, zIndex 1 — so the page scrolls up under it and the
-   * frosted glass (components/layout/GlassBar) fades in behind it. The screen
-   * pads its content down by the bar's measured height (`onLayout`). No
-   * scrim: the `transparent` bar's hangs below the bar to keep a hero's art
-   * legible, but on a page's ground it would only dim the first rows (and
-   * the Profile glow) at rest — the glass is what carries a floating bar.
-   * Ignored with `transparent`.
+   * posture (`compact` or `large`): absolutely positioned, clear, zIndex 1 —
+   * so the page scrolls up under it and the scroll-edge fade
+   * (components/layout/GlassBar) comes in behind it. The screen pads its
+   * content down by the bar's measured height (`onLayout`). No scrim: the
+   * `transparent` bar's hangs below the bar to keep a hero's art legible, but
+   * on a page's ground it would only dim the first rows (and the Profile
+   * glow) at rest — the glass buttons and the fade are what carry a floating
+   * bar. Ignored with `transparent`.
    */
   floating?: boolean;
 }
@@ -82,11 +82,15 @@ const TOP_SCRIM = [
  * cinematic screens whose artwork runs under the status bar. Do not introduce
  * a second header primitive. `floating` lays a compact or large bar over a
  * page that scrolls under it; with GlassBarBackground behind it, every bar
- * gets the same frosted glass (components/layout/GlassBar).
+ * gets the same scroll-edge fade (components/layout/GlassBar).
  *
- * Marquee: a 44pt control row (8pt from the top and sides), a centred 17/24
- * extra-bold title on pushed screens, and a 34pt black page title under the
- * row on large ones. Over art the bar is clear with a soft top scrim.
+ * Liquid Glass (owner, 2026-11-10; canvas page "Top bar"): the bar itself is
+ * clear — no band, no fill — and every control in it is its own glass button
+ * (AppBarAction: a 44pt glass circle). The 44pt control row sits 8pt under
+ * the top inset with its controls 16pt in from the sides and 8pt apart. A
+ * centred 17/24 extra-bold title on pushed screens and a 34pt black page
+ * title under the row on large ones stay plain text. Over art the bar keeps
+ * a soft top scrim.
  */
 export function AppBar({
   title,
@@ -131,7 +135,6 @@ export function AppBar({
                 icon="chevron-back"
                 onPress={onBack}
                 accessibilityLabel={backAccessibilityLabel ?? t.common.back}
-                overlay={transparent}
               />
             ) : null)}
         </View>
@@ -199,13 +202,16 @@ interface ActionProps {
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   accessibilityLabel?: string;
-  /** Over artwork: a blurred dark disc so the control stays legible on any image. */
+  /**
+   * Accepted and ignored since the Liquid Glass top bars (2026-11-10): the
+   * glass circle reads the same over art and over the ground, so there is no
+   * separate "over art" disc any more. Kept so older callers still compile.
+   */
   overlay?: boolean;
   /**
-   * No disc at all — the bare 44pt glyph (the bell beside the avatar on a root
-   * bar). Wins over `overlay`: the root bar's bell stays bare even over a hero
-   * (Main.dc.html, Wallet.dc.html), legible on the bar's own top scrim. Back
-   * buttons on art pass `overlay` alone and keep their dark disc.
+   * Accepted and ignored since 2026-11-10: every top-bar control is a glass
+   * circle now, the root bar's bell included (the "Top bar" board), so there
+   * is no bare glyph any more. Kept so older callers still compile.
    */
   bare?: boolean;
   /** Unread / attention dot. */
@@ -213,45 +219,39 @@ interface ActionProps {
   color?: string;
   /**
    * The control names the page already on screen (the search button on the
-   * search screen): spoken as selected, its ground disc a step brighter.
+   * search screen): spoken as selected, and drawn as the PICKED glass — tinted
+   * red, the board's rule for "this is the one you are on".
    */
   selected?: boolean;
 }
 
-/** Marquee: the visible disc is 40pt inside the 44pt target. */
-const DISC = 40;
+/** The glass circle IS the 44pt touch target: fully round. */
+const ACTION_RADIUS = theme.layout.minTouch / 2;
 
 /**
- * The 44pt round control used in every app bar — back, notifications, filters.
- * On the ground it is a 40pt white-at-8% disc; over art (`overlay`) a 40pt
- * dark-glass disc under a blur; `bare` drops the disc in either case.
+ * The 44pt round control used in every app bar — back, search, the bell,
+ * share. A 44pt Liquid Glass circle (GlassFace) with a 22pt glyph; pressed, it
+ * shrinks to 96% (Reduce Motion: it stays put and lights up instead).
+ * Pressed never dims it: an iOS blur under a parent with alpha < 1 renders
+ * broken.
  */
-export function AppBarAction({ icon, onPress, accessibilityLabel, overlay, bare, badge, color, selected }: ActionProps) {
+export function AppBarAction({ icon, onPress, accessibilityLabel, badge, color, selected }: ActionProps) {
   const reduceMotion = useReducedMotion();
-  const showDisc = !bare;
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.action, pressed && (reduceMotion ? styles.actionPressedStill : styles.actionPressed)]}
+      style={({ pressed }) => [styles.action, pressed && !reduceMotion && styles.actionPressed]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={selected === undefined ? undefined : { selected }}
     >
-      {showDisc && (
-        <View
-          style={[styles.disc, overlay ? styles.discOverlay : selected ? styles.discSelected : styles.discGround]}
-          pointerEvents="none"
-        >
-          {overlay && (
-            <>
-              <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-              <View style={[StyleSheet.absoluteFill, styles.discOverlayFill]} />
-            </>
-          )}
-        </View>
+      {({ pressed }) => (
+        <>
+          <GlassFace radius={ACTION_RADIUS} picked={selected} pressed={reduceMotion && pressed} />
+          <Ionicons name={icon} size={22} color={color ?? theme.colors.text} />
+          {badge && <View style={styles.badge} />}
+        </>
       )}
-      <Ionicons name={icon} size={22} color={color ?? theme.colors.text} />
-      {badge && <View style={styles.badge} />}
     </Pressable>
   );
 }
@@ -261,17 +261,18 @@ const styles = StyleSheet.create({
   transparentContainer: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 1 },
   transparentSafeArea: { backgroundColor: "transparent" },
   scrim: { position: "absolute", top: 0, left: 0, right: 0 },
+  /** The "Top bar" board: controls 16pt in from the sides, the row 8pt under the inset. */
   row: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.sm,
+    paddingHorizontal: theme.layout.screenPadding,
     paddingTop: theme.spacing.sm,
     minHeight: theme.spacing.sm + theme.layout.minTouch,
   },
-  /** 4pt between neighbouring 44pt targets, so two 40pt discs never touch. */
-  side: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs, minWidth: theme.layout.minTouch },
+  /** 8pt between neighbouring 44pt glass circles (the board's "8pt apart"). */
+  side: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, minWidth: theme.layout.minTouch },
   sideRight: { justifyContent: "flex-end" },
   /** Design: 17/24, weight 800, centred between the two 44pt sides. */
   compactTitle: { flex: 1, textAlign: "center", fontSize: 17 },
@@ -288,20 +289,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  disc: {
-    position: "absolute",
-    width: DISC,
-    height: DISC,
-    borderRadius: DISC / 2,
-    overflow: "hidden",
-  },
-  discGround: { backgroundColor: theme.colors.tonalSoft },
-  discSelected: { backgroundColor: theme.colors.tonal },
-  discOverlay: { backgroundColor: "transparent" },
-  discOverlayFill: { backgroundColor: theme.colors.onArt },
-  actionPressed: { transform: [{ scale: 0.96 }], opacity: 0.85 },
-  actionPressedStill: { opacity: 0.6 },
-  /** Design: 8pt crimson dot at top 10 / right 11, ringed in the ground colour. */
+  actionPressed: { transform: [{ scale: 0.96 }] },
+  /**
+   * The board: an 8pt crimson dot at top 10 / right 11, with a 2pt ring OUTSIDE
+   * it in the solid glass colour (`box-shadow: 0 0 0 2px #1A1A20`), so it
+   * stands clear of the glyph. A spread-only outset shadow is that ring.
+   */
   badge: {
     position: "absolute",
     top: 10,
@@ -310,7 +303,6 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: theme.colors.primary,
-    borderWidth: 2,
-    borderColor: theme.colors.background,
+    boxShadow: "0 0 0 2px #1A1A20",
   },
 });

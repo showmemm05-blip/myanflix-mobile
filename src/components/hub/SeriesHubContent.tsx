@@ -13,9 +13,10 @@ import {
   countSeriesRefinements,
   countSeriesSelection,
   createSeriesFilters,
-  selectionLabel,
   seriesFilterChips,
   seriesFiltersToQuery,
+  seriesLanguagePick,
+  seriesSelectionName,
   sortChoiceLabel,
   type SeriesFilters,
 } from "@/components/search/filters";
@@ -211,13 +212,20 @@ function mostCommonCategory(series: SeriesListItem[]): MovieCategoryRef | null {
 }
 
 /**
- * The results view's heading: the category and genre(s), or — for Newest,
- * the New releases shelf's See all — the sort, under the very name its chip
- * and the sheet give it ("Newest releases"), so one screen never names it
- * two ways. `categoryName` is the picked category's name, null when none is.
+ * The results view's heading: the category and genre(s) or the Language
+ * tile's pick, or — for Newest, the New releases shelf's See all — the sort,
+ * under the very name its chip and the sheet give it ("Newest releases"), so
+ * one screen never names it two ways. `categoryName` is the picked
+ * category's name, null when none is.
  */
-function resultsTitle(t: TranslationShape, f: SeriesFilters, categoryName: string | null): string {
-  const picked = selectionLabel(f.genres, categoryName);
+function resultsTitle(
+  t: TranslationShape,
+  f: SeriesFilters,
+  categoryName: string | null,
+  categoryId: string | null,
+  languageTile: string | null,
+): string {
+  const picked = seriesSelectionName(f, categoryName, categoryId, languageTile);
   if (picked) return picked;
   if (f.sort === "newest") return sortChoiceLabel(t, f.sort, "series");
   return f.freeOnly && f.sort === DEFAULT_SERIES_SORT ? t.hub.freeToWatch : t.hubs.series.allSeries;
@@ -238,8 +246,8 @@ function resultsTitle(t: TranslationShape, f: SeriesFilters, categoryName: strin
  * hand — no request of its own, so it has no See all) and the genre shelves
  * (GET /series/facets), each asking for its series as it scrolls into view.
  *
- * RESULTS (a genre or category from the Categories overlay, a shelf's See
- * all, or any active filter): that genre's hero when it has series, the
+ * RESULTS (a genre, category or language from the Categories pop-up, a
+ * shelf's See all, or any active filter): that pick's hero when it has series, the
  * heading, the count, the filter row (Sort & filter, removable chips, Clear
  * all) and a 3-column grid that pages by itself — see MoviesHubContent. A
  * CATEGORY is sent to the server (GET /series?categoryId=), exactly like a
@@ -281,7 +289,7 @@ export const SeriesHubContent = memo(function SeriesHubContent({ active, scroll,
   );
 
   /* ---- the shared data ---- */
-  const { filters, showResults, categoryId } = results;
+  const { filters, showResults, categoryId, languagePick } = results;
   const baseQuery = useSeriesInfinite(BASE_QUERY, { staleTime: BROWSE_STALE_TIME_MS });
   const firstPage = baseQuery.data?.pages[0]?.items;
   const facetsQuery = useSeriesFacets();
@@ -292,15 +300,20 @@ export const SeriesHubContent = memo(function SeriesHubContent({ active, scroll,
   const inCategory = categoryId ? { categoryId } : {};
   const listQuery = { ...seriesFiltersToQuery(filters), ...inCategory, limit: LIST_PAGE_SIZE };
   const resultsQuery = useSeriesInfinite(listQuery, { enabled: showResults });
-  const hasSelection = countSeriesSelection(filters) > 0 || !!categoryId;
-  /** The category / genre being shown — a change is a new page, not a re-sort. */
-  const viewKey = `${categoryId ?? ""}|${filters.genres.join(",")}`;
+  // A Language tile's pick (`languagePick`, seriesLanguagePick) names the view rather than refining it.
+  const hasSelection = countSeriesSelection(filters) > 0 || !!categoryId || !!languagePick;
+  /** The category / genre / language being shown — a change is a new page, not a re-sort. */
+  const viewKey = `${categoryId ?? ""}|${filters.genres.join(",")}|${languagePick ?? ""}`;
   // The genre's (or category's) hero: its newest series, whatever the grid is
   // sorted by. With no refinements this IS the grid's first page (one request
   // for both — React Query hashes the key with its fields sorted).
   const genreHeroQuery = useSeriesInfinite(
     {
-      ...seriesFiltersToQuery({ ...createSeriesFilters(), genres: filters.genres }),
+      ...seriesFiltersToQuery({
+        ...createSeriesFilters(),
+        genres: filters.genres,
+        languages: languagePick ? [languagePick] : [],
+      }),
       ...inCategory,
       limit: LIST_PAGE_SIZE,
     },
@@ -699,17 +712,31 @@ export const SeriesHubContent = memo(function SeriesHubContent({ active, scroll,
     [categoryId, categoriesQuery.data],
   );
 
-  const refinements = countSeriesRefinements(filters);
-  const chips = useMemo(
-    () => seriesFilterChips(t, filters, results.update, { selection: false }),
-    [t, filters, results.update],
+  // The Language tile's pick is the view's name (the red pill, the heading),
+  // so it is neither counted as a refinement nor repeated as a chip, and
+  // Clear all keeps it.
+  const refinements = countSeriesRefinements(filters) - (languagePick ? 1 : 0);
+  const chips = useMemo(() => {
+    const all = seriesFilterChips(t, filters, results.update, { selection: false });
+    return languagePick ? all.filter((chip) => chip.key !== `language:${languagePick}`) : all;
+  }, [t, filters, results.update, languagePick]);
+  const clearRefinements = useCallback(
+    () =>
+      results.update((f) => ({
+        ...clearSeriesRefinements(f),
+        languages: seriesLanguagePick(f, categoryId, languagePick) ? f.languages : [],
+      })),
+    [results.update, categoryId, languagePick],
   );
-  const clearRefinements = useCallback(() => results.update(clearSeriesRefinements), [results.update]);
   const setCategoryId = results.setCategoryId;
   const clearSelection = useCallback(() => {
-    results.update((f) => ({ ...f, genres: [] }));
+    results.update((f) => ({
+      ...f,
+      genres: [],
+      languages: seriesLanguagePick(f, categoryId, languagePick) ? [] : f.languages,
+    }));
     setCategoryId(null);
-  }, [results.update, setCategoryId]);
+  }, [results.update, setCategoryId, categoryId, languagePick]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const openSheet = useCallback(() => setSheetOpen(true), []);
   const closeSheet = useCallback(() => setSheetOpen(false), []);
@@ -723,7 +750,9 @@ export const SeriesHubContent = memo(function SeriesHubContent({ active, scroll,
    * past its heading, the heading comes back up under the pinned chrome.
    * (A new genre remounts the list at the top anyway.)
    */
-  const refinementKey = JSON.stringify(seriesFiltersToQuery({ ...filters, genres: [] }));
+  const refinementKey = JSON.stringify(
+    seriesFiltersToQuery({ ...filters, genres: [], languages: languagePick ? [] : filters.languages }),
+  );
   useEffect(() => {
     if (!showResults) return;
     const headingTop = scroll.allY.current - chromeHeight;
@@ -748,9 +777,11 @@ export const SeriesHubContent = memo(function SeriesHubContent({ active, scroll,
         ? categoryName
           ? t.hubs.series.noSeriesInNamedCategory.replace("{category}", categoryName)
           : t.hubs.series.noSeriesInCategory
-        : hasSelection
-          ? t.hubs.series.noSeriesInGenre
-          : t.hubs.series.noSeriesYet;
+        : languagePick
+          ? t.hubs.series.noSeriesInNamedCategory.replace("{category}", languagePick)
+          : hasSelection
+            ? t.hubs.series.noSeriesInGenre
+            : t.hubs.series.noSeriesYet;
   const emptyAction =
     refinements > 0
       ? { label: t.search.clearFiltersButton, onPress: clearRefinements }
@@ -840,7 +871,13 @@ export const SeriesHubContent = memo(function SeriesHubContent({ active, scroll,
             <View style={{ height: chromeHeight }} />
           )
         }
-        title={resultsTitle(t, filters, categoryId ? (categoryName ?? t.browse.categoryOverline) : null)}
+        title={resultsTitle(
+          t,
+          filters,
+          categoryId ? (categoryName ?? t.browse.categoryOverline) : null,
+          categoryId,
+          languagePick,
+        )}
         titleVariant={showHero ? "section" : "title"}
         compactTop={!showHero}
         focusTitleOnMount

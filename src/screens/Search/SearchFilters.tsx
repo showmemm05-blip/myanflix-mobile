@@ -20,6 +20,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { FadeInView } from "@/components/ui/FadeInView";
 import { TopBar } from "@/components/layout/TopBar";
+import { GlassChip } from "@/components/hub/GlassChip";
 import {
   GLASS_BAR_ROW,
   GlassBarBackground,
@@ -54,6 +55,7 @@ import { useSearchFiltersStore } from "@/store/searchFiltersStore";
 import { useLanguage } from "@/localization/LanguageProvider";
 import type { TranslationShape } from "@/localization/translations";
 import { theme, withAlpha } from "@/theme";
+import { mediaTypeLabel } from "@/utils/mediaType";
 import type { SearchStackParamList } from "@/navigation/types";
 import type { FacetValue } from "@/types/movie";
 
@@ -144,16 +146,24 @@ function MovieFiltersEditor({ term, onDone }: EditorProps) {
     onDone();
   };
 
-  // The category is named in the context line (the page has no control for it).
+  // The category and the movie type (a Media page pick) are named in the
+  // context line: they narrow the count, and the page has no control for them.
   const categoriesQuery = useCategories();
   const categoryName = draft.categoryId
     ? (categoriesQuery.data?.find((category) => category.id === draft.categoryId)?.name ?? t.browse.categoryOverline)
     : null;
+  const kindLine = [
+    t.search.movies,
+    categoryName,
+    ...draft.countries.map((country) => mediaTypeLabel(t, country, "movie") ?? country),
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const trending = draft.sort === "trending";
 
   return (
     <FiltersLayout
-      kind={categoryName ? `${t.search.movies} · ${categoryName}` : t.search.movies}
+      kind={kindLine}
       term={term}
       freeOnly={draft.freeOnly}
       onBack={onDone}
@@ -304,8 +314,8 @@ function YearSection({
 
 /**
  * The page both editors share: the sections scroll up under the floating
- * Filters bar into its glass (components/layout/GlassBar) — transparent at
- * the top, frosted once they pass beneath it — with the "Show N results"
+ * Filters bar (components/layout/GlassBar) — nothing behind it at the top,
+ * the scroll-edge fade once they pass beneath it — with the "Show N results"
  * footer pinned below.
  */
 function FiltersLayout({
@@ -363,6 +373,10 @@ function FiltersLayout({
  * “river”", or just "Movies" with no term. Free only joins the kind —
  * "Movies · Free only · results for “river”" — early in the line, so the
  * line's two-line cap (large text, Burmese, a long term) cuts the term first.
+ *
+ * Reset is a word control in a top bar's row, so since the Liquid Glass top
+ * bars (2026-11-10) it is a 40pt glass pill (GlassChip), as "‹ Media" and
+ * "Categories ▾" are; back is the 44pt glass circle every bar has.
  */
 function FiltersTopBar({
   kind,
@@ -394,21 +408,19 @@ function FiltersTopBar({
       onBack={onBack}
       backAccessibilityLabel={t.common.back}
       trailing={
-        <Pressable
-          onPress={onReset}
-          accessibilityRole="button"
-          accessibilityLabel={t.search.reset}
-          style={({ pressed }) => [styles.reset, pressed && styles.pressed]}
-        >
+        <GlassChip onPress={onReset} accessibilityLabel={t.search.reset} leadingPad>
           <Ionicons name="refresh" size={18} color={theme.colors.text} />
-          {/* Grows with the reader's text size up to 2×, where the Burmese
-              "Reset" (~225pt with its icon) still fits the ~250pt the large
-              bar leaves beside Back on a 320pt screen; capped there so the
-              very largest sizes cannot push it off the edge. */}
-          <ThemedText weight="extrabold" numberOfLines={1} maxFontSizeMultiplier={2}>
+          {/* Grows with the reader's text size up to 1.6×, not the usual 2×.
+              The Burmese "Reset" is about 9.2em (138pt at 15pt), so at 2× the
+              pill (10 + 18pt icon + 4 + word + 16) is ~324pt, wider than the
+              W − 84pt the large bar leaves beside Back (the row's 16pt sides,
+              the 44pt circle, two 4pt gaps): it ran off the right edge on a
+              375pt iPhone and a 360dp Android (review S3). At 1.6× it is
+              ~269pt, which fits from 360pt up. */}
+          <ThemedText weight="extrabold" numberOfLines={1} maxFontSizeMultiplier={1.6}>
             {t.search.reset}
           </ThemedText>
-        </Pressable>
+        </GlassChip>
       }
     />
   );
@@ -677,13 +689,6 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: "row", flexWrap: "wrap", columnGap: theme.spacing.sm, rowGap: 14 },
   hintLine: { flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.sm, marginTop: 2 },
   hintText: { flex: 1 },
-  reset: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    minHeight: theme.layout.minTouch,
-    paddingHorizontal: 10,
-  },
   pressed: { opacity: 0.7 },
   radioRow: {
     flexDirection: "row",

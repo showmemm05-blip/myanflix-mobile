@@ -23,7 +23,8 @@ export function DownloadCacheSettingsScreen({ navigation }: Props) {
   // the phone's own bottom edge, not for the dock (owner, 2026-10-07).
   const bottomClearance = useSafeAreaInsets().bottom + theme.spacing.xl;
   // The glass bar (components/layout/GlassBar): the bar floats over the page,
-  // transparent at the top, frosted once the page scrolls under it.
+  // clear at the top, the scroll-edge fade behind it once the page scrolls
+  // under it.
   const glass = useGlassBar();
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   useScrollOffset(scrollRef, glass.scrollY);

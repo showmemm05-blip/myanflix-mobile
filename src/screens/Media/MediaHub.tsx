@@ -73,7 +73,7 @@ function sectionLine(
 /**
  * THE MEDIA TAB'S ROOT since 2026-10-22 (the owner: "i want the same flow as
  * lottery … choose movies, series, books and music, after that it will show
- * accordingly"; MediaHub.dc.html), in the Lottery hub's recipe — the frosted
+ * accordingly"; MediaHub.dc.html), in the Lottery hub's recipe — the glass
  * root bar with the tab's own "Media" heading and its search button, the
  * page scrolling under it, the dock cleared at the foot:
  *
@@ -276,7 +276,7 @@ export function MediaHubScreen({ navigation }: Props) {
         </Animated.ScrollView>
       </GlassTarget>
 
-      {/* The frosted glass, faded in by scroll — under the bar, over the page. */}
+      {/* The scroll-edge fade, brought in by scroll — under the bar, over the page. */}
       <GlassBarBackground scrollY={scrollY} height={barHeight} blurTarget={blurTarget} />
       <AppTopBar
         transparent
@@ -284,7 +284,7 @@ export function MediaHubScreen({ navigation }: Props) {
         heading={t.nav.media}
         onLayout={onBarLayout}
         trailing={
-          <AppBarAction icon="search" overlay onPress={openSearch} accessibilityLabel={t.browse.searchA11y} />
+          <AppBarAction icon="search" onPress={openSearch} accessibilityLabel={t.browse.searchA11y} />
         }
       />
     </View>

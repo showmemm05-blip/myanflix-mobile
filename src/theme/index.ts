@@ -4,13 +4,19 @@ import type { TextStyle } from "react-native";
 import { clamp } from "@/utils/format";
 
 /**
- * The floating dock's geometry (DesignSystem.dc.html, "Navigation dock"):
- * 64pt tall, 16pt in from each side, 20pt above the safe-area bottom inset,
- * and scrolling content keeps another 20pt of air above it.
+ * The floating bottom bar's geometry — the Liquid Glass bar the owner approved
+ * on 2026-11-10 (docs/mobile-bottom-nav-2026-11-09/canvas/project/Bar4.dc.html):
+ * 62pt tall, 18pt in from each side (12pt on a window narrower than 360pt,
+ * see `dockSideInsetFor`), 8pt above the safe-area bottom inset, and scrolling
+ * content keeps another 20pt of air above it.
  */
-const DOCK_HEIGHT = 64;
-const DOCK_SIDE_INSET = 16;
-const DOCK_BOTTOM_GAP = 20;
+const DOCK_HEIGHT = 62;
+const DOCK_SIDE_INSET = 18;
+/** The side inset on a small phone, where every point of the bar's width counts. */
+const DOCK_SIDE_INSET_NARROW = 12;
+/** Windows narrower than this (pt) take the narrow side inset. */
+const DOCK_NARROW_WINDOW = 360;
+const DOCK_BOTTOM_GAP = 8;
 const DOCK_CONTENT_GAP = 20;
 /**
  * The tallest bottom inset a phone realistically reports: Android's
@@ -95,9 +101,9 @@ export const theme = {
     onPlay: "#08080B",
     /** The secondary button fill (My List, All games) — white at 16%. */
     tonalStrong: "rgba(255,255,255,0.16)",
-    /** The 40pt back-button disc on the ground, a sheet's close button. */
+    /** A sheet's close button and other quiet discs (the top bars' back disc until 2026-11-10). */
     tonalSoft: "rgba(255,255,255,0.08)",
-    /** Round controls over artwork (back / share on a hero) — under a blur. */
+    /** Dark film over artwork (a locked episode's scrim); the top bars' discs over art used it until 2026-11-10. */
     onArt: "rgba(8,8,11,0.5)",
     /** Small chips stamped ON a poster (Premium crown, quality, episode tag). */
     artBadge: "rgba(8,8,11,0.72)",
@@ -105,11 +111,18 @@ export const theme = {
     track: "rgba(255,255,255,0.25)",
     /** A bottom sheet's drag grabber. */
     grabber: "rgba(255,255,255,0.24)",
-    /** The floating dock's fill, laid over a blur. */
+    /**
+     * The old Marquee dock's fill. The Liquid Glass bar (2026-11-10) mixes its
+     * own glass in components/layout/TabBar and no longer reads this; the key
+     * stays because token names are never removed.
+     */
     dock: "rgba(22,22,28,0.92)",
     /**
-     * The frosted top bar's tint over its blur (components/layout/GlassBar):
-     * the ground at 40% — "a little dark", never solid (the owner, 2026-10-02).
+     * The old frosted top bar's tint over its blur: the ground at 40% — "a
+     * little dark", never solid (the owner, 2026-10-02). Unused since the
+     * Liquid Glass top bars (2026-11-10): components/layout/GlassBar now draws
+     * a scroll-edge fade and GlassFace mixes the buttons' own glass. The key
+     * stays because token names are never removed.
      */
     glassTint: "rgba(8,8,11,0.4)",
 
@@ -153,7 +166,7 @@ export const theme = {
     textBody: "#D9D9E0",
     /** Secondary: meta lines, body on raised fills. */
     textMuted: "#B3B3BD",
-    /** Captions, placeholders, inactive dock icons (5.1:1 even on raised fills). */
+    /** Captions, placeholders (5.1:1 even on raised fills). */
     textFaint: "#8C8C99",
     /** Decoration ONLY — "·" separators, outlined numerals. Never words (3:1). */
     textDecor: "#5E5E6A",
@@ -201,14 +214,18 @@ export const theme = {
     button: 12,
     /** A bottom sheet's top corners. */
     sheet: 24,
-    /** The floating dock capsule. */
-    dock: 32,
+    /** The floating bottom bar's capsule: half its 62pt height, so its ends are fully round. */
+    dock: 31,
   },
   shadow: {
     sm: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 4, elevation: 3 },
     md: { shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 6 },
     lg: { shadowColor: "#000", shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.35, shadowRadius: 20, elevation: 12 },
-    /** The one lifted thing in Marquee: the floating dock (0 12 32 rgba(0,0,0,0.55)). */
+    /**
+     * The old Marquee dock's lift (0 12 32 rgba(0,0,0,0.55)). The Liquid Glass
+     * bar casts its own two-layer `boxShadow` (components/layout/TabBar) and no
+     * longer reads this; the key stays because token names are never removed.
+     */
     dock: { shadowColor: "#000", shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.55, shadowRadius: 16, elevation: 14 },
   },
   /**
@@ -237,16 +254,20 @@ export const theme = {
   /** Shared layout constants so screens don't re-invent the dock clearance. */
   layout: {
     screenPadding: 16,
-    /** The floating dock's height. */
+    /** The floating bottom bar's height (62pt). */
     tabBarHeight: DOCK_HEIGHT,
     /**
-     * Bottom padding a scrollable root screen needs to clear the floating dock
-     * on ANY phone: dock + its 20pt lift + 20pt of air + the worst-case 48dp
-     * bottom inset. Static so StyleSheets can use it; for the exact per-device
-     * figure use `useDockClearance()` (hooks/useDockClearance).
+     * Bottom padding a scrollable root screen needs to clear the floating bar
+     * on ANY phone: the 62pt bar + its 8pt lift + 20pt of air + the
+     * worst-case 48dp bottom inset (138pt). Static so StyleSheets can use it;
+     * for the exact per-device figure use `useDockClearance()`
+     * (hooks/useDockClearance).
      */
     tabBarClearance: WORST_CASE_BOTTOM_INSET + DOCK_BOTTOM_GAP + DOCK_HEIGHT + DOCK_CONTENT_GAP,
-    /** The dock floats this far in from the screen's left and right edges. */
+    /**
+     * The bar floats this far in from the screen's left and right edges on a
+     * phone 360pt wide or more; narrower windows use 12pt (`dockSideInsetFor`).
+     */
     dockSideInset: DOCK_SIDE_INSET,
     /** …and this far above the safe-area bottom inset. */
     dockBottomGap: DOCK_BOTTOM_GAP,
@@ -269,17 +290,26 @@ export const theme = {
 } as const;
 
 /**
- * Where the dock's bottom edge sits, measured up from the screen's bottom edge.
- * `bottomInset` is safe-area-context's `insets.bottom`.
+ * Where the bar's bottom edge sits, measured up from the screen's bottom edge:
+ * 8pt above the safe-area inset. `bottomInset` is safe-area-context's
+ * `insets.bottom`.
  */
 export function dockBottomOffset(bottomInset: number): number {
   return bottomInset + DOCK_BOTTOM_GAP;
 }
 
 /**
+ * How far the bar floats in from each side on a window this wide: 18pt, or
+ * 12pt when the window is narrower than 360pt (the drawing's small-phone rule).
+ */
+export function dockSideInsetFor(windowWidth: number): number {
+  return windowWidth < DOCK_NARROW_WINDOW ? DOCK_SIDE_INSET_NARROW : DOCK_SIDE_INSET;
+}
+
+/**
  * The exact bottom padding a scrolling root needs on THIS device so its last
- * row clears the dock with 20pt of air: inset + 20 + 64 + 20 (104pt above the
- * inset, as the design states).
+ * row clears the bar with 20pt of air: inset + 8 + 62 + 20 (90pt above the
+ * inset).
  */
 export function dockClearance(bottomInset: number): number {
   return dockBottomOffset(bottomInset) + DOCK_HEIGHT + DOCK_CONTENT_GAP;

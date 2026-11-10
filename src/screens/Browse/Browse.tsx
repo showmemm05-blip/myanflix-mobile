@@ -74,7 +74,8 @@ export function BrowseScreen({ navigation }: Props) {
   const dockClearance = useDockClearance();
   const categoriesQuery = useCategories();
   // The glass bar (components/layout/GlassBar): the bar floats over the page,
-  // transparent at the top, frosted once the banners scroll under it.
+  // clear at the top, the scroll-edge fade behind it once the banners scroll
+  // under it.
   const glass = useGlassBar();
   const listRef = useAnimatedRef<FlatList<Row>>();
 

@@ -104,8 +104,9 @@ export function BookDetailsScreen({ route, navigation }: Props) {
   const dockClearance = useDockClearance();
   const coverWidth = useCoverWidth();
   // The glass bar (components/layout/GlassBar): the back button floats over
-  // the hero, transparent at the top, frosted once the page scrolls under it
-  // — it replaces the solid ground that used to fade in there.
+  // the hero, clear at the top, the scroll-edge fade behind it once the page
+  // scrolls under it — it replaces the solid ground that used to fade in
+  // there.
   const glass = useGlassBar();
   const scrollRef = useAnimatedRef<ScrollViewInstance>();
   const readingLanguage = useReaderPrefsStore((s) => s.readingLanguage);

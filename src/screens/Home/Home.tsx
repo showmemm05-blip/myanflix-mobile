@@ -24,7 +24,6 @@ import {
   PayChips,
   PremiumBand,
   SpotlightBanner,
-  ValueStrip,
 } from "@/components/home/HomeShowcase";
 import {
   BecauseYouWatchedRow,
@@ -79,7 +78,6 @@ type Props = CompositeScreenProps<
  */
 type HomeRowKind =
   | "lottery"
-  | "value"
   | "continue"
   | "spotlight"
   | "recent"
@@ -148,8 +146,8 @@ const rowKey = (kind: HomeRowKind) => kind;
  * promos — the catalogue rows still show.
  *
  * The chrome: the transparent AppTopBar is laid over the hero and the
- * frosted glass (components/layout/GlassBar) fades in behind it as the page
- * scrolls — never a solid ground (the owner, 2026-10-02). The bar's measured
+ * scroll-edge fade (components/layout/GlassBar) comes in behind it as the
+ * page scrolls — never a solid ground (the owner, 2026-10-02). The bar's measured
  * height travels down HubChromeContext, so the hero's copy, the refresh
  * spinner and the error state all clear it, as on the Media tab.
  */
@@ -457,14 +455,14 @@ export function HomeScreen({ navigation }: Props) {
   // Continue watching is listed only while it has (or may still get)
   // something to show (HomeRows explains). The Lottery banner is always the
   // first section under the hero (owner, 2026-10-15), so it alone takes the
-  // first section's gap; the value strip follows at the normal one.
+  // first section's gap. The "Why MyanFlix" value strip that followed it was
+  // removed from the phone (owner, 2026-11-10).
   const continuePresent = useContinueWatchingPresent(isAuthenticated);
   const rows = useMemo<HomeRowKind[]>(
     () =>
       isAuthenticated
         ? [
             "lottery",
-            "value",
             ...(continuePresent ? (["continue"] as const) : []),
             "spotlight",
             "recent",
@@ -478,7 +476,7 @@ export function HomeScreen({ navigation }: Props) {
             "coming",
             "web",
           ]
-        : ["lottery", "value", "spotlight", "recent", "series", "premium", "top10", "booksBand", "rated", "coming", "web"],
+        : ["lottery", "spotlight", "recent", "series", "premium", "top10", "booksBand", "rated", "coming", "web"],
     [isAuthenticated, continuePresent],
   );
 
@@ -521,8 +519,6 @@ export function HomeScreen({ navigation }: Props) {
       switch (kind) {
         case "lottery":
           return <LotteryHomeBanner first={first} onOpen={() => navigation.navigate("LotteryTab")} />;
-        case "value":
-          return <ValueStrip first={first} />;
         case "spotlight":
           return (
             <SpotlightBanner
@@ -681,7 +677,7 @@ export function HomeScreen({ navigation }: Props) {
         <GlassTarget targetRef={blurTargetRef}>{body}</GlassTarget>
       </HubChromeContext.Provider>
 
-      {/* The frosted glass, faded in by scroll — under the bar, over the page. */}
+      {/* The scroll-edge fade, brought in by scroll — under the bar, over the page. */}
       <GlassBarBackground scrollY={scroll.scrollY} height={chromeHeight} blurTarget={blurTargetRef} />
       {/* touchThrough: the bar's empty space passes touches to the page, as on the Media root. */}
       <AppTopBar transparent touchThrough onLayout={onChromeLayout} />

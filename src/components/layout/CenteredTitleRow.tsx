@@ -38,7 +38,7 @@ const ROW_GAP = theme.spacing.xs;
  * that room (Burmese section names on a 360dp phone) it is centred between
  * the two columns instead — a little off the screen's centre, but whole — and
  * ellipsizes only when even that lane cannot hold it. Its natural width is
- * measured by an invisible off-flow copy (TabBar's DockItem recipe); nothing
+ * measured by an invisible off-flow copy (TabBar's TabItem recipe); nothing
  * is known until the first layout, so the first frame has no cap at all.
  * (This was AppBar's `centerTitle` until 2026-10-22.)
  */

@@ -143,10 +143,11 @@ export function ProfileOverviewScreen({ navigation }: Props) {
 
   /**
    * The glass bar (components/layout/GlassBar): the bar floats over the
-   * page, transparent at the top — the glow shows through it as before — and
-   * frosted only once the page has scrolled GLASS_START (150pt) under it: the
-   * blur is not even mounted before that, so opening Profile can never show
-   * glass. The glow is inside the blur target, so the glass blurs it too.
+   * page, clear at the top — the glow shows through it as before — and the
+   * scroll-edge fade comes in only once the page has scrolled GLASS_START
+   * (24pt) under it: its blur is not even mounted before that, so opening
+   * Profile can never show glass. The glow is inside the blur target, so the
+   * fade's blur blurs it too.
    */
   const glass = useGlassBar();
   const scrollRef = useAnimatedRef<Animated.ScrollView>();

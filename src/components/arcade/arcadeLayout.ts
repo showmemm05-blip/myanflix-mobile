@@ -8,7 +8,7 @@ import { theme } from "@/theme";
  * wordmark's 28pt line once the OS text size grows it past 44.
  *
  * LAYOUT ONLY. Mirrors AppBar's geometry so Home can (a) keep hero copy clear
- * of the bar, (b) size the frosted glass that fades in behind the bar on
+ * of the bar, (b) size the scroll-edge fade that comes in behind the bar on
  * scroll (components/layout/GlassBar), and (c) land "All games" just below it.
  */
 export function useArcadeTopBarHeight(): number {

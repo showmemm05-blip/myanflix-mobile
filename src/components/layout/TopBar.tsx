@@ -35,7 +35,8 @@ interface Props {
 
 /**
  * Header for PUSHED screens (details, transactions, settings sub-pages).
- * A thin wrapper over the shared AppBar — same bar, compact posture.
+ * A thin wrapper over the shared AppBar — same bar, compact posture, and the
+ * same 44pt glass circles for back and `rightIcon` over art or the ground.
  */
 export function TopBar({
   title,
@@ -72,7 +73,6 @@ export function TopBar({
             <AppBarAction
               icon={rightIcon}
               onPress={onRightPress ?? (() => {})}
-              overlay={transparent}
               accessibilityLabel={rightAccessibilityLabel}
             />
           )}

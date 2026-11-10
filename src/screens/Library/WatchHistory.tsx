@@ -61,7 +61,8 @@ export function WatchHistoryScreen({ navigation }: Props) {
   // the phone's own bottom edge, not for the dock (owner, 2026-10-07).
   const bottomClearance = useSafeAreaInsets().bottom + theme.spacing.xl;
   // The glass bar (components/layout/GlassBar): the bar floats over the list,
-  // transparent at the top, frosted once the rows scroll under it.
+  // clear at the top, the scroll-edge fade behind it once the rows scroll
+  // under it.
   const glass = useGlassBar();
   const listRef = useAnimatedRef<SectionList<WatchHistoryEntry, Section>>();
   useScrollOffset(listRef, glass.scrollY);

@@ -6,6 +6,7 @@ import { useReducedMotion } from "react-native-reanimated";
 // the rule is the same. Don't "tidy" it back.
 import type Ionicons from "@expo/vector-icons/Ionicons";
 import { ThemedText } from "@/components/ui/ThemedText";
+import { GlassFace } from "@/components/layout/GlassFace";
 import { theme } from "@/theme";
 
 export interface SearchTabOption {
@@ -25,8 +26,12 @@ interface Props {
 const PILL_HEIGHT = 36;
 
 /**
- * The search screen's scope pills — Marquee pills: the selected tab is a white
- * pill with near-black ink, the others sit on the raised #1C1C23 fill. One
+ * The search screen's scope pills: the selected tab is a solid white pill
+ * with near-black ink (the top bar's `selected` chip); the others are Liquid
+ * Glass pills with white ink (GlassFace — the owner, 2026-11-10: "do the same
+ * glass for search page filters"). Pressed, a pill shrinks to 96%; under
+ * Reduce Motion the glass lights up instead (it never dims: an iOS blur under
+ * alpha < 1 renders broken). One
  * sideways rail, so five tabs (and a long Burmese label) scroll instead of
  * ever being shrunk or cut.
  *
@@ -52,21 +57,21 @@ export const SearchTabs = memo(function SearchTabs({ options, value, onChange }:
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
             accessibilityLabel={option.label}
-            style={({ pressed }) => [
-              styles.target,
-              pressed && (reduceMotion ? styles.pressedStill : styles.pressed),
-            ]}
+            style={({ pressed }) => [styles.target, pressed && !reduceMotion && styles.pressed]}
           >
-            <View style={[styles.pill, active ? styles.pillActive : styles.pillIdle]}>
-              <ThemedText
-                variant="muted"
-                weight={active ? "extrabold" : "semibold"}
-                numberOfLines={1}
-                color={active ? theme.colors.onPlay : theme.colors.textBody}
-              >
-                {option.label}
-              </ThemedText>
-            </View>
+            {({ pressed }) => (
+              <View style={[styles.pill, active && styles.pillActive]}>
+                {active ? null : <GlassFace radius={PILL_HEIGHT / 2} pressed={reduceMotion && pressed} />}
+                <ThemedText
+                  variant="muted"
+                  weight={active ? "extrabold" : "semibold"}
+                  numberOfLines={1}
+                  color={active ? theme.colors.onPlay : theme.colors.text}
+                >
+                  {option.label}
+                </ThemedText>
+              </View>
+            )}
           </Pressable>
         );
       })}
@@ -86,7 +91,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   pillActive: { backgroundColor: theme.colors.play },
-  pillIdle: { backgroundColor: theme.colors.surfaceElevated },
   pressed: { transform: [{ scale: 0.96 }] },
-  pressedStill: { opacity: 0.75 },
 });

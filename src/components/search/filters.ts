@@ -1,4 +1,5 @@
 import type { TranslationShape } from "@/localization/translations";
+import { mediaTypeLabel } from "@/utils/mediaType";
 import type { MovieQuery, MovieSort } from "@/types/movie";
 import type { SeriesQuery, SeriesSort } from "@/types/series";
 
@@ -12,9 +13,12 @@ import type { SeriesQuery, SeriesSort } from "@/types/series";
  * this file only maps UI state to query params and back to labels.
  *
  * Two halves of one filter object, the Netflix way:
- * - the SELECTION — the genre (and, on movies, the admin category) the Media
- *   page is showing. It is picked from the Categories overlay and drawn as
- *   the highlighted chip in the Media chip row.
+ * - the SELECTION — the genre (and, on movies, the admin category and the
+ *   movie type) the Media page is showing. It is picked from the Categories
+ *   overlay and drawn as the highlighted chip in the Media chip row. A
+ *   Language tile there sets a LONE language as the pick (movieLanguagePick
+ *   / seriesLanguagePick) — stored in `languages`, like the refinement, and
+ *   told apart from it by the Media page's own note of the tile it opened.
  * - the REFINEMENTS — sort, year, language, Free only and (movies) rating
  *   and length. They are edited in the Sort & filter sheet and drawn as the
  *   removable chips above the results.
@@ -45,12 +49,19 @@ export interface MovieFilters {
   /** OR within the facet, AND across facets — the backend's rule. */
   genres: string[];
   /**
-   * One admin category (GET /categories), sent as categoryId. Movies only:
-   * GET /series has no category filter, so series filters never carry one —
-   * the Media page's Series results keep their category beside them and
-   * match it on the client (useSeriesResults, SeriesHubContent).
+   * One admin category (GET /categories), sent as categoryId. Movies keep it
+   * here; the Media page's Series results keep theirs beside the shared
+   * filters (useSeriesResults) and send it as categoryId themselves
+   * (SeriesHubContent), so the search screen never lists series under it.
    */
   categoryId: string | null;
+  /**
+   * The movie TYPE words ("Korean", "Myanmar" — the admin's word in the
+   * movie's `country` field, shown as "Korean movie"), sent as `countries`.
+   * Part of the SELECTION: picked from the Categories pop-up's Movie type
+   * tiles. Series have no such filter on the server.
+   */
+  countries: string[];
   languages: string[];
   yearPreset: YearPreset;
   durationBucket: DurationBucket;
@@ -83,6 +94,7 @@ export function createMovieFilters(): MovieFilters {
     sort: DEFAULT_MOVIE_SORT,
     genres: [],
     categoryId: null,
+    countries: [],
     languages: [],
     yearPreset: "any",
     durationBucket: "any",
@@ -170,6 +182,7 @@ export function movieFiltersToQuery(f: MovieFilters): Partial<MovieQuery> {
   }
   if (f.genres.length > 0) query.genres = f.genres;
   if (f.categoryId) query.categoryId = f.categoryId;
+  if (f.countries.length > 0) query.countries = f.countries;
   if (f.languages.length > 0) query.languages = f.languages;
   if (f.ratingMin > 0) query.ratingMin = f.ratingMin;
   else if (f.sort === "rating") query.ratingMin = RATED_MIN;
@@ -190,9 +203,9 @@ export function seriesFiltersToQuery(f: SeriesFilters): Partial<SeriesQuery> {
 
 /* ---- counts: the selection, the refinements, and both ---- */
 
-/** The genre(s) and category the Media page is showing. */
+/** The genre(s), category and movie type the Media page is showing. */
 export function countMovieSelection(f: MovieFilters): number {
-  return f.genres.length + (f.categoryId ? 1 : 0);
+  return f.genres.length + (f.categoryId ? 1 : 0) + f.countries.length;
 }
 
 export function countSeriesSelection(f: SeriesFilters): number {
@@ -229,9 +242,47 @@ export function countSeriesFilters(f: SeriesFilters): number {
   return countSeriesSelection(f) + countSeriesRefinements(f);
 }
 
-/** The refinements back to their defaults; the selection (genre, category) stays. */
+/** The refinements back to their defaults; the selection (genre, category, type) stays. */
 export function clearMovieRefinements(f: MovieFilters): MovieFilters {
-  return { ...createMovieFilters(), genres: f.genres, categoryId: f.categoryId };
+  return { ...createMovieFilters(), genres: f.genres, categoryId: f.categoryId, countries: f.countries };
+}
+
+/**
+ * The Language tile's pick, when that is what the view shows. `languageTile`
+ * is the language the Media page last opened FROM a Language tile in the
+ * Categories pop-up (useMovieResults — never set by Sort & filter or the
+ * search screen); it is the view's pick while the filters still hold exactly
+ * that ONE language and nothing else selected (no genre, category or type).
+ * It lives in `languages`, the same field Sort & filter's Language edits, so
+ * the results view reads it here: it names the view (the red pill and the
+ * heading) and is not repeated as a removable chip or counted as a
+ * refinement. Null otherwise — then every language, one set in Sort & filter
+ * included, is an ordinary refinement.
+ */
+export function movieLanguagePick(f: MovieFilters, languageTile: string | null | undefined): string | null {
+  return languageTile &&
+    f.languages.length === 1 &&
+    f.languages[0] === languageTile &&
+    f.genres.length === 0 &&
+    !f.categoryId &&
+    f.countries.length === 0
+    ? languageTile
+    : null;
+}
+
+/** The same for Series, whose category is held beside the filters (useSeriesResults). */
+export function seriesLanguagePick(
+  f: SeriesFilters,
+  categoryId: string | null | undefined,
+  languageTile: string | null | undefined,
+): string | null {
+  return languageTile &&
+    f.languages.length === 1 &&
+    f.languages[0] === languageTile &&
+    f.genres.length === 0 &&
+    !categoryId
+    ? languageTile
+    : null;
 }
 
 export function clearSeriesRefinements(f: SeriesFilters): SeriesFilters {
@@ -444,6 +495,14 @@ export function movieFilterChips(
         onRemove: () => update((p) => ({ ...p, categoryId: null })),
       });
     }
+    // A type picked on the Media page narrows the search too: shown here so it can be removed.
+    for (const country of f.countries) {
+      chips.push({
+        key: `type:${country}`,
+        label: mediaTypeLabel(t, country, "movie") ?? country,
+        onRemove: () => update((p) => ({ ...p, countries: p.countries.filter((c) => c !== country) })),
+      });
+    }
     for (const genre of f.genres) {
       chips.push({
         key: `genre:${genre}`,
@@ -532,4 +591,31 @@ export function selectionLabel(genres: readonly string[], category: string | nul
   const names = category ? [category, ...genres] : genres;
   if (names.length === 0) return null;
   return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
+}
+
+/**
+ * The Movies selection's name — the red pill and the results heading: the
+ * category, the movie type ("Korean movie") and the genres (selectionLabel's
+ * "+ n" rule), or else the Language tile's pick. Null when nothing is picked.
+ * `categoryName` is the picked category's display name, null when none is;
+ * `languageTile` is the Language tile the view was opened from (movieLanguagePick).
+ */
+export function movieSelectionName(
+  t: TranslationShape,
+  f: MovieFilters,
+  categoryName: string | null,
+  languageTile: string | null | undefined,
+): string | null {
+  const types = f.countries.map((country) => mediaTypeLabel(t, country, "movie") ?? country);
+  return selectionLabel([...types, ...f.genres], categoryName) ?? movieLanguagePick(f, languageTile);
+}
+
+/** The same for Series: the category and genres, or else the Language tile's pick. */
+export function seriesSelectionName(
+  f: SeriesFilters,
+  categoryName: string | null,
+  categoryId: string | null | undefined,
+  languageTile: string | null | undefined,
+): string | null {
+  return selectionLabel(f.genres, categoryName) ?? seriesLanguagePick(f, categoryId, languageTile);
 }

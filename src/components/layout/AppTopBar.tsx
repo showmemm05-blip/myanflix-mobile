@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import { Pressable, View, StyleSheet, type LayoutChangeEvent } from "react-native";
 import { Image } from "expo-image";
+import { useReducedMotion } from "react-native-reanimated";
 import { useNavigation } from "@react-navigation/native";
 import type { CompositeNavigationProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { AppBar, AppBarAction } from "@/components/layout/AppBar";
+import { GlassFace } from "@/components/layout/GlassFace";
 import { ThemedText } from "@/components/ui/ThemedText";
 import { useAuth } from "@/hooks/useAuth";
 import { useUnreadNotificationCount } from "@/hooks/useNotifications";
@@ -57,6 +59,10 @@ interface Props {
  * "MyanFlix" wordmark (or the tab's own `heading`), the bell with a crimson
  * unread dot, and the 32pt profile avatar — over the shared AppBar, so roots
  * and pushed screens are one system.
+ *
+ * Liquid Glass (owner, 2026-11-10; canvas page "Top bar"): the bell and the
+ * avatar are 44pt glass circles like every other top-bar control; the
+ * wordmark and the heading stay plain, never glass.
  */
 export function AppTopBar({
   title,
@@ -75,6 +81,7 @@ export function AppTopBar({
   const { user } = useAuth();
   const unreadQuery = useUnreadNotificationCount();
   const hasUnread = (unreadQuery.data ?? 0) > 0;
+  const reduceMotion = useReducedMotion();
 
   return (
     <AppBar
@@ -128,26 +135,34 @@ export function AppTopBar({
             onPress={() => navigation.navigate("Notifications")}
             accessibilityLabel={hasUnread ? t.notifications.titleUnread : t.notifications.title}
             badge={hasUnread}
-            // Bare on the ground AND over a hero: the boards draw the root
-            // bar's bell as a plain glyph either way.
-            bare
-            overlay={transparent}
           />
+          {/* The photo (or initials) sits in a 44pt glass circle, like the
+              bell beside it; pressed, it shrinks like every glass control. */}
           <Pressable
-            style={styles.avatarButton}
+            style={({ pressed }) => [styles.avatarButton, pressed && !reduceMotion && styles.avatarPressed]}
             onPress={() => navigation.navigate("Profile")}
             accessibilityRole="button"
             accessibilityLabel={t.nav.profile}
           >
-            {user?.avatarUrl ? (
-              <Image source={{ uri: user.avatarUrl }} style={styles.avatar} contentFit="cover" />
-            ) : (
-              <View style={[styles.avatar, styles.avatarFallback]}>
-                <ThemedText variant="label" weight="extrabold" color={theme.colors.onAvatar} style={styles.avatarInitials}>
-                  {/* Same avatar as the profile hero, so the same name rule. */}
-                  {initials(displayNameOf(user))}
-                </ThemedText>
-              </View>
+            {({ pressed }) => (
+              <>
+                <GlassFace radius={AVATAR_GLASS_RADIUS} pressed={reduceMotion && pressed} />
+                {user?.avatarUrl ? (
+                  <Image source={{ uri: user.avatarUrl }} style={styles.avatar} contentFit="cover" />
+                ) : (
+                  <View style={[styles.avatar, styles.avatarFallback]}>
+                    <ThemedText
+                      variant="label"
+                      weight="extrabold"
+                      color={theme.colors.onAvatar}
+                      style={styles.avatarInitials}
+                    >
+                      {/* Same avatar as the profile hero, so the same name rule. */}
+                      {initials(displayNameOf(user))}
+                    </ThemedText>
+                  </View>
+                )}
+              </>
             )}
           </Pressable>
         </>
@@ -158,23 +173,32 @@ export function AppTopBar({
   );
 }
 
-/** A heading this short still has to leave room for three 44pt controls at 2× text on a 320pt phone. */
+/**
+ * A heading this short still has to leave room for the right column at 2×
+ * text on a 320pt phone. Since the glass circles (2026-11-10) that column is
+ * three 44pt circles 8pt apart plus the row's 16pt edge — 164pt (it was
+ * 148pt) — so a long Burmese heading ellipsizes about 16pt sooner than before.
+ */
 const HEADING_MAX_SCALE = 1.4;
+/** The avatar's glass circle fills its 44pt target. */
+const AVATAR_GLASS_RADIUS = theme.layout.minTouch / 2;
 /** ThemedText's own test: Burmese is never tracked, and needs its taller line. */
 const MYANMAR_SCRIPT = /[\u1000-\u109F\uAA60-\uAA7F]/;
 
 const styles = StyleSheet.create({
-  /** The board: 26/32 black, -0.03em, 16pt from the edge (the row's 8 + 8). */
-  heading: { fontSize: 26, paddingLeft: theme.spacing.sm, flexShrink: 1 },
+  /** The "Top bar" board: 26/32 black, -0.03em, 20pt from the edge (the row's 16 + 4). */
+  heading: { fontSize: 26, paddingLeft: theme.spacing.xs, flexShrink: 1 },
   headingLatin: { lineHeight: 32, letterSpacing: -0.78 },
   headingMyanmar: { lineHeight: 40, letterSpacing: 0 },
-  /** The row's 8pt inset + this 8 = the design's 16pt to the crimson bar. */
+  /**
+   * The row's 16pt inset puts the crimson bar where the design has it, 16pt
+   * from the edge; the wordmark is a brand, not a control, so it stays plain.
+   */
   logoButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     minHeight: theme.layout.minTouch,
-    paddingLeft: theme.spacing.sm,
     paddingRight: theme.spacing.sm,
   },
   /** DesignSystem: 6×24, radius 2, crimson. */
@@ -192,6 +216,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  avatarPressed: { transform: [{ scale: 0.96 }] },
   /** 32pt, with the design's 1pt white-at-12% inner ring. */
   avatar: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: theme.colors.tonal },
   avatarFallback: { backgroundColor: theme.colors.avatar, alignItems: "center", justifyContent: "center" },

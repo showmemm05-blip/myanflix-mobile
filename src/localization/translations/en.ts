@@ -1062,8 +1062,10 @@ export const en = {
     changeCategoryA11y: "{name}, change category",
     /** The overlay's spoken name: "Movies categories". */
     categoriesOverlayA11y: "{type} categories",
-    /** The overlay's heading over the genres (the admin categories sit under browse.title). */
+    /** The pop-up's heading over the genres (the admin categories and the genres, as one list). */
     genresHeading: "Genres",
+    /** The Movies pop-up's heading over the movie types ("Korean movie", "Myanmar movie"). */
+    movieTypeHeading: "Movie type",
     categoriesLoadError: "Couldn't load the categories.",
     /** The overlay's Books segment for a guest — book categories are members-only. */
     booksCategoriesSignIn: "Sign in to see book categories",
@@ -1189,17 +1191,6 @@ export const en = {
     /** Under a Subscribe promo: "10,000 Ks" then "for 30 days · or 4,000 Ks for 10 days". */
     planFor: "for {days}",
     planOr: "or {price} for {days}",
-    /* the value strip */
-    whyKicker: "Why MyanFlix",
-    whyTitle: "Made for Myanmar, on any connection",
-    valueStoriesTitle: "Myanmar stories",
-    valueStoriesLine: "Movies, series and books in one app.",
-    valueHdTitle: "HD that adapts",
-    valueHdLine: "240p to 720p, switching with your connection.",
-    valueBooksTitle: "Books with chapters",
-    valueBooksLine: "Read chapter by chapter, free when you sign in.",
-    valuePayTitle: "Pay the Myanmar way",
-    valuePayLine: "KBZPay or WavePay.",
     /* the spotlight */
     spotlightA11y: "Spotlight",
     spotlightChip: "Spotlight",

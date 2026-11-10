@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { StackActions } from "@react-navigation/native";
 import { HomeStackNavigator } from "@/navigation/HomeStackNavigator";
 import { SearchStackNavigator } from "@/navigation/SearchStackNavigator";
 import { WalletStackNavigator } from "@/navigation/WalletStackNavigator";
 import { LotteryHubScreen } from "@/screens/Lottery/LotteryHub";
-import { CustomTabBar } from "@/components/layout/TabBar";
+import { CustomTabBar, TAB_BLUR_TARGETS, TabBlurTarget, createTabBlurTargets } from "@/components/layout/TabBar";
 import { theme } from "@/theme";
 import type { MainTabParamList } from "@/navigation/types";
 
@@ -12,6 +13,13 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 /** Route names are frozen (navigation/types.ts) — only the bar's look changes. */
 export function MainTabNavigator() {
+  /**
+   * The tab pages' blur targets, for the bar's glass on Android 12+ (see
+   * TabBlurTarget in components/layout/TabBar). One registry per navigator,
+   * made once: `screenLayout` fills it and the bar reads the focused tab's.
+   */
+  const [blurTargets] = useState(createTabBlurTargets);
+
   return (
     <Tab.Navigator
       /**
@@ -28,7 +36,24 @@ export function MainTabNavigator() {
         headerShown: false,
         sceneStyle: { backgroundColor: theme.colors.background },
       }}
-      tabBar={(props) => <CustomTabBar {...props} />}
+      /**
+       * Android only blurs what sits inside a BlurTargetView, so on Android
+       * 12+ each tab's page is wrapped in its own target here, inside the
+       * tab's scene — never around the bar, which the navigator draws after
+       * the scenes. Elsewhere (iOS, older Android, or the ANDROID_BAR_BLUR
+       * switch off) no wrapper is mounted and the pages render exactly as
+       * before.
+       */
+      screenLayout={
+        TAB_BLUR_TARGETS
+          ? ({ route, children }) => (
+              <TabBlurTarget targets={blurTargets} routeKey={route.key}>
+                {children}
+              </TabBlurTarget>
+            )
+          : undefined
+      }
+      tabBar={(props) => <CustomTabBar {...props} blurTargets={blurTargets} />}
     >
       <Tab.Screen name="HomeTab" component={HomeStackNavigator} />
       <Tab.Screen

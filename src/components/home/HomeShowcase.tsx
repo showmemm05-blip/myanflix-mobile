@@ -36,7 +36,7 @@ import type { HomeSettings, ShowcasePromo, ShowcaseSpotlight, ShowcaseTitle } fr
 
 /**
  * THE SHOWCASE SECTIONS of Home (owner, 2026-10-08 — HomeMobile.dc.html):
- * the browse chips over the hero, the "Why MyanFlix" value strip, the
+ * the browse chips over the hero, the
  * spotlight banner, the Premium band, the books band, the coming-soon strip
  * and the "Also on the web" card. The existing rows live in HomeRows.tsx.
  *
@@ -85,61 +85,6 @@ export const PayChips = memo(function PayChips({ tone }: { tone: "art" | "panel"
           </ThemedText>
         </View>
       ))}
-    </View>
-  );
-});
-
-/* ------------------------------------------------------------------ */
-/* Why MyanFlix — the value strip                                       */
-/* ------------------------------------------------------------------ */
-
-/** The board's stroke icons (24 × 24). */
-const VALUE_ICONS = {
-  stories:
-    "M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5zM8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4",
-  hd: "M5 12.5a7 7 0 0 1 14 0M8.5 16a3.5 3.5 0 0 1 7 0M12 19.5h.01M2 9a10 10 0 0 1 20 0",
-  books: "M4 5.5C6.5 4.5 9.5 4.5 12 6c2.5-1.5 5.5-1.5 8-.5V19c-2.5-1-5.5-1-8 .5-2.5-1.5-5.5-1.5-8-.5zM12 6v13.5",
-  pay: "M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5zM15 12h2.5",
-} as const;
-
-/** Four static tiles in a rail (translated, no request). */
-export const ValueStrip = memo(function ValueStrip({ first }: { first?: boolean }) {
-  const { t } = useLanguage();
-  const tiles = [
-    { key: "stories", icon: VALUE_ICONS.stories, title: t.home.valueStoriesTitle, line: t.home.valueStoriesLine },
-    { key: "hd", icon: VALUE_ICONS.hd, title: t.home.valueHdTitle, line: t.home.valueHdLine },
-    { key: "books", icon: VALUE_ICONS.books, title: t.home.valueBooksTitle, line: t.home.valueBooksLine },
-    { key: "pay", icon: VALUE_ICONS.pay, title: t.home.valuePayTitle, line: t.home.valuePayLine },
-  ];
-  return (
-    <View style={first ? styles.valueFirst : styles.section}>
-      <SectionHeader eyebrow={t.home.whyKicker} title={t.home.whyTitle} titleLines={3} />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-        {tiles.map((tile) => (
-          <View key={tile.key} style={styles.valueTile} accessible accessibilityLabel={`${tile.title}: ${tile.line}`}>
-            <View style={styles.valueIcon}>
-              <Svg width={22} height={22} viewBox="0 0 24 24" pointerEvents="none">
-                <Path
-                  d={tile.icon}
-                  fill="none"
-                  stroke={theme.colors.link}
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </Svg>
-            </View>
-            <View style={styles.valueText}>
-              <ThemedText weight="extrabold" style={styles.valueTitle}>
-                {tile.title}
-              </ThemedText>
-              <ThemedText variant="caption" weight="regular" color={theme.colors.textMuted} numberOfLines={3}>
-                {tile.line}
-              </ThemedText>
-            </View>
-          </View>
-        ))}
-      </ScrollView>
     </View>
   );
 });
@@ -793,8 +738,6 @@ export const AlsoOnWeb = memo(function AlsoOnWeb({ webUrl, first }: { webUrl: st
 const styles = StyleSheet.create({
   section: { marginTop: HUB_SECTION_GAP },
   firstSection: { marginTop: 10 },
-  /** The value strip opens the page under the hero's dots row (board: 28pt). */
-  valueFirst: { marginTop: 20 },
   inset: { paddingHorizontal: theme.layout.screenPadding },
   rail: { paddingHorizontal: theme.layout.screenPadding, gap: 10 },
   shrink: { flexShrink: 1 },
@@ -816,27 +759,6 @@ const styles = StyleSheet.create({
   payChipArt: { backgroundColor: withAlpha(theme.colors.background, 0.6), borderWidth: 1, borderColor: theme.colors.borderStrong },
   payChipPanel: { backgroundColor: theme.colors.surfaceElevated },
   payDot: { width: 8, height: 8, borderRadius: 4 },
-
-  /* value strip */
-  valueTile: {
-    width: 200,
-    minHeight: 132,
-    padding: 14,
-    borderRadius: 16,
-    backgroundColor: theme.colors.surfaceElevated,
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  valueIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: theme.colors.primarySoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  valueText: { gap: 4 },
-  valueTitle: { fontSize: 15, lineHeight: 20 },
 
   /* spotlight */
   spotlight: {

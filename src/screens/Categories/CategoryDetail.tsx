@@ -88,7 +88,8 @@ export function CategoryDetailScreen({ route, navigation }: Props) {
   const [seriesFilters, setSeriesFilters] = useState<SeriesFilters>(createSeriesFilters);
   const [sheetOpen, setSheetOpen] = useState(false);
   // The glass bar (components/layout/GlassBar): the back button floats over
-  // the hero, transparent at the top, frosted once the page scrolls under it.
+  // the hero, clear at the top, the scroll-edge fade behind it once the page
+  // scrolls under it.
   const glass = useGlassBar();
   const listRef = useAnimatedRef<FlatList<GridItem>>();
   useScrollOffset(listRef, glass.scrollY);

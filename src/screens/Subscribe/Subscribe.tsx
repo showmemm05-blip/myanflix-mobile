@@ -94,10 +94,11 @@ export function SubscribeScreen({ navigation }: Props) {
   const topInset = Platform.OS === "ios" ? 0 : insets.top;
 
   /**
-   * The glass behind the close button (components/layout/GlassBar): this
+   * The fade behind the close button (components/layout/GlassBar): this
    * screen's "bar" is that one control, 8pt down from the top inset, so the
-   * glass covers the inset and its 44pt row — transparent over the art at
-   * the top, frosted once the plans scroll up under the button.
+   * fade covers the inset and its 44pt row (and 32pt more) — nothing over
+   * the art at the top, the scroll-edge fade once the plans scroll up under
+   * the button.
    */
   const blurTarget = useRef<ViewInstance>(null);
   const scrollRef = useAnimatedRef<ScrollViewInstance>();
@@ -387,7 +388,7 @@ export function SubscribeScreen({ navigation }: Props) {
       ) : null}
 
       <GlassBarBackground scrollY={scrollY} height={glassHeight} blurTarget={blurTarget} />
-      {/* Over the art, fixed while the page scrolls — the board's blurred disc. */}
+      {/* Over the art, fixed while the page scrolls — the top bars' 44pt glass circle, 16pt in. */}
       <IconButton
         icon="close"
         overlay
@@ -402,7 +403,7 @@ export function SubscribeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   scrollContent: { flexGrow: 1, paddingBottom: theme.spacing.lg },
-  close: { position: "absolute", right: theme.spacing.sm },
+  close: { position: "absolute", right: theme.layout.screenPadding },
   intro: {
     marginTop: -ART_OVERLAP,
     paddingHorizontal: theme.layout.screenPadding,

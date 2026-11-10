@@ -151,9 +151,9 @@ export function WalletScreen({ navigation, route }: Props) {
   /**
    * The root bar floats over the page: at rest it lies on the hero art (its
    * own soft scrim keeps the wordmark and the clock legible); once the page
-   * scrolls, the frosted glass (components/layout/GlassBar) fades in behind
-   * it — never a solid strip (the owner, 2026-10-02) — so rows passing under
-   * the wordmark and the clock are blurred and dimmed.
+   * scrolls, the scroll-edge fade (components/layout/GlassBar) comes in
+   * behind it — never a solid strip (the owner, 2026-10-02) — so rows passing
+   * under the wordmark and the clock are dimmed and lightly blurred.
    */
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((event) => {

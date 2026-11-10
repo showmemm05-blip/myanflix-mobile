@@ -107,7 +107,8 @@ export function NotificationsScreen({ navigation }: Props) {
 
   const items = useMemo(() => flattenPages(notificationsQuery.data?.pages), [notificationsQuery.data]);
   // The glass bar (components/layout/GlassBar): the bar floats over the feed,
-  // transparent at the top, frosted once the rows scroll under it.
+  // clear at the top, the scroll-edge fade behind it once the rows scroll
+  // under it.
   const glass = useGlassBar();
   const listRef = useAnimatedRef<SectionList<AppNotification, Section>>();
   useScrollOffset(listRef, glass.scrollY);

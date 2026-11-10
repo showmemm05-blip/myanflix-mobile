@@ -115,7 +115,8 @@ export function SeriesDetailsScreen({ route, navigation }: Props) {
   // An animated ref, so the glass bar can follow this page's scroll on the UI thread.
   const scrollRef = useAnimatedRef<ScrollViewInstance>();
   // The glass bar (components/layout/GlassBar): back and share float over the
-  // hero, transparent at the top, frosted once the page scrolls under them.
+  // hero, clear at the top, the scroll-edge fade behind them once the page
+  // scrolls under them.
   const glass = useGlassBar();
   const episodesY = useRef(0);
   const commentsY = useRef(0);

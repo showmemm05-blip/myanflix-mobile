@@ -103,7 +103,8 @@ export function FavoritesScreen({ navigation }: Props) {
   // Presentation-only spinner state for pull-to-refresh.
   const [refreshing, setRefreshing] = useState(false);
   // The glass bar (components/layout/GlassBar): the bar floats over the grid,
-  // transparent at the top, frosted once the posters scroll under it.
+  // clear at the top, the scroll-edge fade behind it once the posters scroll
+  // under it.
   const glass = useGlassBar();
   const listRef = useAnimatedRef<FlatList<FavoriteTitle>>();
   useScrollOffset(listRef, glass.scrollY);

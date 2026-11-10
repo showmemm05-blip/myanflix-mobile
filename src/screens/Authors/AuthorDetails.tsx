@@ -65,8 +65,9 @@ export function AuthorDetailsScreen({ route, navigation }: Props) {
   const dockClearance = useDockClearance();
   const grid = useBookGrid("author");
   // The glass bar (components/layout/GlassBar): the back button floats over
-  // the band, transparent at the top, frosted once the page scrolls under it
-  // — it replaces the solid ground that used to fade in there.
+  // the band, clear at the top, the scroll-edge fade behind it once the page
+  // scrolls under it — it replaces the solid ground that used to fade in
+  // there.
   const glass = useGlassBar();
   const listRef = useAnimatedRef<FlatList<Book>>();
   const authorQuery = useBookAuthor(authorId);

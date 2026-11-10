@@ -3,8 +3,8 @@ import { dockClearance } from "@/theme";
 
 /**
  * The exact bottom padding a scrolling tab-root screen needs on THIS device so
- * its last row clears the floating dock with 20pt of air (104pt above the
- * safe-area bottom inset).
+ * its last row clears the floating bottom bar with 20pt of air (90pt above the
+ * safe-area bottom inset: the bar's 8pt lift + its 62pt height + 20pt).
  *
  * `theme.layout.tabBarClearance` is the static stand-in StyleSheets use; it
  * assumes the tallest common inset (48dp) so it never under-pads. Prefer this

@@ -46,8 +46,8 @@ type Props = CompositeScreenProps<
  * explore tiles at the foot of the scroll.
  *
  * The hero runs full-bleed under the status bar with the TRANSPARENT top bar
- * laid over it; as the page scrolls, the frosted glass (components/layout/
- * GlassBar) fades in behind the bar — never a solid ground (the owner,
+ * laid over it; as the page scrolls, the scroll-edge fade (components/layout/
+ * GlassBar) comes in behind the bar — never a solid ground (the owner,
  * 2026-10-02) — so the wordmark, bell and avatar stay reachable, and legible,
  * all the way down. Entrance motion is spent only on the hero, the one block on
  * screen at t=0.
@@ -179,7 +179,7 @@ export function ArcadeHomeScreen({ navigation }: Props) {
         </Animated.ScrollView>
       </GlassTarget>
 
-      {/* The frosted glass, faded in by scroll — under the bar, over the page. */}
+      {/* The scroll-edge fade, brought in by scroll — under the bar, over the page. */}
       <GlassBarBackground scrollY={scrollY} height={topBarHeight} blurTarget={blurTarget} />
       {/* touchThrough: the bar's empty space passes touches to the page, as on the Media root. */}
       <AppTopBar transparent touchThrough />

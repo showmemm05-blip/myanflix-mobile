@@ -74,8 +74,11 @@ const VIEWBOX: Record<HubFallbackFormat, { w: number; h: number }> = {
   landscape: { w: 240, h: 135 },
 };
 
-/** FNV-1a over the seed — small, fast and the same on every device. */
-function hashSeed(seed: string): number {
+/**
+ * FNV-1a over the seed — small, fast and the same on every device. Also
+ * picks the Categories pop-up's tile colours (CategoryTile).
+ */
+export function hashSeed(seed: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < seed.length; i += 1) {
     h ^= seed.charCodeAt(i);

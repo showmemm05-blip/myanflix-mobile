@@ -53,8 +53,8 @@ export function AuthorsListScreen({ navigation }: Props) {
   const grid = useAuthorGrid();
   const dockClearance = useDockClearance();
   // The glass bar (components/layout/GlassBar): the title and the search field
-  // float over the grid, transparent at the top, frosted once tiles scroll
-  // under them.
+  // float over the grid, clear at the top, the scroll-edge fade behind them
+  // once tiles scroll under them.
   const glass = useGlassBar(BAR_ROWS_ESTIMATE);
   const listRef = useAnimatedRef<FlatList<BookAuthorListItem>>();
   const { term: searchText, setTerm: setSearchText, effectiveTerm, clear: clearSearch } = useSearchTerm();

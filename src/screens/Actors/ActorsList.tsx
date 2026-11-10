@@ -143,8 +143,8 @@ export function ActorsListScreen({ navigation }: Props) {
   const grid = usePosterGrid();
   const dockClearance = useDockClearance();
   // The glass bar (components/layout/GlassBar): the title and the search field
-  // float over the grid, transparent at the top, frosted once faces scroll
-  // under them.
+  // float over the grid, clear at the top, the scroll-edge fade behind them
+  // once faces scroll under them.
   const glass = useGlassBar(BAR_ROWS_ESTIMATE);
   const listRef = useAnimatedRef<FlatList<ActorListItem>>();
   const {

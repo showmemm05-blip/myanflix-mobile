@@ -48,7 +48,7 @@ const THAI_ART: SectionCardArt = {
 /**
  * THE LOTTERY TAB — the hub, since 2026-10-23 on the Media hub's recipe
  * (the owner: "change the Lottery page same as media page"; LotteryHub.dc.html):
- * the frosted root bar with the tab's own "Lottery" heading (no search), the
+ * the glass root bar with the tab's own "Lottery" heading (no search), the
  * page scrolling under it, the dock cleared at the foot, and "Choose a game"
  * over a 2 × 2 grid of the Media hub's section cards:
  *
@@ -208,7 +208,7 @@ export function LotteryHubScreen({ navigation }: Props) {
         </Animated.ScrollView>
       </GlassTarget>
 
-      {/* The frosted glass, faded in by scroll — under the bar, over the page. */}
+      {/* The scroll-edge fade, brought in by scroll — under the bar, over the page. */}
       <GlassBarBackground scrollY={scrollY} height={barHeight} blurTarget={blurTarget} />
       <AppTopBar transparent touchThrough heading={t.nav.lottery} onLayout={onBarLayout} />
     </View>
