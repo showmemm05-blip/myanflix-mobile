@@ -58,7 +58,7 @@ import { useToggleWatchlist, useWatchlist } from "@/hooks/useWatchlist";
 import { useAuthStore } from "@/store/authStore";
 import { useSearchFiltersStore } from "@/store/searchFiltersStore";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { hasAccess } from "@/utils/access";
+import { hasAccess, movieAccessType } from "@/utils/access";
 import { formatDuration } from "@/utils/format";
 import { formatKyat } from "@/utils/currency";
 import { localizedDescription } from "@/utils/localizedDescription";
@@ -412,14 +412,14 @@ export function HomeScreen({ navigation }: Props) {
       // The board's white Play: the player when the viewer can watch; the
       // movie's page (where Subscribe and the locked note live) when not —
       // and while a signed-in viewer's subscription is still on its way.
-      const canWatch = !(movie.accessType !== "FREE" && subscriptionPending) && hasAccess(movie.accessType, isSubscribed);
+      const canWatch = !(movieAccessType(movie) !== "FREE" && subscriptionPending) && hasAccess(movieAccessType(movie), isSubscribed);
       return {
         key: movie.id,
         title: movie.title,
         // The stage is portrait: the poster first, the cover if that is all there is.
         imageUrl: movie.posterUrl ?? movie.coverUrl,
         isNew,
-        accessType: movie.accessType,
+        accessType: movieAccessType(movie),
         kicker: isNew ? t.browse.recentlyAdded : t.hub.featured,
         rating: movie.rating > 0 ? movie.rating : null,
         meta: [yearOf(movie), formatDuration(movie.duration), movie.genre || null],
@@ -485,11 +485,9 @@ export function HomeScreen({ navigation }: Props) {
     (title: ShowcaseTitle) => {
       if (title.type === "SERIES") return openSeries(title);
       if (title.type === "BOOK") return navigation.navigate("BookReader", { bookId: title.id });
-      const accessType = title.accessType ?? "FREE";
-      const canWatch = !(accessType !== "FREE" && subscriptionPending) && hasAccess(accessType, isSubscribed);
-      return canWatch ? playMovie(title.id) : openMovie(title);
+      return playMovie(title.id);
     },
-    [openSeries, navigation, subscriptionPending, isSubscribed, playMovie, openMovie],
+    [openSeries, navigation, playMovie],
   );
   const movieRows = useMemo<Record<"top10" | "rated", MovieRowSpec>>(
     () => ({

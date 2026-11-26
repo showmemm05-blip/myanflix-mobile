@@ -356,6 +356,9 @@ export const en = {
     quality: "Quality",
     /** The master playlist — bandwidth picks the rendition, as it always has. */
     qualityAuto: "Auto",
+    qualityAutoFree: "Auto (up to 480p)",
+    qualityUpgrade: "Upgrade to Premium for {quality}",
+    freeQualityUnavailable: "This title has no quality available on the Free plan.",
     /** The same-category rail under a film; tapping a card plays it in place. */
     recommended: "Recommended",
     /** Spoken name of the seek line. */

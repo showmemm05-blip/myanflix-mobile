@@ -42,6 +42,10 @@ interface Props {
   /** The label currently PLAYING, or `null` for the Auto row. */
   qualityValue: string | null;
   onSelectQuality: (label: string | null) => void;
+  showAutoQuality: boolean;
+  cappedAutoQuality: boolean;
+  upgradeQuality: string | null;
+  onUpgradeQuality: () => void;
 
   /** The title's own subtitles from the stream response. Empty hides the tab. */
   tracks: StreamSubtitle[];
@@ -56,9 +60,8 @@ interface Props {
  * sheets; the rows, the options and what a pick does are exactly theirs:
  *
  * - Speed: 0.5x–2x as a 3-column grid; the chosen rate is white.
- * - Quality: "Auto" first (the master playlist, the only row that adapts),
- *   then the title's rungs verbatim ("720p"). The tab only exists when the
- *   title has a ladder.
+ * - Quality: the allowed renditions, with Auto for Premium viewers and an
+ *   upgrade action when a higher rendition is available.
  * - Subtitles: "Off", then the title's tracks; while one is on, the caption's
  *   size and background follow — read and written straight from the prefs
  *   store, as before. The tab only exists when the title has subtitles.
@@ -80,6 +83,10 @@ export function PlayerSettingsSheet({
   qualities,
   qualityValue,
   onSelectQuality,
+  showAutoQuality,
+  cappedAutoQuality,
+  upgradeQuality,
+  onUpgradeQuality,
   tracks,
   subtitleValue,
   onSelectSubtitle,
@@ -94,7 +101,8 @@ export function PlayerSettingsSheet({
   const setSubtitleBackground = usePlayerPrefsStore((s) => s.setSubtitleBackground);
 
   const tabs: { key: SettingsTab; label: string }[] = [{ key: "speed", label: t.movie.speed }];
-  if (qualities.length > 0) tabs.push({ key: "quality", label: t.player.quality });
+  const showQualityTab = qualities.length > 0 || upgradeQuality !== null;
+  if (showQualityTab) tabs.push({ key: "quality", label: t.player.quality });
   if (tracks.length > 0) tabs.push({ key: "subtitles", label: t.player.subtitles });
 
   const [tab, setTab] = useState<SettingsTab>(initialTab);
@@ -196,22 +204,42 @@ export function PlayerSettingsSheet({
         )}
 
         {activeTab === "quality" && (
-          <View style={styles.list} accessibilityRole="radiogroup" accessibilityLabel={t.player.quality}>
-            <MenuRow
-              label={t.player.qualityAuto}
-              selected={qualityValue === null}
-              onPress={() => chooseQuality(null)}
-              tabular
-            />
-            {qualities.map((option) => (
-              <MenuRow
-                key={option.label}
-                label={option.label}
-                selected={option.label === qualityValue}
-                onPress={() => chooseQuality(option.label)}
-                tabular
-              />
-            ))}
+          <View style={styles.list}>
+            <View style={styles.qualityChoices} accessibilityRole="radiogroup" accessibilityLabel={t.player.quality}>
+              {showAutoQuality && (
+                <MenuRow
+                  label={cappedAutoQuality ? t.player.qualityAutoFree : t.player.qualityAuto}
+                  selected={qualityValue === null}
+                  onPress={() => chooseQuality(null)}
+                  tabular
+                />
+              )}
+              {qualities.map((option) => (
+                <MenuRow
+                  key={option.label}
+                  label={option.label}
+                  selected={option.label === qualityValue}
+                  onPress={() => chooseQuality(option.label)}
+                  tabular
+                />
+              ))}
+            </View>
+            {upgradeQuality && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  onClose();
+                  onUpgradeQuality();
+                }}
+                style={({ pressed }) => [styles.upgrade, pressed && styles.upgradePressed]}
+              >
+                <Ionicons name="lock-closed" size={16} color={theme.colors.premium} />
+                <ThemedText weight="bold" color={theme.colors.premium} style={styles.upgradeLabel}>
+                  {t.player.qualityUpgrade.replace("{quality}", upgradeQuality)}
+                </ThemedText>
+                <Ionicons name="chevron-forward" size={16} color={theme.colors.premium} />
+              </Pressable>
+            )}
           </View>
         )}
 
@@ -295,7 +323,10 @@ export function PlayerSettingsSheet({
   // Sized for the tallest tab the title offers, so switching tabs never
   // resizes the sheet; capped at 80% of the window, past which the body scrolls.
   const speedBody = 20 + SPEED_TILE_HEIGHT * 2 + GRID_GAP;
-  const qualityBody = qualities.length > 0 ? 12 + (qualities.length + 1) * (MENU_ROW_HEIGHT + 4) : 0;
+  const qualityRows = qualities.length + (showAutoQuality ? 1 : 0);
+  const qualityBody = showQualityTab
+    ? 12 + qualityRows * (MENU_ROW_HEIGHT + 4) + (upgradeQuality ? 68 : 0)
+    : 0;
   const subtitleBody =
     tracks.length > 0
       ? 12 + (tracks.length + 1) * (MENU_ROW_HEIGHT_COMPACT + 2) + (subtitleValue ? STYLE_BLOCK_HEIGHT : 0)
@@ -369,6 +400,20 @@ const styles = StyleSheet.create({
   speedTileSelected: { backgroundColor: theme.colors.play },
   speedLabel: { fontSize: 17 },
   list: { gap: 4, marginTop: 12 },
+  qualityChoices: { gap: 4 },
+  upgrade: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    minHeight: MENU_ROW_HEIGHT,
+    paddingHorizontal: 14,
+    paddingVertical: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.colors.premiumSoft,
+  },
+  upgradePressed: { opacity: 0.75 },
+  upgradeLabel: { flex: 1 },
   listTight: { gap: 2, marginTop: 12 },
   styleBlock: {
     gap: 10,

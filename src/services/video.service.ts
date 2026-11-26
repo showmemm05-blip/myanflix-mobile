@@ -7,6 +7,8 @@ export type StreamAccessResult =
   | {
       status: "ready";
       playlistUrl: string;
+      maxVideoHeight: 480 | 1080 | undefined;
+      upgradeQuality: string | null | undefined;
       /**
        * Language of the track the manifest marks DEFAULT=YES, or null when the
        * title has none. The player falls back to this when the viewer has never
@@ -43,12 +45,14 @@ const RESUME_MIN_SECONDS = 5;
 export const videoService = {
   async getStreamInfo(movieId: string, options: RequestSignalOptions = {}): Promise<StreamAccessResult> {
     try {
-      const { playlistUrl, subtitles, qualities } = await videosApi.getStreamInfo(movieId, options);
+      const { playlistUrl, subtitles, qualities, maxVideoHeight, upgradeQuality } = await videosApi.getStreamInfo(movieId, options);
       const rows = subtitles ?? [];
       const defaultSubtitle = rows.find((s) => s.isDefault);
       return {
         status: "ready",
         playlistUrl,
+        maxVideoHeight,
+        upgradeQuality,
         defaultSubtitleLanguage: defaultSubtitle?.language ?? null,
         subtitles: rows,
         qualities: qualities ?? [],

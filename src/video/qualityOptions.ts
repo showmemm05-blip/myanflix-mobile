@@ -1,24 +1,38 @@
 import type { StreamQuality } from "@/types/video";
 
-/**
- * Which playlist should be mounted, given the ladder this title offers and the
- * viewer's remembered choice.
- *
- * It exists as one pure function because the question is asked in more than one
- * place — the initial pin, and the error paths that adopt a freshly signed
- * response — and two answers to it is exactly how the badge on the control ends
- * up claiming a quality that is not playing.
- *
- * A label this title does not have resolves to the master and the preference is
- * deliberately LEFT STORED, the same rule `findSubtitleTrackByLanguage` follows
- * for languages: an episode without a 720p rung plays Auto, and 720p comes back
- * on the next one that has it rather than being silently forgotten.
- */
-export function resolveQualityUrl(
-  masterUrl: string,
+const FREE_MAX_HEIGHT = 480;
+
+function heightOf(label: string): number {
+  const match = /^(\d+)p$/i.exec(label.trim());
+  return match ? Number(match[1]) : 0;
+}
+
+/** The backend supplies the ladder in descending order. */
+export function getQualityOptions(qualities: StreamQuality[], isPremium: boolean) {
+  if (isPremium) return { qualities, upgradeQuality: null };
+  return {
+    qualities: qualities.filter(({ label }) => {
+      const height = heightOf(label);
+      return height > 0 && height <= FREE_MAX_HEIGHT;
+    }),
+    upgradeQuality: qualities.find(({ label }) => heightOf(label) > FREE_MAX_HEIGHT)?.label ?? null,
+  };
+}
+
+export interface PlaybackSource {
+  url: string;
+  qualityLabel: string | null;
+}
+
+/** Resolve within the allowed ladder, keeping the stored preference for future titles. */
+export function resolvePlaybackSource(
+  masterUrl: string | null,
   qualities: StreamQuality[],
   label: string | null,
-): string {
-  if (label === null) return masterUrl;
-  return qualities.find((q) => q.label === label)?.url ?? masterUrl;
+  allowAuto: boolean,
+): PlaybackSource | null {
+  const selected = qualities.find((quality) => quality.label === label) ??
+    (allowAuto ? undefined : qualities[0]);
+  if (selected) return { url: selected.url, qualityLabel: selected.label };
+  return allowAuto && masterUrl ? { url: masterUrl, qualityLabel: null } : null;
 }

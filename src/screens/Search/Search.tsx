@@ -74,7 +74,7 @@ import { useRecentSearchesStore } from "@/store/recentSearchesStore";
 import type { Book } from "@/types/book";
 import { SEARCH_MIN_LENGTH } from "@/hooks/useSearchTerm";
 import { useLanguage } from "@/localization/LanguageProvider";
-import { hasAccess } from "@/utils/access";
+import { hasAccess, movieAccessType } from "@/utils/access";
 import { theme } from "@/theme";
 import type { MainTabParamList, RootStackParamList, SearchStackParamList } from "@/navigation/types";
 import type { ActorListItem } from "@/api/actors.api";
@@ -613,7 +613,7 @@ export function SearchScreen({ navigation, route }: Props) {
    */
   const watchMovie = useCallback(
     (movie: Movie) => {
-      if (hasAccess(movie.accessType, isSubscribed)) {
+      if (hasAccess(movieAccessType(movie), isSubscribed)) {
         navigation.getParent()?.navigate("Player", { movieId: movie.id });
       } else {
         goToMovieDetails(movie);

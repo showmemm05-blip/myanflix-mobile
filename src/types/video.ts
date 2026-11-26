@@ -26,6 +26,8 @@ export interface StreamQuality {
 
 export interface StreamInfo {
   playlistUrl: string;
+  maxVideoHeight?: 480 | 1080;
+  upgradeQuality?: string | null;
   /**
    * The ladder the master adapts between, addressable one rung at a time,
    * best-first. Optional because the phone can be talking to a backend that

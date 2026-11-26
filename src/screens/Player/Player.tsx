@@ -29,6 +29,7 @@ import { useResumePosition, useStreamInfo } from "@/hooks/useVideo";
 import { useMovie, useMovies } from "@/hooks/useMovies";
 import { usePlayerEpisodes } from "@/hooks/useSeries";
 import { useIsInWatchlist, useToggleWatchlist } from "@/hooks/useWatchlist";
+import type { StreamAccessResult } from "@/services/video.service";
 import { useSubscriptionStatus } from "@/hooks/useSubscription";
 import { useAdSession } from "@/hooks/useAdSession";
 import { useWatchProgressReporter } from "@/video/useWatchProgressReporter";
@@ -42,7 +43,7 @@ import {
   subtitleTrackKey,
   subtitleTrackTag,
 } from "@/video/subtitleTracks";
-import { resolveQualityUrl } from "@/video/qualityOptions";
+import { getQualityOptions, resolvePlaybackSource, type PlaybackSource } from "@/video/qualityOptions";
 import {
   createMidrollState,
   midrollDecisionUsable,
@@ -67,11 +68,11 @@ import {
 } from "@/video/corner";
 import { adsApi } from "@/api/ads.api";
 import { clamp } from "@/utils/format";
-import { hasAccess } from "@/utils/access";
+import { hasAccess, movieAccessType } from "@/utils/access";
 import { theme } from "@/theme";
 import type { RootStackParamList } from "@/navigation/types";
 import type { Movie } from "@/types/movie";
-import type { StreamSubtitle } from "@/types/video";
+import type { StreamQuality, StreamSubtitle } from "@/types/video";
 import type { AdPlaybackEvent, CornerAd as CornerAdPlan, VideoAd } from "@/types/ads";
 
 type VideoProgress = { currentTime: number; bufferedSeconds: number };
@@ -86,6 +87,8 @@ interface VideoEvents {
 type Props = NativeStackScreenProps<RootStackParamList, "Player">;
 
 const CONTROLS_HIDE_DELAY_MS = 3000;
+const NO_QUALITIES: StreamQuality[] = [];
+type PlaybackTier = "loading" | "free" | "premium";
 /** Two taps on the same side within this window count as a double-tap seek. */
 const DOUBLE_TAP_MS = 280;
 const SEEK_FLASH_MS = 600;
@@ -172,6 +175,15 @@ export function PlayerScreen({ route, navigation }: Props) {
 
   const movieQuery = useMovie(movieId);
   const streamQuery = useStreamInfo(movieId);
+  const subscriptionQuery = useSubscriptionStatus();
+  const subscription = subscriptionQuery.data;
+  const isSubscribed = !!subscription?.isActive &&
+    (!subscription.expiresAt || Date.parse(subscription.expiresAt) > Date.now());
+  const playbackTier: PlaybackTier = subscriptionQuery.isPending
+    ? "loading"
+    : isSubscribed ? "premium" : "free";
+  const playbackTierRef = useRef(playbackTier);
+  playbackTierRef.current = playbackTier;
   /** Where this title was left off — applied once per title, see "RESUME" below. */
   const resumeQuery = useResumePosition(movieId);
   const preferredSpeed = usePlayerPrefsStore((s) => s.preferredSpeed);
@@ -554,53 +566,43 @@ export function PlayerScreen({ route, navigation }: Props) {
    * effect then pins the new episode's link the moment its response lands.
    * Starting the new episode at 0:00 is the point there, not the price.
    */
-  const [pinnedPlaylistUrl, setPinnedPlaylistUrl] = useState<string | null>(null);
-  const readyPlaylistUrl = streamQuery.data?.status === "ready" ? streamQuery.data.playlistUrl : null;
+  const [pinnedSource, setPinnedSource] = useState<(PlaybackSource & { tier: PlaybackTier }) | null>(null);
+  const currentPin = pinnedSource?.tier === playbackTier ? pinnedSource : null;
+  const pinnedPlaylistUrl = currentPin?.url ?? null;
+  const pinPlaylist = useCallback((source: PlaybackSource) => {
+    setPinnedSource({ ...source, tier: playbackTier });
+  }, [playbackTier]);
 
-  /**
-   * The ladder, and which rung SHOULD be mounted — both derived, never a second
-   * piece of state, the same discipline `activeSubtitle` follows. The stored
-   * label is the single source of truth and it is resolved against whatever
-   * this particular title offers, so there is nothing to keep in sync when a
-   * response lands late and nothing to clear when a title has no such rung.
-   */
-  const qualities = useMemo(
-    () => (streamQuery.data?.status === "ready" ? streamQuery.data.qualities : []),
-    [streamQuery.data],
+  const streamResult = streamQuery.data;
+  const stream: Extract<StreamAccessResult, { status: "ready" }> | null =
+    streamResult?.status === "ready" ? streamResult : null;
+  const readyPlaylistUrl = stream?.playlistUrl ?? null;
+  const allowAuto = isSubscribed || stream?.maxVideoHeight === 480;
+  const streamQualities = stream?.qualities ?? NO_QUALITIES;
+  const { qualities, upgradeQuality } = useMemo(
+    () => getQualityOptions(streamQualities, isSubscribed),
+    [streamQualities, isSubscribed],
   );
-  /**
-   * A rung this EPISODE has already proved it cannot play — listed in the
-   * database, missing from storage. Suspending it here rather than clearing the
-   * stored preference is the whole difference between "this episode has no
-   * working 720p" and "this viewer no longer wants 720p": one bad folder must
-   * not cost a choice that lives in AsyncStorage and applies to every other
-   * title. Cleared when the episode changes, and when the viewer picks again.
-   */
-  const [unplayableQuality, setUnplayableQuality] = useState<string | null>(null);
-  /**
-   * The remembered choice as it applies HERE — the stored label, unless this
-   * episode has already failed on it.
-   */
-  const effectiveQuality = preferredQuality === unplayableQuality ? null : preferredQuality;
-  const desiredPlaylistUrl = readyPlaylistUrl
-    ? resolveQualityUrl(readyPlaylistUrl, qualities, effectiveQuality)
+  const offeredUpgrade = playbackTier === "free" && subscription !== undefined
+    ? (stream?.upgradeQuality ?? upgradeQuality)
     : null;
-  /**
-   * The rung actually playing — the remembered label only counts once THIS
-   * title turns out to have it, and to be playable. Undefined means Auto,
-   * whether that is the choice, a title without the rung, or a rung that
-   * failed, and all three are the truth the badge and the checkmark have to
-   * tell.
-   */
-  const activeQuality =
-    effectiveQuality === null ? undefined : qualities.find((q) => q.label === effectiveQuality);
 
-  // Pinning the DESIRED rung rather than the master matters on first mount with
-  // a remembered "720p": the screen opens straight onto that rendition, with no
-  // swap, no resume seek and no moment of Auto to flash past.
-  useEffect(() => {
-    setPinnedPlaylistUrl((current) => current ?? desiredPlaylistUrl);
-  }, [desiredPlaylistUrl]);
+  // A legacy backend’s master is unrestricted. A capped master enables Auto
+  // for free viewers while a saved higher-quality preference stays in the store.
+  const [unplayableQuality, setUnplayableQuality] = useState<string | null>(null);
+  const playableQualities = useMemo(
+    () => qualities.filter(({ label }) => label !== unplayableQuality),
+    [qualities, unplayableQuality],
+  );
+  const effectiveQuality = preferredQuality === unplayableQuality ? null : preferredQuality;
+  const desiredSource = useMemo(
+    () => playbackTier === "loading"
+      ? null
+      : resolvePlaybackSource(readyPlaylistUrl, playableQualities, effectiveQuality, allowAuto),
+    [playbackTier, readyPlaylistUrl, playableQualities, effectiveQuality, allowAuto],
+  );
+  const activeQualityLabel = (currentPin ?? desiredSource)?.qualityLabel ?? null;
+  const activeQuality = qualities.find((quality) => quality.label === activeQualityLabel);
 
   // A new source has not opened yet, by definition. Keyed on the pin so it
   // covers every route that swaps the source — the viewer's pick, the drop to
@@ -639,6 +641,19 @@ export function PlayerScreen({ route, navigation }: Props) {
     pendingResumeRef.current = position;
     resumeTimeoutRef.current = setTimeout(clearResumeWait, RESUME_LOAD_TIMEOUT_MS);
   }, [duration, position, clearResumeWait]);
+
+  useEffect(() => {
+    if (!desiredSource || pinnedPlaylistUrl) return;
+    if (pinnedSource) {
+      captureResume();
+      setPlaybackError(null);
+      setIsBuffering(true);
+      setSubtitleTracks([]);
+      playbackRecoveryTriedRef.current = false;
+      qualityFallbackTriedRef.current = false;
+    }
+    pinPlaylist(desiredSource);
+  }, [desiredSource, pinnedPlaylistUrl, pinnedSource, captureResume, pinPlaylist]);
 
   /**
    * PRE-ROLL AD (2026-11-03). Before the film, the backend may hand a title
@@ -1066,19 +1081,29 @@ export function PlayerScreen({ route, navigation }: Props) {
       const recoverLabel = sourceEverLoadedRef.current ? effectiveQuality : preferredQuality;
       refetchStream()
         .then((result) => {
-          if (recoveringId !== movieIdRef.current) return;
+          if (recoveringId !== movieIdRef.current || playbackTier !== playbackTierRef.current) return;
           // Resolved against the FRESH response's own ladder — the rung URLs
           // and the master are signed together and expire together, so the
           // whole ladder is renewed by this one refetch.
-          const fresh =
-            result.data?.status === "ready"
-              ? resolveQualityUrl(result.data.playlistUrl, result.data.qualities, recoverLabel)
-              : undefined;
+          const refreshed = result.data;
+          const freshQualities = refreshed?.status === "ready"
+            ? getQualityOptions(refreshed.qualities, isSubscribed).qualities.filter(
+              (quality) => !failedSourcesRef.current.has(quality.url),
+            )
+            : NO_QUALITIES;
+          const fresh = refreshed?.status === "ready"
+            ? resolvePlaybackSource(
+              refreshed.playlistUrl,
+              freshQualities,
+              recoverLabel,
+              isSubscribed || refreshed.maxVideoHeight === 480,
+            )
+            : null;
           // A link already known not to open is not a recovery, whether it is
           // the one still pinned (a refetch inside the same signing hour hands
           // back the very same URL) or the other rung this failure has been
           // alternating with.
-          if (!fresh || failedSourcesRef.current.has(fresh)) {
+          if (!fresh || failedSourcesRef.current.has(fresh.url)) {
             onGiveUp();
             return;
           }
@@ -1096,8 +1121,10 @@ export function PlayerScreen({ route, navigation }: Props) {
           // it while mounting the master would leave the badge claiming a
           // quality that is not playing — the one thing the suspension exists
           // to prevent.
-          if (recoverLabel === preferredQuality) setUnplayableQuality(null);
-          setPinnedPlaylistUrl(fresh);
+          if (fresh.qualityLabel === recoverLabel && recoverLabel === preferredQuality) {
+            setUnplayableQuality(null);
+          }
+          pinPlaylist(fresh);
           // Arm one more attempt of each so the NEXT expiry in a long sitting
           // recovers the same way rather than surfacing the error, and so a
           // freshly signed rung is judged on its own merits rather than on a
@@ -1107,7 +1134,7 @@ export function PlayerScreen({ route, navigation }: Props) {
           qualityFallbackTriedRef.current = false;
         })
         .catch(() => {
-          if (recoveringId !== movieIdRef.current) return;
+          if (recoveringId !== movieIdRef.current || playbackTier !== playbackTierRef.current) return;
           onGiveUp();
         });
     },
@@ -1119,6 +1146,9 @@ export function PlayerScreen({ route, navigation }: Props) {
       duration,
       position,
       clearResumeWait,
+      playbackTier,
+      isSubscribed,
+      pinPlaylist,
     ],
   );
 
@@ -1128,13 +1158,14 @@ export function PlayerScreen({ route, navigation }: Props) {
    * There is no other way: expo-video cannot be told to hold a video track.
    */
   const handleSelectQuality = (label: string | null) => {
-    const next = readyPlaylistUrl ? resolveQualityUrl(readyPlaylistUrl, qualities, label) : null;
+    if (label !== null && !qualities.some((quality) => quality.label === label)) return;
+    const next = resolvePlaybackSource(readyPlaylistUrl, qualities, label, allowAuto);
     // Picking what is already playing changes nothing on the player — and the
     // preference is only written when the viewer actually chose something
     // else. Tapping the checked Auto row on a title whose remembered rung is
     // missing or broken would otherwise throw that rung away everywhere, which
     // is not what "Auto is already selected here" means.
-    if (!next || next === pinnedPlaylistUrl) {
+    if (!next || next.url === pinnedPlaylistUrl) {
       if (label !== (activeQuality?.label ?? null)) setPreferredQuality(label);
       return;
     }
@@ -1150,7 +1181,7 @@ export function PlayerScreen({ route, navigation }: Props) {
     // REPLACED, never cleared: `sourceUrl` therefore never goes null, so the
     // stage, the controls, the rail and the caption overlay all stay mounted,
     // and only the picture goes away while the new rendition opens.
-    setPinnedPlaylistUrl(next);
+    pinPlaylist(next);
     // On the same commit as the swap, so the buffering pill is already there
     // rather than arriving a `statusChange` later.
     setIsBuffering(true);
@@ -1164,40 +1195,23 @@ export function PlayerScreen({ route, navigation }: Props) {
     qualityFallbackTriedRef.current = false;
   };
 
-  /**
-   * The answer to a rung that NEVER OPENED: drop to Auto. A rendition can be
-   * listed in the database and missing from storage — the bulk path validates,
-   * the transcode path does not re-verify after upload — and such a rung 404s
-   * for good, so spending the one signed-link attempt on it recovers nothing.
-   * The master is the one playlist known to work, being what played before the
-   * viewer chose.
-   *
-   * It must NOT take an error from a source that had been playing. That failure
-   * is an expired token, which kills the master exactly as dead as the rung, so
-   * switching rungs cures nothing and the fresh-link path above is the only way
-   * back — this is what `sourceEverLoadedRef` is for.
-   *
-   * The rung is suspended for this episode rather than erased from the store:
-   * see `unplayableQuality`. The badge stays honest either way, because it
-   * reads `activeQuality`, which is resolved through the same suspension.
-   *
-   * Returns whether it took the error; only if it did not does recovery run.
-   */
-  const dropToAutoAfterError = useCallback(() => {
-    if (qualityFallbackTriedRef.current) return false;
-    if (effectiveQuality === null || !readyPlaylistUrl) return false;
-    // Already on the master — the failure is not the ladder's doing.
-    if (pinnedPlaylistUrl === readyPlaylistUrl) return false;
-    // It played, so it exists: this is an expiry, not a missing folder.
-    if (sourceEverLoadedRef.current) return false;
+  /** Try another allowed rendition when a selected playlist never opens. */
+  const dropToFallbackAfterError = useCallback(() => {
+    if (qualityFallbackTriedRef.current || sourceEverLoadedRef.current || !activeQuality) return false;
+    const alternatives = qualities.filter((quality) =>
+      quality.label !== activeQuality.label && !failedSourcesRef.current.has(quality.url)
+    );
+    const fallback = resolvePlaybackSource(readyPlaylistUrl, alternatives, null, allowAuto);
+    if (!fallback || fallback.url === pinnedPlaylistUrl || failedSourcesRef.current.has(fallback.url)) return false;
+
     qualityFallbackTriedRef.current = true;
     captureResume();
-    setUnplayableQuality(effectiveQuality);
-    setPinnedPlaylistUrl(readyPlaylistUrl);
+    setUnplayableQuality(activeQuality.label);
+    pinPlaylist(fallback);
     setIsBuffering(true);
     setSubtitleTracks([]);
     return true;
-  }, [effectiveQuality, readyPlaylistUrl, pinnedPlaylistUrl, captureResume]);
+  }, [activeQuality, allowAuto, readyPlaylistUrl, qualities, pinnedPlaylistUrl, captureResume, pinPlaylist]);
 
   /**
    * A caption link dies on the same ~12h schedule and gets the same cure — ask
@@ -1282,11 +1296,6 @@ export function PlayerScreen({ route, navigation }: Props) {
    */
   const isFavorite = useIsInWatchlist(movieId);
   const toggleWatchlist = useToggleWatchlist();
-  // Read here, not from the stream: the player only learns a title is locked
-  // when its stream answers "forbidden", which is AFTER an in-place swap has
-  // already unmounted the film being watched. The rail has to decide from
-  // the card's own accessType before it swaps anything — see handlePlaySimilar.
-  const subscriptionQuery = useSubscriptionStatus();
   const { mutate: toggleWatchlistMutate } = toggleWatchlist;
   const handleToggleFavorite = useCallback(() => toggleWatchlistMutate(movieId), [toggleWatchlistMutate, movieId]);
   // The title alone, not the record: a refetch hands back a structurally new
@@ -1333,7 +1342,7 @@ export function PlayerScreen({ route, navigation }: Props) {
     setBuffered(0);
     setDuration(0);
     setSubtitleTracks([]);
-    setPinnedPlaylistUrl(null);
+    setPinnedSource(null);
     setPlaybackError(null);
     setIsBuffering(true);
     setSeekFlash(null);
@@ -1459,20 +1468,13 @@ export function PlayerScreen({ route, navigation }: Props) {
    * refetch on the swap itself: the seed stamps a fresh dataUpdatedAt and the
    * app-wide staleTime floor applies; it refetches on a later mount once stale.)
    *
-   * ONE CASE MUST NOT SWAP: a film this viewer cannot stream. The player only
-   * learns a title is locked when its STREAM answers "forbidden" — after the
-   * swap has already torn down the film being watched — and LockedOverlay's
-   * Back then closes the player, so the viewer loses their film to a card
-   * they could not play. So a locked (or unpublished) card goes to its
-   * details page instead, whose Watch button is already gated by the same
-   * hasAccess() and offers Subscribe. The rail keeps showing premium titles
-   * to free viewers on purpose: hiding them would hide the upsell.
+   * Route unavailable titles to their details page. Swapping first would
+   * tear down the current film before the stream request returns an error.
    */
-  const isSubscribed = subscriptionQuery.data?.isActive ?? false;
   const handlePlaySimilar = useCallback(
     (next: Movie) => {
       if (next.id === movieId) return;
-      if (!hasAccess(next.accessType, isSubscribed) || next.status !== "PUBLISHED") {
+      if (!hasAccess(movieAccessType(next), isSubscribed) || next.status !== "PUBLISHED") {
         // popTo, not navigate: the same reasoning as handleSubscribe above —
         // from this root modal, navigate("Main") would push a second tab
         // shell over a video that keeps playing underneath. Like Subscribe,
@@ -1603,7 +1605,7 @@ export function PlayerScreen({ route, navigation }: Props) {
         // treatment covers the first wait, exactly as it covers a swap; the
         // ad is its own cover for the second.
         null
-      : (pinnedPlaylistUrl ?? (streamQuery.data?.status === "ready" ? streamQuery.data.playlistUrl : null));
+      : (pinnedPlaylistUrl ?? (pinnedSource ? null : (desiredSource?.url ?? null)));
 
   const adPlaying = adStage === "playing";
   // Not while an ad holds the stage — the pre-roll or a break: each covers
@@ -1688,7 +1690,7 @@ export function PlayerScreen({ route, navigation }: Props) {
       onLoad: ({ durationSeconds }) => {
         setDuration(durationSeconds);
         // This source opened, so any later failure of it is an expiry and
-        // not a rung missing from storage — see `dropToAutoAfterError`.
+        // not a rung missing from storage — see `dropToFallbackAfterError`.
         sourceEverLoadedRef.current = true;
         const resumeAt = pendingResumeRef.current;
         if (resumeAt === null) return;
@@ -1720,7 +1722,7 @@ export function PlayerScreen({ route, navigation }: Props) {
         // never opened: a rung that was never uploaded must not cost the
         // stream its one fresh-link attempt, and an expiry mid-film must
         // not be mistaken for one.
-        if (dropToAutoAfterError()) return;
+        if (dropToFallbackAfterError()) return;
         recoverPlayback(() => setPlaybackError(message ?? t.movie.playbackError));
       },
     };
@@ -1737,7 +1739,7 @@ export function PlayerScreen({ route, navigation }: Props) {
    * A genuine failure still gets its gate: the two below run only once the
    * stream query has settled on an answer, so they cannot fire mid-swap.
    */
-  if ((movieQuery.isLoading || streamQuery.isLoading) && !hasStage) {
+  if ((movieQuery.isLoading || streamQuery.isLoading || playbackTier === "loading") && !hasStage) {
     // The shape of the screen about to land, pulsing — never a spinner.
     return <PlayerLoading />;
   }
@@ -1752,10 +1754,11 @@ export function PlayerScreen({ route, navigation }: Props) {
     );
   }
 
-  if (!streamQuery.isLoading && (!streamQuery.data || streamQuery.data.status !== "ready")) {
-    const message = streamQuery.isError ? t.common.somethingWentWrong : t.movie.notReady;
-    // Back only: the app offers no Retry for an unready stream or a failed
-    // load, and the board draws none (AREA-NOTES, Player).
+  const qualityUnavailable = playbackTier === "free" && !!readyPlaylistUrl && !allowAuto && qualities.length === 0;
+  if (!streamQuery.isLoading && (streamQuery.data?.status !== "ready" || qualityUnavailable)) {
+    const message = qualityUnavailable
+      ? t.player.freeQualityUnavailable
+      : streamQuery.isError ? t.common.somethingWentWrong : t.movie.notReady;
     return (
       <View style={styles.center} accessibilityRole="alert">
         <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(320)} style={styles.messageBlock}>
@@ -1765,6 +1768,9 @@ export function PlayerScreen({ route, navigation }: Props) {
           <ThemedText weight="bold" style={[styles.centerText, styles.messageText]}>
             {message}
           </ThemedText>
+          {qualityUnavailable && offeredUpgrade && (
+            <Button title={t.player.qualityUpgrade.replace("{quality}", offeredUpgrade)} onPress={handleSubscribe} />
+          )}
           <Button
             title={t.common.back}
             variant="secondary"
@@ -2087,6 +2093,10 @@ export function PlayerScreen({ route, navigation }: Props) {
           speed={preferredSpeed}
           onSelectSpeed={handleSelectSpeed}
           qualities={qualities}
+          showAutoQuality={allowAuto}
+          cappedAutoQuality={stream?.maxVideoHeight === 480}
+          upgradeQuality={offeredUpgrade}
+          onUpgradeQuality={handleSubscribe}
           // What is PLAYING, not what is merely remembered — see `activeQuality`.
           qualityValue={activeQuality?.label ?? null}
           onSelectQuality={handleSelectQuality}

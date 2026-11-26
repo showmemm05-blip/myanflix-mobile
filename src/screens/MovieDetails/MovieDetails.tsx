@@ -33,7 +33,7 @@ import { useDockClearance } from "@/hooks/useDockClearance";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { formatDuration } from "@/utils/format";
 import { AGE_RATING_LABELS } from "@/utils/ageRating";
-import { hasAccess } from "@/utils/access";
+import { hasAccess, movieAccessType } from "@/utils/access";
 import { localizedDescription } from "@/utils/localizedDescription";
 import { mediaTypeLabel } from "@/utils/mediaType";
 import { theme } from "@/theme";
@@ -72,7 +72,7 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
   const commentsY = useRef(0);
 
   const movie = movieQuery.data;
-  const canWatch = !!movie && hasAccess(movie.accessType, subscriptionQuery.data?.isActive ?? false);
+  const canWatch = !!movie && hasAccess(movieAccessType(movie), subscriptionQuery.data?.isActive ?? false);
 
   // Don't ASK until the movie's own category is known. This key would
   // otherwise start category-less (the movie hasn't resolved yet on first
@@ -208,7 +208,7 @@ export function MovieDetailsScreen({ route, navigation }: Props) {
             <TitleHero
               title={movie.title}
               artUrl={movie.posterUrl ?? movie.coverUrl}
-              accessType={movie.accessType}
+              accessType={movieAccessType(movie)}
               kindLabel={t.movie.kindFilm}
               action={
                 canWatch

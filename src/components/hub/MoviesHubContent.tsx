@@ -37,7 +37,7 @@ import { LIST_PAGE_SIZE, flattenPages } from "@/hooks/pagination";
 import { useAuthStore } from "@/store/authStore";
 import { useLanguage } from "@/localization/LanguageProvider";
 import type { TranslationShape } from "@/localization/translations";
-import { hasAccess } from "@/utils/access";
+import { hasAccess, movieAccessType } from "@/utils/access";
 import { formatDuration } from "@/utils/format";
 import { localizedDescription } from "@/utils/localizedDescription";
 import { theme } from "@/theme";
@@ -185,7 +185,7 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
    * access, otherwise the movie's page (where Subscribe and the locked note live).
    */
   const watchMovie = useCallback(
-    (movie: Movie) => (hasAccess(movie.accessType, isSubscribed) ? playMovie(movie) : openMovie(movie)),
+    (movie: Movie) => (hasAccess(movieAccessType(movie), isSubscribed) ? playMovie(movie) : openMovie(movie)),
     [isSubscribed, playMovie, openMovie],
   );
 
@@ -209,8 +209,8 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
         // premium title gets neither the gold Subscribe (wrong for a
         // subscriber) nor the player: a plain Play to the movie's page,
         // which decides for itself — as the Series hub does.
-        const accessPending = movie.accessType !== "FREE" && subscriptionPending;
-        const canWatch = !accessPending && hasAccess(movie.accessType, isSubscribed);
+        const accessPending = movieAccessType(movie) !== "FREE" && subscriptionPending;
+        const canWatch = !accessPending && hasAccess(movieAccessType(movie), isSubscribed);
         const locked = !accessPending && !canWatch;
         const action = locked ? t.series.subscribeToWatch : t.player.play;
         return {
@@ -219,7 +219,7 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
           // The stage is portrait: the poster first, the cover if that is all there is.
           imageUrl: movie.posterUrl ?? movie.coverUrl,
           isNew,
-          accessType: movie.accessType,
+          accessType: movieAccessType(movie),
           kicker: isNew ? t.browse.recentlyAdded : t.hub.featured,
           rating: movie.rating > 0 ? movie.rating : null,
           meta: [yearOf(movie), formatDuration(movie.duration), movie.genre || null],
@@ -350,7 +350,7 @@ export const MoviesHubContent = memo(function MoviesHubContent({ active, scroll,
         title: movie.title,
         // A 16:9 frame: the landscape cover first.
         imageUrl: movie.coverUrl ?? movie.posterUrl,
-        accessType: movie.accessType,
+        accessType: movieAccessType(movie),
         isNew: isRecentlyAdded(movie.createdAt),
         meta: [movie.genre || null, yearOf(movie), formatDuration(movie.duration)],
         onPress: () => openMovie(movie),
@@ -680,7 +680,7 @@ const MovieShelfRow = memo(function MovieShelfRow({
             key: movie.id,
             title: movie.title,
             imageUrl: movie.posterUrl ?? movie.coverUrl,
-            accessType: movie.accessType,
+            accessType: movieAccessType(movie),
             rating: shelf.showRating && movie.rating > 0 ? movie.rating : null,
             isNew: shelf.variant === "poster" && isRecentlyAdded(movie.createdAt),
             meta: shelf.meta(movie),

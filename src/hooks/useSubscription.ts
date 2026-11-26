@@ -40,7 +40,7 @@ export function useSubscribe() {
   return useMutation({
     mutationFn: (planId: string) => subscriptionsService.subscribe(planId),
     /**
-     * Only these three things moved.
+     * Refresh account data and any cached stream entitlement after a purchase.
      *
      * The catalogue did NOT: no Movie, Series or SeriesListItem carries a
      * per-user field, and the lock is `hasAccess(accessType, isSubscribed)`
@@ -57,6 +57,7 @@ export function useSubscribe() {
      */
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["subscription"] });
+      queryClient.invalidateQueries({ queryKey: ["stream"] });
       queryClient.invalidateQueries({ queryKey: ["wallet"] });
       profileService.getProfile().then(useAuthStore.getState().setUser).catch(() => {});
     },
