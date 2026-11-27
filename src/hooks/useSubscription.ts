@@ -5,8 +5,8 @@ import { useAuthStore } from "@/store/authStore";
 
 /**
  * GET /subscription-plans needs a signed-in user (a guest would 401 into the
- * logout path, as /subscriptions/me does), so a screen a guest can reach —
- * Home's Premium band — passes `enabled: false` for a guest.
+ * logout path, as /subscriptions/me does), so Home passes `enabled: false`
+ * for a guest.
  */
 export function useSubscriptionPlans(options: { enabled?: boolean } = {}) {
   return useQuery({

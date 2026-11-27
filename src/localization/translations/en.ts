@@ -1202,24 +1202,6 @@ export const en = {
     spotlightNewest: "The newest movie on MyanFlix",
     /** The spotlight's button on a book. */
     read: "Read",
-    /* the Premium band */
-    premiumAside: "Pay from your wallet",
-    premiumTitle: "Every Premium movie and series. One plan.",
-    premiumBody: "A plan unlocks everything marked Premium on MyanFlix. Renewing adds the days onto your current expiry.",
-    planEveryPremium: "Every Premium movie and series",
-    planStreams: "Streams at 240p–720p",
-    bestValue: "Best value",
-    /** Under a plan's price: "400 Ks a day", or "about 333 Ks a day" when it does not divide evenly. */
-    planPerDay: "{price} a day",
-    planPerDayAbout: "about {price} a day",
-    planA11y: "{name} plan, {price} for {days}",
-    planBestA11y: "{name} plan, {price} for {days}, best value",
-    /** An active subscriber: "Your plan" over "Premium · expires 8/11/2026". */
-    yourPlan: "Your plan",
-    yourPlanLine: "{plan} · expires {date}",
-    extend: "Extend",
-    premiumNote: "Top up with any of these, then subscribe from your balance. No auto-charge: a plan simply ends unless you renew.",
-    plansUnavailable: "The plans couldn't be loaded right now.",
     /** The payment chips' spoken name. */
     payMethodsA11y: "Ways to add money: {list}",
     /* the books band */

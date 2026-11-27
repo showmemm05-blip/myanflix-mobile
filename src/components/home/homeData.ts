@@ -18,9 +18,8 @@ import type { WatchHistoryEntry } from "@/types/video";
  *
  * The showcase (2026-10-08) adds exactly ONE request: GET /api/home/showcase
  * (hooks/useHomeShowcase — the hero promos, the spotlight, coming soon and
- * the Home settings, kept five minutes). The Premium band reads the plans
- * and the subscription the app already asks for (signed in only), and the
- * books band shares the "New on the shelf" row's GET /books.
+ * the Home settings, kept five minutes). The books band shares the
+ * "New on the shelf" row's GET /books.
  */
 
 /** The rows' freshness window — the Media hubs' (CatalogListOptions explains). */
@@ -147,7 +146,7 @@ export function displayAddress(url: string): string {
     .replace(/\/+$/, "");
 }
 
-/** The plan fields the Premium band reads. */
+/** The plan fields used by Subscribe promos. */
 export interface PlanLike {
   id: string;
   name: string;
@@ -163,22 +162,7 @@ export function visiblePlans<P extends PlanLike>(plans: readonly P[] | undefined
     .sort((a, b) => a.durationDays - b.durationDays || a.price - b.price);
 }
 
-/** BEST VALUE goes on the longest plan — only when there is more than one to compare. */
-export function bestValuePlanId(plans: readonly PlanLike[]): string | null {
-  if (plans.length < 2) return null;
-  return plans.reduce((best, plan) => (plan.durationDays > best.durationDays ? plan : best)).id;
-}
-
-/** Price per day, rounded; `exact` is false when it does not divide evenly ("about 333 Ks a day"). */
-export function perDay(plan: PlanLike): { amount: number; exact: boolean } {
-  const raw = plan.price / plan.durationDays;
-  return { amount: Math.round(raw), exact: Number.isInteger(raw) };
-}
-
-/**
- * The two ways to add money, as the value strip and the Premium band name
- * them (owner, 2026-10-08: KBZPay and WavePay only). The dot colours are the board's chip marks.
- */
+/** The payment methods displayed on a payment promo. */
 export const PAY_METHODS = [
   { name: "KBZPay", dot: "#4DB3FF" },
   { name: "WavePay", dot: "#F5C451" },

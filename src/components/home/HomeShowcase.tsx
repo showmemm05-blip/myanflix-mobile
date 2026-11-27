@@ -1,11 +1,10 @@
-import { memo, useMemo, type ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { Linking, Pressable, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path } from "react-native-svg";
 // Deep import, not the "@expo/vector-icons" root (HubHero explains).
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { CrownGlyph } from "@/components/common/CrownGlyph";
 import { Skeleton } from "@/components/common/Skeleton";
 import { BookCover, bookCorners } from "@/components/books/BookCover";
 import { HubFallbackArt } from "@/components/hub/HubFallbackArt";
@@ -18,34 +17,22 @@ import {
   BROWSE_OPTIONS,
   HOME_ROW_LIMIT,
   PAY_METHODS,
-  bestValuePlanId,
   displayAddress,
   isWebUrl,
-  perDay,
   promoText,
-  visiblePlans,
 } from "@/components/home/homeData";
 import { useBooksList } from "@/hooks/useBooks";
-import { useSubscriptionPlans, useSubscriptionStatus } from "@/hooks/useSubscription";
 import { useLanguage } from "@/localization/LanguageProvider";
 import { formatDuration } from "@/utils/format";
-import { formatKyat } from "@/utils/currency";
 import { localizedDescription } from "@/utils/localizedDescription";
 import { theme, withAlpha } from "@/theme";
 import type { HomeSettings, ShowcasePromo, ShowcaseSpotlight, ShowcaseTitle } from "@/types/home";
 
 /**
  * THE SHOWCASE SECTIONS of Home (owner, 2026-10-08 — HomeMobile.dc.html):
- * the browse chips over the hero, the
- * spotlight banner, the Premium band, the books band, the coming-soon strip
- * and the "Also on the web" card. The existing rows live in HomeRows.tsx.
- *
- * Copy is TRUE by rule (owner's defaults, 2026-10-08): Premium sells "every
- * Premium movie and series"; books are "free to read when you sign in"; the
- * plans and prices are the real ones from GET /subscription-plans (never
- * typed in here); anything editorial — the spotlight, coming-soon cards, the
- * games date, the web address — comes from the admin "Home promos" page, and
- * a section with nothing set simply does not render.
+ * the spotlight banner, books band, coming-soon strip and web card.
+ * The existing rows live in HomeRows.tsx. Editorial content comes from
+ * the admin Home promos page.
  */
 
 /** Every section under the hero keeps the hubs' rhythm; the first one sits closer. */
@@ -53,22 +40,12 @@ function sectionStyle(first: boolean | undefined): StyleProp<ViewStyle> {
   return first ? styles.firstSection : styles.section;
 }
 
-/** "{n} days" / "1 day" — the Subscribe screen's own wording. */
-function useDaysLabel() {
-  const { t } = useLanguage();
-  return (days: number) =>
-    days === 1 ? t.subscription.planDurationOne : t.subscription.planDuration.replace("{n}", String(days));
-}
-
 /* ------------------------------------------------------------------ */
 /* Payment chips                                                        */
 /* ------------------------------------------------------------------ */
 
-/**
- * The ways to add money as small chips with their colour dot. "art":
- * over a hero scene (the dark glass chip); "panel": inside the Premium band.
- */
-export const PayChips = memo(function PayChips({ tone }: { tone: "art" | "panel" }) {
+/** The payment methods shown over a payment promo. */
+export const PayChips = memo(function PayChips() {
   const { t } = useLanguage();
   const names = PAY_METHODS.map((method) => method.name);
   return (
@@ -78,9 +55,9 @@ export const PayChips = memo(function PayChips({ tone }: { tone: "art" | "panel"
       accessibilityLabel={t.home.payMethodsA11y.replace("{list}", names.join(", "))}
     >
       {PAY_METHODS.map((method) => (
-        <View key={method.name} style={[styles.payChip, tone === "art" ? styles.payChipArt : styles.payChipPanel]}>
+        <View key={method.name} style={styles.payChip}>
           <View style={[styles.payDot, { backgroundColor: method.dot }]} />
-          <ThemedText variant="label" weight="bold" color={tone === "art" ? theme.colors.text : theme.colors.textBody}>
+          <ThemedText variant="label" weight="bold" color={theme.colors.text}>
             {method.name}
           </ThemedText>
         </View>
@@ -217,233 +194,6 @@ export const SpotlightBanner = memo(function SpotlightBanner({
 });
 
 /* ------------------------------------------------------------------ */
-/* Premium band                                                         */
-/* ------------------------------------------------------------------ */
-
-/**
- * The real plans side by side (BEST VALUE on the longest), what a plan
- * includes (true copy), gold Subscribe + tonal Add money with the payment
- * chips. A subscriber sees "Your plan · expires <date>" and Extend. A guest
- * gets the pitch and "Sign in to subscribe" — GET /subscription-plans is
- * members-only, so a guest is never shown (or asked for) prices.
- */
-export const PremiumBand = memo(function PremiumBand({
-  signedIn,
-  onSubscribe,
-  onAddMoney,
-  onSignIn,
-  first,
-}: {
-  signedIn: boolean;
-  onSubscribe: () => void;
-  onAddMoney: () => void;
-  onSignIn: () => void;
-  first?: boolean;
-}) {
-  const { t } = useLanguage();
-  const daysLabel = useDaysLabel();
-  const plansQuery = useSubscriptionPlans({ enabled: signedIn });
-  const statusQuery = useSubscriptionStatus({ enabled: signedIn });
-  const plans = useMemo(() => visiblePlans(plansQuery.data), [plansQuery.data]);
-  const bestId = bestValuePlanId(plans);
-  const status = signedIn ? statusQuery.data : undefined;
-  const subscribed = !!status?.isActive;
-
-  let planBlock: ReactNode = null;
-  if (signedIn) {
-    if (plansQuery.isLoading) {
-      planBlock = (
-        <View style={styles.plans} accessible accessibilityRole="progressbar" accessibilityLabel={t.common.loading}>
-          <Skeleton height={132} radius="lg" style={styles.planCell} />
-          <Skeleton height={132} radius="lg" style={styles.planCell} />
-        </View>
-      );
-    } else if (plans.length === 0) {
-      planBlock = (
-        <ThemedText variant="caption" color={theme.colors.textMuted} style={styles.gap16}>
-          {plansQuery.isError ? t.home.plansUnavailable : t.subscription.noPlans}
-        </ThemedText>
-      );
-    } else {
-      planBlock = (
-        <View style={styles.plans}>
-          {plans.map((plan) => {
-            const best = plan.id === bestId;
-            const price = formatKyat(plan.price);
-            const days = daysLabel(plan.durationDays);
-            const day = perDay(plan);
-            const dayLine = (day.exact ? t.home.planPerDay : t.home.planPerDayAbout).replace("{price}", formatKyat(day.amount));
-            const a11y = (best ? t.home.planBestA11y : t.home.planA11y)
-              .replace("{name}", plan.name)
-              .replace("{price}", price)
-              .replace("{days}", days);
-            return (
-              <View key={plan.id} style={[styles.planCell, styles.plan, best && styles.planBest]} accessible accessibilityLabel={a11y}>
-                <View style={styles.planHead}>
-                  <ThemedText
-                    variant="caption"
-                    weight="extrabold"
-                    color={best ? theme.colors.premium : theme.colors.textMuted}
-                    numberOfLines={1}
-                    style={styles.shrink}
-                  >
-                    {plan.name.toUpperCase()}
-                  </ThemedText>
-                  {best ? (
-                    <View style={styles.bestBadge}>
-                      <ThemedText variant="overline" color={theme.colors.onPremium} style={styles.noTrack}>
-                        {t.home.bestValue.toUpperCase()}
-                      </ThemedText>
-                    </View>
-                  ) : null}
-                </View>
-                <ThemedText weight="black" tabular style={styles.planPrice}>
-                  {price}
-                </ThemedText>
-                <ThemedText variant="caption" color={theme.colors.textMuted} tabular>
-                  {`${t.home.planFor.replace("{days}", days)} · ${dayLine}`}
-                </ThemedText>
-                <View style={styles.planItems}>
-                  {[t.home.planEveryPremium, t.home.planStreams].map((item) => (
-                    <View key={item} style={styles.planItem}>
-                      <Ionicons
-                        name="checkmark"
-                        size={14}
-                        color={best ? theme.colors.premium : theme.colors.textMuted}
-                        style={styles.planTick}
-                      />
-                      <ThemedText variant="caption" weight="regular" color={theme.colors.textBody} style={styles.shrink}>
-                        {item}
-                      </ThemedText>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      );
-    }
-  }
-
-  return (
-    <View style={[sectionStyle(first), styles.inset]}>
-      <View style={styles.premium}>
-        {/* The board's `linear-gradient(160deg, #1F1908 0%, #121217 55%)`. */}
-        <LinearGradient
-          colors={PREMIUM_WASH}
-          locations={[0, 0.55]}
-          start={PREMIUM_WASH_START}
-          end={PREMIUM_WASH_END}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        <View style={styles.premiumGlow} pointerEvents="none" />
-        <View style={styles.premiumHead}>
-          <View style={styles.premiumTag}>
-            <CrownGlyph size={11} color={theme.colors.premium} />
-            <ThemedText variant="overline" color={theme.colors.premium}>
-              {t.movie.premium.toUpperCase()}
-            </ThemedText>
-          </View>
-          <ThemedText variant="label" color={theme.colors.textFaint} numberOfLines={1} style={styles.shrink}>
-            {t.home.premiumAside}
-          </ThemedText>
-        </View>
-        <ThemedText variant="title" accessibilityRole="header" style={styles.gap10}>
-          {t.home.premiumTitle}
-        </ThemedText>
-        <ThemedText variant="body" color={theme.colors.textBody} style={styles.gap6}>
-          {t.home.premiumBody}
-        </ThemedText>
-
-        {planBlock}
-
-        {subscribed && status ? (
-          <View style={styles.yourPlan} accessible>
-            <ThemedText variant="label" color={theme.colors.textFaint}>
-              {t.home.yourPlan}
-            </ThemedText>
-            <ThemedText variant="muted" weight="bold" color={theme.colors.text} tabular>
-              {status.expiresAt
-                ? t.home.yourPlanLine
-                    .replace("{plan}", status.planName ?? t.movie.premium)
-                    .replace("{date}", new Date(status.expiresAt).toLocaleDateString())
-                : (status.planName ?? t.subscription.active)}
-            </ThemedText>
-          </View>
-        ) : null}
-
-        <View style={styles.premiumActions}>
-          {signedIn ? (
-            <>
-              <BandButton
-                tone="gold"
-                label={subscribed ? t.home.extend : t.home.ctaSubscribe}
-                glyph={<CrownGlyph size={16} color={theme.colors.onPremium} />}
-                onPress={onSubscribe}
-              />
-              <BandButton
-                tone="tonal"
-                label={t.subscription.addMoney}
-                glyph={<Ionicons name="add" size={20} color={theme.colors.finance} />}
-                onPress={onAddMoney}
-              />
-            </>
-          ) : (
-            <BandButton
-              tone="gold"
-              label={t.home.signInToSubscribe}
-              glyph={<CrownGlyph size={16} color={theme.colors.onPremium} />}
-              onPress={onSignIn}
-            />
-          )}
-        </View>
-
-        <View style={styles.gap14}>
-          <PayChips tone="panel" />
-        </View>
-        <ThemedText variant="caption" weight="regular" color={theme.colors.textFaint} style={styles.gap10}>
-          {`${t.home.premiumNote} ${t.home.booksFree}`}
-        </ThemedText>
-      </View>
-    </View>
-  );
-});
-
-function BandButton({
-  tone,
-  label,
-  glyph,
-  onPress,
-}: {
-  tone: "gold" | "tonal";
-  label: string;
-  glyph: ReactNode;
-  onPress: () => void;
-}) {
-  const gold = tone === "gold";
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={({ pressed }) => [styles.bandButton, gold ? styles.bandGold : styles.bandTonal, pressed && styles.pressed]}
-    >
-      {glyph}
-      <ThemedText
-        weight={gold ? "extrabold" : "bold"}
-        color={gold ? theme.colors.onPremium : theme.colors.text}
-        numberOfLines={2}
-        style={styles.bandLabel}
-      >
-        {label}
-      </ThemedText>
-    </Pressable>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* Books band                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -546,10 +296,6 @@ export const BooksBand = memo(function BooksBand({
 /* Coming soon                                                          */
 /* ------------------------------------------------------------------ */
 
-/** The Premium band's warm wash (board: 160deg, a gold-tinted dark into the surface). */
-const PREMIUM_WASH = ["#1F1908", theme.colors.surface] as const;
-const PREMIUM_WASH_START = { x: 0.33, y: 0.03 };
-const PREMIUM_WASH_END = { x: 0.67, y: 0.97 };
 const CARD_FOOT = [withAlpha(theme.colors.background, 0), withAlpha(theme.colors.background, 0.85)] as const;
 
 /**
@@ -749,15 +495,21 @@ const styles = StyleSheet.create({
   gap6: { marginTop: 6 },
   gap8: { marginTop: 8 },
   gap10: { marginTop: 10 },
-  gap14: { marginTop: 14 },
-  gap16: { marginTop: 16 },
   pressed: { opacity: 0.8 },
 
   /* pay chips */
   payChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  payChip: { flexDirection: "row", alignItems: "center", gap: 6, minHeight: 28, paddingHorizontal: 10, borderRadius: 14 },
-  payChipArt: { backgroundColor: withAlpha(theme.colors.background, 0.6), borderWidth: 1, borderColor: theme.colors.borderStrong },
-  payChipPanel: { backgroundColor: theme.colors.surfaceElevated },
+  payChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minHeight: 28,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: withAlpha(theme.colors.background, 0.6),
+    borderWidth: 1,
+    borderColor: theme.colors.borderStrong,
+  },
   payDot: { width: 8, height: 8, borderRadius: 4 },
 
   /* spotlight */
@@ -799,74 +551,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: theme.colors.tonalStrong,
   },
-
-  /* premium band */
-  premium: {
-    padding: 20,
-    borderRadius: 20,
-    overflow: "hidden",
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: withAlpha(theme.colors.premium, 0.35),
-  },
-  premiumGlow: {
-    position: "absolute",
-    right: -60,
-    top: -70,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: withAlpha(theme.colors.premium, 0.12),
-  },
-  premiumHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  premiumTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    minHeight: 24,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    backgroundColor: theme.colors.premiumSoft,
-  },
-  plans: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 16 },
-  /** Two per row. */
-  planCell: { flexBasis: "47%", flexGrow: 1 },
-  plan: { padding: 14, borderRadius: 14, backgroundColor: theme.colors.surfaceElevated },
-  planBest: { borderWidth: 1.5, borderColor: theme.colors.premium },
-  planHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6, minHeight: 18 },
-  bestBadge: {
-    minHeight: 18,
-    paddingHorizontal: 6,
-    borderRadius: 9,
-    justifyContent: "center",
-    backgroundColor: theme.colors.premium,
-  },
-  planPrice: { marginTop: 4, fontSize: 24, lineHeight: 30, letterSpacing: -0.5 },
-  planItems: { gap: 2, marginTop: 10 },
-  planItem: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
-  planTick: { marginTop: 2 },
-  yourPlan: {
-    marginTop: 16,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: theme.colors.premiumSoft,
-    gap: 2,
-  },
-  premiumActions: { flexDirection: "row", gap: 10, marginTop: 16 },
-  bandButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    minHeight: 48,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.radius.button,
-  },
-  bandGold: { backgroundColor: theme.colors.premium },
-  bandTonal: { backgroundColor: theme.colors.tonalStrong },
-  bandLabel: { fontSize: 16, flexShrink: 1, textAlign: "center" },
 
   /* books band */
   booksBand: {

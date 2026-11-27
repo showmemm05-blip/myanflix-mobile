@@ -22,7 +22,6 @@ import {
   BooksBand,
   ComingSoonStrip,
   PayChips,
-  PremiumBand,
   SpotlightBanner,
 } from "@/components/home/HomeShowcase";
 import {
@@ -82,7 +81,6 @@ type HomeRowKind =
   | "spotlight"
   | "recent"
   | "series"
-  | "premium"
   | "top10"
   | "booksBand"
   | "books"
@@ -129,12 +127,11 @@ const rowKey = (kind: HomeRowKind) => kind;
  *   3. Continue watching (signed in; hidden when empty);
  *   4. the spotlight — the team's pick, else the newest movie;
  *   5. Recently added, New series;
- *   6. the Premium band — the real plans, Subscribe / Extend, Add money;
- *   7. Top 10 most viewed;
- *   8. "Read on MyanFlix", then New on the shelf (signed in);
- *   9. Top rated, Because you watched (signed in);
- *  10. Coming soon — the team's cards and the games teaser (hidden when empty);
- *  11. "Also on the web" — only when the web address is set.
+ *   6. Top 10 most viewed;
+ *   7. "Read on MyanFlix", then New on the shelf (signed in);
+ *   8. Top rated, Because you watched (signed in);
+ *   9. Coming soon — the team's cards and the games teaser (hidden when empty);
+ *  10. "Also on the web" — only when the web address is set.
  *
  * Requests: the rows' own (unchanged — homeData explains) plus ONE
  * GET /api/home/showcase (useHomeShowcase, kept five minutes) for the
@@ -177,7 +174,7 @@ export function HomeScreen({ navigation }: Props) {
   /* ---- the showcase: one request ---- */
   const showcaseQuery = useHomeShowcase(isAuthenticated);
   const showcase = showcaseQuery.data;
-  // Shares ["subscription", "plans"] with the Premium band and the Subscribe screen.
+  // Subscribe promos use the same plan prices as the Subscribe screen.
   const plansQuery = useSubscriptionPlans({ enabled: isAuthenticated });
 
   /* ---- navigation ---- */
@@ -362,7 +359,7 @@ export function HomeScreen({ navigation }: Props) {
         blurb: promoText(language, promo.bodyEn, promo.bodyMm),
         blurbLines: 3,
         note,
-        extra: promo.artPreset === "PAYMENT" ? <PayChips tone="art" /> : null,
+        extra: promo.artPreset === "PAYMENT" ? <PayChips /> : null,
         primary,
       };
     },
@@ -467,7 +464,6 @@ export function HomeScreen({ navigation }: Props) {
             "spotlight",
             "recent",
             "series",
-            "premium",
             "top10",
             "booksBand",
             "books",
@@ -476,7 +472,7 @@ export function HomeScreen({ navigation }: Props) {
             "coming",
             "web",
           ]
-        : ["lottery", "spotlight", "recent", "series", "premium", "top10", "booksBand", "rated", "coming", "web"],
+        : ["lottery", "spotlight", "recent", "series", "top10", "booksBand", "rated", "coming", "web"],
     [isAuthenticated, continuePresent],
   );
 
@@ -523,16 +519,6 @@ export function HomeScreen({ navigation }: Props) {
               spotlight={showcase?.spotlight ?? null}
               onPrimary={spotlightPrimary}
               onDetails={openTitle}
-              first={first}
-            />
-          );
-        case "premium":
-          return (
-            <PremiumBand
-              signedIn={isAuthenticated}
-              onSubscribe={openSubscribe}
-              onAddMoney={addMoney}
-              onSignIn={signIn}
               first={first}
             />
           );
@@ -593,8 +579,6 @@ export function HomeScreen({ navigation }: Props) {
       showcase,
       spotlightPrimary,
       openTitle,
-      openSubscribe,
-      addMoney,
       signIn,
       runPromo,
     ],

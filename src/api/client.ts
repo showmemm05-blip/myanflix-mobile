@@ -1,25 +1,31 @@
+import { TurboModuleRegistry, type TurboModule } from "react-native";
 import axios, { type AxiosRequestConfig, type AxiosResponse, isAxiosError, isCancel } from "axios";
 import { tokenStore, notifyUnauthorized } from "@/services/token-store";
 import { ApiError, type ApiErrorDetails } from "@/utils/errors";
 import { classifyRefreshBody, classifyRefreshFailure, type RefreshOutcome } from "@/api/refreshOutcome";
 
-/**
- * "localhost" resolves differently per target — see mobile/.env.example for
- * the iOS Simulator / Android Emulator / physical-device distinction.
- *
- * The localhost fallback is for DEVELOPMENT only (Expo Go / Metro). A release
- * build gets its address from its eas.json profile; one built without it
- * would silently talk to "localhost" on the user's own phone and every call
- * would fail, so it refuses to start instead (audit H-13). Keep the
- * `process.env.EXPO_PUBLIC_…` spelling exactly: Expo inlines only that form.
- */
-const CONFIGURED_API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
-if (!CONFIGURED_API_BASE_URL && !__DEV__) {
-  throw new Error(
-    "EXPO_PUBLIC_API_BASE_URL is not set for this build. Set it in the build profile in mobile/eas.json.",
-  );
+interface MetroSourceCode extends TurboModule {
+  getConstants(): { scriptURL: string };
 }
-export const API_BASE_URL = CONFIGURED_API_BASE_URL ?? "http://localhost:3001/api";
+
+// Explicit API addresses take priority (including preview/production builds).
+// In local development, the bundle URL identifies the Mac from the device's
+// perspective, even after DHCP gives it a different Wi-Fi address.
+function resolveApiBaseUrl(): string {
+  const configured = process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (configured) return configured;
+  if (!__DEV__) {
+    throw new Error("EXPO_PUBLIC_API_BASE_URL is required for release builds.");
+  }
+  const source = TurboModuleRegistry.get<MetroSourceCode>("SourceCode");
+  const scriptURL = source?.getConstants().scriptURL;
+  const host = scriptURL && /^https?:\/\//i.test(scriptURL)
+    ? new URL(scriptURL).hostname
+    : "localhost";
+  return `http://${host}:3001/api`;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 /**
  * Which client this is, in the backend's `ClientPlatform` vocabulary
